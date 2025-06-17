@@ -1,0 +1,189 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '20.x'
+  AWS_REGION: 'us-east-1'
+
+jobs:
+  # Validate conventional commits
+  validate-commits:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Validate Conventional Commits
+        uses: wagoid/commitlint-action@v5
+        with:
+          configFile: '.commitlintrc.json'
+
+  # Security and quality checks
+  security-and-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Run linting
+        run: npm run lint
+        
+      - name: Run tests with coverage
+        run: npm run test:coverage
+        
+      - name: KICS Security Scan
+        uses: checkmarx/kics-github-action@v1.7.0
+        with:
+          path: '.'
+          fail_on: high
+          output_formats: 'json,sarif'
+          output_path: 'kics-results'
+          
+      - name: Upload KICS results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'kics-results/results.sarif'
+
+  # Deploy to development environment
+  deploy-dev:
+    needs: [security-and-quality]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Build application
+        run: npm run build
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Install CDK dependencies
+        run: |
+          cd infrastructure
+          npm ci
+          
+      - name: CDK Bootstrap (if needed)
+        run: |
+          cd infrastructure
+          npx cdk bootstrap --context environment=development
+          
+      - name: Deploy to development
+        run: |
+          cd infrastructure
+          npx cdk deploy --all --require-approval never --context environment=development
+          
+      - name: Comment deployment status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀 **Development Environment Deployed Successfully!**\n\nYour changes are now live in the development environment and ready for testing.'
+            })
+
+  # Deploy to production environment
+  deploy-prod:
+    needs: [security-and-quality]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Build application
+        run: npm run build
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Install CDK dependencies
+        run: |
+          cd infrastructure
+          npm ci
+          
+      - name: CDK Bootstrap (if needed)
+        run: |
+          cd infrastructure
+          npx cdk bootstrap --context environment=production
+          
+      - name: Deploy to production
+        run: |
+          cd infrastructure
+          npx cdk deploy --all --require-approval never --context environment=production
+
+  # Create release after successful production deployment
+  create-release:
+    needs: [deploy-prod]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Get version from package.json
+        id: package-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.package-version.outputs.version }}
+          release_name: Release v${{ steps.package-version.outputs.version }}
+          body: |
+            ## Changes in this Release
+            - Deployed to production environment
+            - All security checks passed
+            - All tests passed
+            
+            **Deployment Status**: ✅ Successfully deployed to production
+          draft: false
+          prerelease: false 
