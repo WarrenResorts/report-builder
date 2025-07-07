@@ -59,9 +59,9 @@ Daily Schedule: EventBridge → Lambda → Process 24hr files → S3 (output) �
 - [x] Conventional commits validation
 - [x] Automated release tagging
 - [x] ESLint and Jest configuration
-- [ ] AWS SES configuration
-- [ ] S3 buckets setup
-- [ ] Lambda functions scaffolding
+- [x] AWS SES configuration
+- [x] S3 buckets setup
+- [x] Lambda functions scaffolding
 
 ### Phase 2: Email Processing
 - [ ] SES email receiving configuration
