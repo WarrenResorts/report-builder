@@ -3,18 +3,26 @@ import * as cdk from 'aws-cdk-lib';
 import { InfrastructureStack } from '../lib/infrastructure-stack';
 
 const app = new cdk.App();
-new InfrastructureStack(app, 'InfrastructureStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
 
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+// Get environment from context (set via --context environment=development)
+const environment = app.node.tryGetContext('environment') || 'development';
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
+// Validate environment
+if (!['development', 'production'].includes(environment)) {
+  throw new Error(`Invalid environment: ${environment}. Must be 'development' or 'production'`);
+}
 
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
+// Create stack with environment-specific configuration
+new InfrastructureStack(app, `ReportBuilderStack-${environment}`, {
+  environment: environment as 'development' | 'production',
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
+  },
+  description: `Report Builder infrastructure for ${environment} environment`,
+  tags: {
+    Environment: environment,
+    Project: 'report-builder',
+    ManagedBy: 'CDK',
+  },
 });

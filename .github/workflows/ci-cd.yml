@@ -2,188 +2,292 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 env:
-  NODE_VERSION: '20.x'
+  NODE_VERSION: '20'
   AWS_REGION: 'us-east-1'
 
 jobs:
-  # Validate conventional commits
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run linter
+      run: npm run lint
+    
+    - name: Run tests
+      run: npm run test:run
+    
+    - name: Install infrastructure dependencies
+      run: |
+        cd infrastructure
+        npm ci
+    
+    - name: Build infrastructure
+      run: |
+        cd infrastructure
+        npm run build
+    
+    - name: Test infrastructure
+      run: |
+        cd infrastructure
+        npm run test
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run KICS Security Scan
+      uses: checkmarx/kics-github-action@v2.1.0
+      with:
+        path: '.'
+        output_path: 'kics-results'
+        output_formats: 'json,sarif'
+        exclude_paths: 'node_modules,dist,build'
+        fail_on: 'high,medium'
+    
+    - name: Upload KICS results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: kics-results
+        path: kics-results/
+
   validate-commits:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: Validate Conventional Commits
-        uses: wagoid/commitlint-action@v5
-        with:
-          configFile: '.commitlintrc.json'
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Validate commit messages
+      run: |
+        # Use commitlint-action approach but with error handling
+        echo "Validating commits in PR..."
+        
+        # Get the merge base to find the common ancestor
+        git fetch origin ${{ github.event.pull_request.base.ref }}
+        MERGE_BASE=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
+        
+        echo "Merge base: $MERGE_BASE"
+        echo "Current HEAD: $(git rev-parse HEAD)"
+        
+        # Get commits to validate
+        COMMITS=$(git rev-list --reverse $MERGE_BASE..HEAD)
+        
+        if [ -z "$COMMITS" ]; then
+          echo "No commits to validate"
+          exit 0
+        fi
+        
+        echo "Commits to validate:"
+        git log --oneline $MERGE_BASE..HEAD
+        
+        # Validate each commit message
+        for commit in $COMMITS; do
+          echo "Validating commit: $commit"
+          MESSAGE=$(git log --format="%s" -n 1 $commit)
+          echo "Message: $MESSAGE"
+          
+          # Use commitlint to validate
+          if ! echo "$MESSAGE" | npx commitlint --verbose; then
+            echo "❌ Commit validation failed for: $commit"
+            echo "Message: $MESSAGE"
+            exit 1
+          fi
+        done
+        
+        echo "✅ All commits validated successfully"
 
-  # Security and quality checks
-  security-and-quality:
+  deploy-development:
+    needs: [test, security-scan]
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Use Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          
-      - name: Install dependencies
-        run: npm ci
-        
-      - name: Run linting
-        run: npm run lint
-        
-      - name: Run tests with coverage
-        run: npm run test:coverage
-        
-      - name: KICS Security Scan
-        uses: checkmarx/kics-github-action@v1.7.0
-        with:
-          path: '.'
-          fail_on: high
-          output_formats: 'json,sarif'
-          output_path: 'kics-results'
-          
-      - name: Upload KICS results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'kics-results/results.sarif'
-
-  # Deploy to development environment
-  deploy-dev:
-    needs: [security-and-quality]
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    environment: development
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Use Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          
-      - name: Install dependencies
-        run: npm ci
-        
-      - name: Build application
-        run: npm run build
-        
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-          
-      - name: Install CDK dependencies
-        run: |
-          cd infrastructure
-          npm ci
-          
-      - name: CDK Bootstrap (if needed)
-        run: |
-          cd infrastructure
-          npx cdk bootstrap --context environment=development
-          
-      - name: Deploy to development
-        run: |
-          cd infrastructure
-          npx cdk deploy --all --require-approval never --context environment=development
-          
-      - name: Comment deployment status
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Install CDK
+      run: npm install -g aws-cdk
+    
+    - name: Install infrastructure dependencies
+      run: |
+        cd infrastructure
+        npm ci
+    
+    - name: Build infrastructure
+      run: |
+        cd infrastructure
+        npm run build
+    
+    - name: Bootstrap CDK (if needed)
+      run: |
+        cd infrastructure
+        npx cdk bootstrap --context environment=development
+    
+    - name: Deploy infrastructure to development
+      run: |
+        cd infrastructure
+        npx cdk deploy --context environment=development --require-approval never
+    
+    - name: Comment PR with deployment info
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          try {
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '🚀 **Development Environment Deployed Successfully!**\n\nYour changes are now live in the development environment and ready for testing.'
-            })
+              body: '🚀 **Development Environment Deployed**\n\nThe infrastructure has been successfully deployed to the development environment.\n\n- Stack: `ReportBuilderStack-development`\n- Region: `${{ env.AWS_REGION }}`\n- Commit: `${{ github.sha }}`'
+            });
+          } catch (error) {
+            console.log('Could not post comment to PR:', error.message);
+            console.log('Deployment was successful despite comment failure');
+          }
 
-  # Deploy to production environment
-  deploy-prod:
-    needs: [security-and-quality]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  deploy-production:
+    needs: [test, security-scan]
     runs-on: ubuntu-latest
-    environment: production
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Use Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          
-      - name: Install dependencies
-        run: npm ci
-        
-      - name: Build application
-        run: npm run build
-        
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-          
-      - name: Install CDK dependencies
-        run: |
-          cd infrastructure
-          npm ci
-          
-      - name: CDK Bootstrap (if needed)
-        run: |
-          cd infrastructure
-          npx cdk bootstrap --context environment=production
-          
-      - name: Deploy to production
-        run: |
-          cd infrastructure
-          npx cdk deploy --all --require-approval never --context environment=production
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Install CDK
+      run: npm install -g aws-cdk
+    
+    - name: Install infrastructure dependencies
+      run: |
+        cd infrastructure
+        npm ci
+    
+    - name: Build infrastructure
+      run: |
+        cd infrastructure
+        npm run build
+    
+    - name: Bootstrap CDK (if needed)
+      run: |
+        cd infrastructure
+        npx cdk bootstrap --context environment=production
+    
+    - name: Deploy infrastructure to production
+      run: |
+        cd infrastructure
+        npx cdk deploy --context environment=production --require-approval never
 
-  # Create release after successful production deployment
-  create-release:
-    needs: [deploy-prod]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  release:
+    needs: [deploy-production]
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          
-      - name: Get version from package.json
-        id: package-version
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Generate release version
+      id: version
+      run: |
+        # Get the latest tag
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "Latest tag: $LATEST_TAG"
         
-      - name: Create Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ steps.package-version.outputs.version }}
-          release_name: Release v${{ steps.package-version.outputs.version }}
-          body: |
-            ## Changes in this Release
-            - Deployed to production environment
-            - All security checks passed
-            - All tests passed
-            
-            **Deployment Status**: ✅ Successfully deployed to production
-          draft: false
-          prerelease: false 
+        # Extract version numbers
+        VERSION=${LATEST_TAG#v}
+        IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
+        MAJOR=${VERSION_PARTS[0]:-0}
+        MINOR=${VERSION_PARTS[1]:-0}
+        PATCH=${VERSION_PARTS[2]:-0}
+        
+        # Check commit messages for version bump type
+        COMMITS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+        
+        if echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?!:|^BREAKING CHANGE:|^.+!:"; then
+          # Major version bump for breaking changes
+          NEW_VERSION="$((MAJOR + 1)).0.0"
+        elif echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?:"; then
+          # Minor version bump for new features
+          NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+        else
+          # Patch version bump for fixes and other changes
+          NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+        fi
+        
+        echo "New version: v$NEW_VERSION"
+        echo "version=v$NEW_VERSION" >> $GITHUB_OUTPUT
+    
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        release_name: Release ${{ steps.version.outputs.version }}
+        body: |
+          ## Changes in this Release
+          
+          Infrastructure deployed to production environment.
+          
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.previous_version }}...${{ steps.version.outputs.version }}
+        draft: false
+        prerelease: false 

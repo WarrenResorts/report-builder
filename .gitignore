@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
 .pnpm-lock.yaml
 .npm
@@ -58,6 +57,7 @@ coverage/
 *.tsbuildinfo
 *.js
 !jest.config.js
+!.eslintrc.js
 *.d.ts
 
 # AWS
