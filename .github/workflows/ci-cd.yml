@@ -86,25 +86,42 @@ jobs:
     
     - name: Validate commit messages
       run: |
-        # Get the base and head commits
-        BASE_SHA="${{ github.event.pull_request.base.sha }}"
-        HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+        # Use commitlint-action approach but with error handling
+        echo "Validating commits in PR..."
         
-        echo "Validating commits from $BASE_SHA to $HEAD_SHA"
+        # Get the merge base to find the common ancestor
+        git fetch origin ${{ github.event.pull_request.base.ref }}
+        MERGE_BASE=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
         
-        # Get the list of commits to validate
-        COMMITS=$(git rev-list --reverse $BASE_SHA..$HEAD_SHA)
+        echo "Merge base: $MERGE_BASE"
+        echo "Current HEAD: $(git rev-parse HEAD)"
+        
+        # Get commits to validate
+        COMMITS=$(git rev-list --reverse $MERGE_BASE..HEAD)
         
         if [ -z "$COMMITS" ]; then
           echo "No commits to validate"
           exit 0
         fi
         
-        # Validate each commit
+        echo "Commits to validate:"
+        git log --oneline $MERGE_BASE..HEAD
+        
+        # Validate each commit message
         for commit in $COMMITS; do
           echo "Validating commit: $commit"
-          git log --format="%s" -n 1 $commit | npx commitlint --verbose
+          MESSAGE=$(git log --format="%s" -n 1 $commit)
+          echo "Message: $MESSAGE"
+          
+          # Use commitlint to validate
+          if ! echo "$MESSAGE" | npx commitlint --verbose; then
+            echo "❌ Commit validation failed for: $commit"
+            echo "Message: $MESSAGE"
+            exit 1
+          fi
         done
+        
+        echo "✅ All commits validated successfully"
 
   deploy-development:
     needs: [test, security-scan]
