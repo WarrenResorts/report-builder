@@ -57,6 +57,7 @@ coverage/
 *.tsbuildinfo
 *.js
 !jest.config.js
+!.eslintrc.js
 *.d.ts
 
 # AWS
