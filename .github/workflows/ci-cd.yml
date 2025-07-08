@@ -170,13 +170,19 @@ jobs:
       if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: '🚀 **Development Environment Deployed**\n\nThe infrastructure has been successfully deployed to the development environment.\n\n- Stack: `ReportBuilderStack-development`\n- Region: `${{ env.AWS_REGION }}`\n- Commit: `${{ github.sha }}`'
-          })
+          try {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀 **Development Environment Deployed**\n\nThe infrastructure has been successfully deployed to the development environment.\n\n- Stack: `ReportBuilderStack-development`\n- Region: `${{ env.AWS_REGION }}`\n- Commit: `${{ github.sha }}`'
+            });
+          } catch (error) {
+            console.log('Could not post comment to PR:', error.message);
+            console.log('Deployment was successful despite comment failure');
+          }
 
   deploy-production:
     needs: [test, security-scan]
