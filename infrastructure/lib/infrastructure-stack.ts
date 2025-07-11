@@ -20,10 +20,7 @@ export class InfrastructureStack extends cdk.Stack {
       bucketName: `report-builder-incoming-files-${environment}`,
       removalPolicy: environment === 'development' ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
       autoDeleteObjects: environment === 'development',
-      lifecycleRules: [{
-        id: 'DeleteOldFiles',
-        expiration: cdk.Duration.days(30),
-      }],
+      // No lifecycle rules - preserve source data indefinitely
     });
 
     const processedFilesBucket = new s3.Bucket(this, 'ProcessedFilesBucket', {
@@ -31,8 +28,8 @@ export class InfrastructureStack extends cdk.Stack {
       removalPolicy: environment === 'development' ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
       autoDeleteObjects: environment === 'development',
       lifecycleRules: [{
-        id: 'DeleteOldFiles',
-        expiration: cdk.Duration.days(30),
+        id: 'DeleteProcessedFiles',
+        expiration: cdk.Duration.days(7), // Quick cleanup since files can be regenerated
       }],
     });
 
