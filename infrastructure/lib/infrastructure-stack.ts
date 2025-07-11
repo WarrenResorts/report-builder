@@ -20,11 +20,9 @@ export class InfrastructureStack extends cdk.Stack {
       bucketName: `report-builder-incoming-files-${environment}`,
       removalPolicy: environment === 'development' ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
       autoDeleteObjects: environment === 'development',
-      versioned: true,
       lifecycleRules: [{
-        id: 'DeleteOldVersions',
-        expiration: cdk.Duration.days(90),
-        noncurrentVersionExpiration: cdk.Duration.days(30),
+        id: 'DeleteOldFiles',
+        expiration: cdk.Duration.days(30),
       }],
     });
 
@@ -32,19 +30,10 @@ export class InfrastructureStack extends cdk.Stack {
       bucketName: `report-builder-processed-files-${environment}`,
       removalPolicy: environment === 'development' ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
       autoDeleteObjects: environment === 'development',
-      versioned: true,
       lifecycleRules: [{
-        id: 'DeleteOldVersions',
-        expiration: cdk.Duration.days(90),
-        noncurrentVersionExpiration: cdk.Duration.days(30),
+        id: 'DeleteOldFiles',
+        expiration: cdk.Duration.days(30),
       }],
-    });
-
-    const mappingFilesBucket = new s3.Bucket(this, 'MappingFilesBucket', {
-      bucketName: `report-builder-mapping-files-${environment}`,
-      removalPolicy: environment === 'development' ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
-      autoDeleteObjects: environment === 'development',
-      versioned: true,
     });
 
     // SES Configuration for email handling
@@ -75,8 +64,6 @@ export class InfrastructureStack extends cdk.Stack {
                 `${incomingFilesBucket.bucketArn}/*`,
                 processedFilesBucket.bucketArn,
                 `${processedFilesBucket.bucketArn}/*`,
-                mappingFilesBucket.bucketArn,
-                `${mappingFilesBucket.bucketArn}/*`,
               ],
             }),
           ],
@@ -112,7 +99,7 @@ export class InfrastructureStack extends cdk.Stack {
         ENVIRONMENT: environment,
         INCOMING_BUCKET: incomingFilesBucket.bucketName,
         PROCESSED_BUCKET: processedFilesBucket.bucketName,
-        MAPPING_BUCKET: mappingFilesBucket.bucketName,
+        MAPPING_PREFIX: 'mapping-files/', // Mapping files stored in incoming bucket with prefix
       },
       timeout: cdk.Duration.minutes(5),
     });
@@ -133,7 +120,7 @@ export class InfrastructureStack extends cdk.Stack {
         ENVIRONMENT: environment,
         INCOMING_BUCKET: incomingFilesBucket.bucketName,
         PROCESSED_BUCKET: processedFilesBucket.bucketName,
-        MAPPING_BUCKET: mappingFilesBucket.bucketName,
+        MAPPING_PREFIX: 'mapping-files/', // Mapping files stored in incoming bucket with prefix
       },
       timeout: cdk.Duration.minutes(15), // File processing might take longer
     });
@@ -141,17 +128,12 @@ export class InfrastructureStack extends cdk.Stack {
     // CloudFormation outputs for reference
     new cdk.CfnOutput(this, 'IncomingBucketName', {
       value: incomingFilesBucket.bucketName,
-      description: 'S3 bucket for incoming files',
+      description: 'S3 bucket for incoming files and mapping files (mapping-files/ prefix)',
     });
 
     new cdk.CfnOutput(this, 'ProcessedBucketName', {
       value: processedFilesBucket.bucketName,
       description: 'S3 bucket for processed files',
-    });
-
-    new cdk.CfnOutput(this, 'MappingBucketName', {
-      value: mappingFilesBucket.bucketName,
-      description: 'S3 bucket for mapping files',
     });
 
     new cdk.CfnOutput(this, 'EmailProcessorLambdaArn', {
