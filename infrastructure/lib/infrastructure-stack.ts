@@ -4,6 +4,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ses from 'aws-cdk-lib/aws-ses';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 
 export interface InfrastructureStackProps extends cdk.StackProps {
   environment: 'development' | 'production';
@@ -37,6 +38,42 @@ export class InfrastructureStack extends cdk.Stack {
     // Note: Domain verification must be done manually in AWS Console first
     const sesConfigurationSet = new ses.ConfigurationSet(this, 'SESConfigurationSet', {
       configurationSetName: `report-builder-${environment}`,
+    });
+
+    // Parameter Store configuration - stores sensitive settings securely
+    const emailRecipientsParam = new ssm.StringParameter(this, 'EmailRecipientsParam', {
+      parameterName: `/report-builder/${environment}/email/recipients`,
+      stringValue: '', // Will be populated manually after deployment
+      description: 'Comma-separated list of email addresses to receive consolidated reports',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    const alertEmailParam = new ssm.StringParameter(this, 'AlertEmailParam', {
+      parameterName: `/report-builder/${environment}/email/alert-notifications`,
+      stringValue: '', // Will be populated manually after deployment
+      description: 'Email address for system alerts and error notifications',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    const fromEmailParam = new ssm.StringParameter(this, 'FromEmailParam', {
+      parameterName: `/report-builder/${environment}/email/from-address`,
+      stringValue: 'reports@warrenresorthotels.com',
+      description: 'Email address to use as sender for consolidated reports',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    const propertyMappingParam = new ssm.StringParameter(this, 'PropertyMappingParam', {
+      parameterName: `/report-builder/${environment}/properties/email-mapping`,
+      stringValue: '{}', // Will be populated manually after deployment
+      description: 'JSON mapping of sender email addresses to property information',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    const sesConfigParam = new ssm.StringParameter(this, 'SESConfigParam', {
+      parameterName: `/report-builder/${environment}/ses/configuration-set`,
+      stringValue: sesConfigurationSet.configurationSetName,
+      description: 'SES configuration set name for the current environment',
+      tier: ssm.ParameterTier.STANDARD,
     });
 
     // Lambda execution role with necessary permissions
@@ -74,6 +111,20 @@ export class InfrastructureStack extends cdk.Stack {
                 'ses:SendRawEmail',
               ],
               resources: ['*'], // SES doesn't support resource-level permissions
+            }),
+          ],
+        }),
+        ParameterStoreAccess: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: [
+                'ssm:GetParameter',
+                'ssm:GetParameters',
+              ],
+              resources: [
+                `arn:aws:ssm:${this.region}:${this.account}:parameter/report-builder/${environment}/*`,
+              ],
             }),
           ],
         }),
@@ -146,6 +197,22 @@ export class InfrastructureStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'SESConfigurationSetName', {
       value: sesConfigurationSet.configurationSetName,
       description: 'SES configuration set name',
+    });
+
+    // Parameter Store outputs for reference
+    new cdk.CfnOutput(this, 'EmailRecipientsParameterName', {
+      value: emailRecipientsParam.parameterName,
+      description: 'Parameter Store name for email recipients configuration',
+    });
+
+    new cdk.CfnOutput(this, 'AlertEmailParameterName', {
+      value: alertEmailParam.parameterName,
+      description: 'Parameter Store name for alert email configuration',
+    });
+
+    new cdk.CfnOutput(this, 'PropertyMappingParameterName', {
+      value: propertyMappingParam.parameterName,
+      description: 'Parameter Store name for property mapping configuration',
     });
   }
 }
