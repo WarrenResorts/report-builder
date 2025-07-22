@@ -5,7 +5,8 @@ import { ParameterStoreConfig } from './parameter-store';
 vi.mock('./environment', () => ({
   environment: {
     environment: 'test',
-    awsRegion: 'us-east-1'
+    awsRegion: 'us-east-1',
+    awsAccount: ''
   }
 }));
 
@@ -136,8 +137,8 @@ describe('ParameterStoreConfig', () => {
   describe('getPropertyMapping', () => {
     it('should return parsed JSON mapping', async () => {
       const mockMapping = {
-        'property1@example.com': { id: 1, name: 'Property One' },
-        'property2@example.com': { id: 2, name: 'Property Two' }
+        'property1@example.com': 'property-1',
+        'property2@example.com': 'property-2'
       };
 
       mockSSMClient.send.mockResolvedValue({

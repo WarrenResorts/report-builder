@@ -33,4 +33,20 @@ describe('Environment Configuration', () => {
       process.env.AWS_REGION = originalRegion;
     }
   });
+
+  it('should default to development when NODE_ENV is not set', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    delete process.env.NODE_ENV;
+    
+    // Re-import to get fresh config
+    vi.resetModules();
+    const { config: freshConfig } = await import('./environment');
+    
+    expect(freshConfig.environment).toBe('development');
+    
+    // Restore original value
+    if (originalNodeEnv) {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
 }); 

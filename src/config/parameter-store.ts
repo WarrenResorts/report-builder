@@ -180,10 +180,7 @@ export class ParameterStoreConfig {
  * Property mapping configuration interface
  */
 export interface PropertyMappingConfig {
-  [senderEmail: string]: {
-    id: number;
-    name: string;
-  };
+  [senderEmail: string]: string; // Maps sender email to property ID
 }
 
 /**

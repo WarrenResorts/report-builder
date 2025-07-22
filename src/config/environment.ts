@@ -19,4 +19,7 @@ const getEnvironmentConfig = (): EnvironmentConfig => {
   };
 };
 
-export const config = getEnvironmentConfig(); 
+export const config = getEnvironmentConfig();
+
+// Backward compatibility alias
+export const environment = config; 
