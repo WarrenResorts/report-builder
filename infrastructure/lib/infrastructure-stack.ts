@@ -4,6 +4,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ses from 'aws-cdk-lib/aws-ses';
 import * as sesActions from 'aws-cdk-lib/aws-ses-actions';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as events from 'aws-cdk-lib/aws-events';
@@ -18,7 +19,7 @@ export class InfrastructureStack extends cdk.Stack {
     super(scope, id, props);
 
     const { environment } = props;
-    const domainName = 'warrenresorthotels.com';
+    const domainName = 'aws.warrenresorthotels.com';
     const emailAddress = `reports@${domainName}`;
 
     // S3 Buckets for file storage - import existing buckets
@@ -106,34 +107,15 @@ export class InfrastructureStack extends cdk.Stack {
     });
 
     // Email processing Lambda function
-    const emailProcessorLambda = new lambda.Function(this, 'EmailProcessorLambda', {
+    const emailProcessorLambda = new lambdaNodejs.NodejsFunction(this, 'EmailProcessorLambda', {
       functionName: `report-builder-email-processor-${environment}`,
+      entry: '../src/lambda/email-processor.ts',
+      handler: 'handler',
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'index.handler',
-      code: lambda.Code.fromInline(`
-        exports.handler = async (event) => {
-          console.log('Email processor triggered:', JSON.stringify(event, null, 2));
-          
-          // Extract email data from SES event
-          const sesEvent = event.Records[0].ses;
-          const messageId = sesEvent.mail.messageId;
-          const timestamp = sesEvent.mail.timestamp;
-          const source = sesEvent.mail.source;
-          
-          console.log('Processing email:', {
-            messageId,
-            timestamp,
-            source,
-            bucketName: process.env.INCOMING_BUCKET
-          });
-          
-          return { statusCode: 200, body: 'Email processed successfully' };
-        };
-      `),
       role: lambdaExecutionRole,
       environment: {
         ENVIRONMENT: environment,
-        INCOMING_BUCKET: incomingFilesBucket.bucketName,
+        INCOMING_FILES_BUCKET: incomingFilesBucket.bucketName,
         PROCESSED_BUCKET: processedFilesBucket.bucketName,
         MAPPING_PREFIX: 'mapping-files/',
       },

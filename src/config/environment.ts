@@ -1,8 +1,3 @@
-import * as dotenv from 'dotenv';
-
-// Load environment variables from .env file
-dotenv.config();
-
 export interface EnvironmentConfig {
   environment: 'development' | 'production' | 'test';
   awsRegion: string;

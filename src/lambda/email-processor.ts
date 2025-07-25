@@ -198,7 +198,7 @@ export class EmailProcessor {
     const metadata = {
       messageId: sesMessage.messageId,
       from: parsedEmail.from?.text,
-      to: parsedEmail.to?.text,
+      to: Array.isArray(parsedEmail.to) ? parsedEmail.to.map(addr => addr.text).join(', ') : parsedEmail.to?.text,
       subject: parsedEmail.subject,
       date: parsedEmail.date?.toISOString(),
       attachmentCount: attachmentPaths.length,
