@@ -1,5 +1,6 @@
 import { SSMClient, GetParameterCommand, GetParametersCommand } from '@aws-sdk/client-ssm';
 import { environment } from './environment';
+import { PropertyMappingConfig, EmailConfiguration } from '../types/parameter-store';
 
 /**
  * Configuration service for retrieving settings from AWS Parameter Store
@@ -174,23 +175,6 @@ export class ParameterStoreConfig {
   clearCache(): void {
     this.cache.clear();
   }
-}
-
-/**
- * Property mapping configuration interface
- */
-export interface PropertyMappingConfig {
-  [senderEmail: string]: string; // Maps sender email to property ID
-}
-
-/**
- * Complete email configuration interface
- */
-export interface EmailConfiguration {
-  recipients: string[];
-  alertEmail: string;
-  fromEmail: string;
-  sesConfigurationSet: string;
 }
 
 /**

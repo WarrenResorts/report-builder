@@ -3,12 +3,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { simpleParser, ParsedMail, Attachment } from 'mailparser';
 import { ParameterStoreConfig } from '../config/parameter-store';
 import { environment } from '../config/environment';
-
-interface EmailProcessorResult {
-  statusCode: number;
-  body: string;
-  processedAttachments: string[];
-}
+import { EmailProcessorResult } from '../types/lambda';
 
 export class EmailProcessor {
   private s3Client: S3Client;
