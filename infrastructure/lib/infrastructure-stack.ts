@@ -22,18 +22,62 @@ export class InfrastructureStack extends cdk.Stack {
     const domainName = 'aws.warrenresorthotels.com';
     const emailAddress = `reports@${domainName}`;
 
-    // S3 Buckets for file storage - import existing buckets
-    const incomingFilesBucket = s3.Bucket.fromBucketName(
-      this, 
-      'IncomingFilesBucket', 
-      `report-builder-incoming-files-${environment}`
-    );
+    // S3 Buckets for file storage - create buckets with proper configuration
+    const incomingFilesBucket = new s3.Bucket(this, 'IncomingFilesBucket', {
+      bucketName: `report-builder-incoming-files-${environment}`,
+      versioned: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: environment === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      lifecycleRules: [
+        {
+          id: 'DeleteOldRawEmails',
+          enabled: true,
+          prefix: 'raw-emails/',
+          expiration: cdk.Duration.days(90), // Keep raw emails for 90 days
+        },
+        {
+          id: 'TransitionDailyFiles',
+          enabled: true,
+          prefix: 'daily-files/',
+          transitions: [
+            {
+              storageClass: s3.StorageClass.INFREQUENT_ACCESS,
+              transitionAfter: cdk.Duration.days(30),
+            },
+          ],
+        },
+      ],
+    });
 
-    const processedFilesBucket = s3.Bucket.fromBucketName(
-      this, 
-      'ProcessedFilesBucket', 
-      `report-builder-processed-files-${environment}`
-    );
+    const processedFilesBucket = new s3.Bucket(this, 'ProcessedFilesBucket', {
+      bucketName: `report-builder-processed-files-${environment}`,
+      versioned: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: environment === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      lifecycleRules: [
+        {
+          id: 'TransitionProcessedFiles',
+          enabled: true,
+          transitions: [
+            {
+              storageClass: s3.StorageClass.INFREQUENT_ACCESS,
+              transitionAfter: cdk.Duration.days(90),
+            },
+            {
+              storageClass: s3.StorageClass.GLACIER,
+              transitionAfter: cdk.Duration.days(365),
+            },
+          ],
+        },
+      ],
+    });
+
+    const mappingFilesBucket = new s3.Bucket(this, 'MappingFilesBucket', {
+      bucketName: `report-builder-mapping-files-${environment}`,
+      versioned: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: environment === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    });
 
     // SES Configuration for email handling
     const sesConfigurationSet = new ses.ConfigurationSet(this, 'SESConfigurationSet', {
@@ -73,6 +117,8 @@ export class InfrastructureStack extends cdk.Stack {
                 `${incomingFilesBucket.bucketArn}/*`,
                 processedFilesBucket.bucketArn,
                 `${processedFilesBucket.bucketArn}/*`,
+                mappingFilesBucket.bucketArn,
+                `${mappingFilesBucket.bucketArn}/*`,
               ],
             }),
           ],
@@ -117,6 +163,7 @@ export class InfrastructureStack extends cdk.Stack {
         ENVIRONMENT: environment,
         INCOMING_FILES_BUCKET: incomingFilesBucket.bucketName,
         PROCESSED_BUCKET: processedFilesBucket.bucketName,
+        MAPPING_FILES_BUCKET: mappingFilesBucket.bucketName,
         MAPPING_PREFIX: 'mapping-files/',
       },
       timeout: cdk.Duration.minutes(5),
@@ -186,6 +233,7 @@ export class InfrastructureStack extends cdk.Stack {
         ENVIRONMENT: environment,
         INCOMING_BUCKET: incomingFilesBucket.bucketName,
         PROCESSED_BUCKET: processedFilesBucket.bucketName,
+        MAPPING_FILES_BUCKET: mappingFilesBucket.bucketName,
         MAPPING_PREFIX: 'mapping-files/',
       },
       timeout: cdk.Duration.minutes(15), // File processing might take longer
@@ -243,6 +291,11 @@ export class InfrastructureStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ProcessedBucketName', {
       value: processedFilesBucket.bucketName,
       description: 'S3 bucket for processed files',
+    });
+
+    new cdk.CfnOutput(this, 'MappingFilesBucketName', {
+      value: mappingFilesBucket.bucketName,
+      description: 'S3 bucket for mapping files (Excel mapping configurations)',
     });
 
     new cdk.CfnOutput(this, 'EmailProcessorLambdaArn', {
