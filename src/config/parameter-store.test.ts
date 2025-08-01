@@ -3,7 +3,7 @@ import { ParameterStoreConfig } from './parameter-store';
 
 // Mock the environment first
 vi.mock('./environment', () => ({
-  environment: {
+  environmentConfig: {
     environment: 'test',
     awsRegion: 'us-east-1',
     awsAccount: ''

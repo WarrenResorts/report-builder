@@ -1,20 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
-import { config } from './environment';
+import { environmentConfig } from './environment';
 
 describe('Environment Configuration', () => {
   it('should have default values', () => {
-    expect(config.environment).toBeDefined();
-    expect(config.awsRegion).toBeDefined();
-    expect(config.awsAccount).toBeDefined();
+    expect(environmentConfig.environment).toBeDefined();
+    expect(environmentConfig.awsRegion).toBeDefined();
+    expect(environmentConfig.awsAccount).toBeDefined();
   });
 
   it('should use NODE_ENV from environment', () => {
     // Vitest sets NODE_ENV to 'test' by default
-    expect(config.environment).toBe('test');
+    expect(environmentConfig.environment).toBe('test');
   });
 
   it('should have default AWS region', () => {
-    expect(config.awsRegion).toBe('us-east-1');
+    expect(environmentConfig.awsRegion).toBe('us-east-1');
   });
 
   it('should handle missing AWS_REGION environment variable', async () => {
@@ -24,7 +24,7 @@ describe('Environment Configuration', () => {
     
     // Re-import to get fresh config
     vi.resetModules();
-    const { config: freshConfig } = await import('./environment');
+    const { environmentConfig: freshConfig } = await import('./environment');
     
     expect(freshConfig.awsRegion).toBe('us-east-1');
     
@@ -40,7 +40,7 @@ describe('Environment Configuration', () => {
     
     // Re-import to get fresh config
     vi.resetModules();
-    const { config: freshConfig } = await import('./environment');
+    const { environmentConfig: freshConfig } = await import('./environment');
     
     expect(freshConfig.environment).toBe('development');
     

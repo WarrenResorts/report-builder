@@ -10,7 +10,7 @@ vi.mock('@aws-sdk/client-s3');
 vi.mock('mailparser');
 vi.mock('../config/parameter-store');
 vi.mock('../config/environment', () => ({
-  environment: {
+  environmentConfig: {
     environment: 'test',
     awsRegion: 'us-east-1',
     awsAccount: ''

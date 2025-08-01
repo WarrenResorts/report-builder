@@ -1,5 +1,5 @@
 import { SSMClient, GetParameterCommand, GetParametersCommand } from '@aws-sdk/client-ssm';
-import { environment } from './environment';
+import { environmentConfig } from './environment';
 import { PropertyMappingConfig, EmailConfiguration } from '../types/parameter-store';
 
 /**
@@ -12,7 +12,7 @@ export class ParameterStoreConfig {
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
 
   constructor() {
-    this.ssmClient = new SSMClient({ region: environment.awsRegion });
+    this.ssmClient = new SSMClient({ region: environmentConfig.awsRegion });
   }
 
   /**
@@ -20,7 +20,7 @@ export class ParameterStoreConfig {
    * @returns Array of email addresses to receive daily reports
    */
   async getReportRecipients(): Promise<string[]> {
-    const paramName = `/report-builder/${environment.environment}/email/recipients`;
+    const paramName = `/report-builder/${environmentConfig.environment}/email/recipients`;
     const value = await this.getParameter(paramName);
     
     // Parameter Store StringList returns comma-separated values
@@ -32,7 +32,7 @@ export class ParameterStoreConfig {
    * @returns Email address for system alerts and error notifications
    */
   async getAlertNotificationEmail(): Promise<string> {
-    const paramName = `/report-builder/${environment.environment}/email/alert-notifications`;
+    const paramName = `/report-builder/${environmentConfig.environment}/email/alert-notifications`;
     const value = await this.getParameter(paramName);
     return value || 'alerts@warrenresorthotels.com'; // fallback
   }
@@ -42,7 +42,7 @@ export class ParameterStoreConfig {
    * @returns Email address to use as sender for consolidated reports
    */
   async getFromEmailAddress(): Promise<string> {
-    const paramName = `/report-builder/${environment.environment}/email/from-address`;
+    const paramName = `/report-builder/${environmentConfig.environment}/email/from-address`;
     const value = await this.getParameter(paramName);
     return value || 'reports@warrenresorthotels.com'; // fallback
   }
@@ -52,7 +52,7 @@ export class ParameterStoreConfig {
    * @returns Mapping of sender email addresses to property information
    */
   async getPropertyMapping(): Promise<PropertyMappingConfig> {
-    const paramName = `/report-builder/${environment.environment}/properties/email-mapping`;
+    const paramName = `/report-builder/${environmentConfig.environment}/properties/email-mapping`;
     const value = await this.getParameter(paramName);
     
     try {
@@ -68,9 +68,9 @@ export class ParameterStoreConfig {
    * @returns SES configuration set name for the current environment
    */
   async getSESConfigurationSet(): Promise<string> {
-    const paramName = `/report-builder/${environment.environment}/ses/configuration-set`;
+    const paramName = `/report-builder/${environmentConfig.environment}/ses/configuration-set`;
     const value = await this.getParameter(paramName);
-    return value || `report-builder-${environment.environment}`;
+    return value || `report-builder-${environmentConfig.environment}`;
   }
 
   /**
@@ -79,21 +79,19 @@ export class ParameterStoreConfig {
    */
   async getEmailConfiguration(): Promise<EmailConfiguration> {
     const paramNames = [
-      `/report-builder/${environment.environment}/email/recipients`,
-      `/report-builder/${environment.environment}/email/alert-notifications`,
-      `/report-builder/${environment.environment}/email/from-address`,
-      `/report-builder/${environment.environment}/ses/configuration-set`
+      `/report-builder/${environmentConfig.environment}/email/recipients`,
+      `/report-builder/${environmentConfig.environment}/email/alert-notifications`,
+      `/report-builder/${environmentConfig.environment}/email/from-address`,
+      `/report-builder/${environmentConfig.environment}/ses/configuration-set`
     ];
 
     const parameters = await this.getParameters(paramNames);
     
     return {
-      recipients: parameters[paramNames[0]] 
-        ? parameters[paramNames[0]].split(',').map((email: string) => email.trim())
-        : [],
+      recipients: parameters[paramNames[0]] ? parameters[paramNames[0]].split(',').map((email: string) => email.trim()) : [],
       alertEmail: parameters[paramNames[1]] || 'alerts@warrenresorthotels.com',
       fromEmail: parameters[paramNames[2]] || 'reports@warrenresorthotels.com',
-      sesConfigurationSet: parameters[paramNames[3]] || `report-builder-${environment.environment}`
+      sesConfigurationSet: parameters[paramNames[3]] || `report-builder-${environmentConfig.environment}`
     };
   }
 

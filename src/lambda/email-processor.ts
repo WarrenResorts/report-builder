@@ -2,7 +2,7 @@ import { SESEvent, SESMail, Context } from 'aws-lambda';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { simpleParser, ParsedMail, Attachment } from 'mailparser';
 import { ParameterStoreConfig } from '../config/parameter-store';
-import { environment } from '../config/environment';
+import { environmentConfig } from '../config/environment';
 import { EmailProcessorResult } from '../types/lambda';
 
 /**
@@ -33,7 +33,7 @@ export class EmailProcessor {
    * Sets up S3 client with appropriate region and retrieves bucket configuration.
    */
   constructor() {
-    this.s3Client = new S3Client({ region: process.env.AWS_REGION || environment.awsRegion || 'us-east-1' });
+    this.s3Client = new S3Client({ region: process.env.AWS_REGION || environmentConfig.awsRegion || 'us-east-1' });
     this.parameterStore = new ParameterStoreConfig();
     this.incomingBucket = process.env.INCOMING_FILES_BUCKET || '';
   }
