@@ -414,6 +414,245 @@ describe('EmailProcessor', () => {
       expect(result.statusCode).toBe(200);
       expect(result.processedAttachments[0]).toMatch(/daily-files\/unknown-property\/\d{4}-\d{2}-\d{2}\/report\.pdf/);
     });
+
+    it('should handle email with undefined sender gracefully', async () => {
+      // Mock SES event
+      const sesEvent: SESEvent = {
+        Records: [{
+          eventSource: 'aws:ses',
+          eventVersion: '1.0',
+          ses: {
+            mail: {
+              messageId: 'test-message-id-undefined-sender',
+              timestamp: '2024-01-01T12:00:00.000Z',
+              source: 'sender@example.com',
+              destination: ['reports@warrenresorthotels.com'],
+              commonHeaders: {
+                from: ['sender@example.com'],
+                to: ['reports@warrenresorthotels.com'],
+                subject: 'Daily Report'
+              }
+            } as SESMail,
+            receipt: {
+              recipients: ['reports@warrenresorthotels.com'],
+              timestamp: '2024-01-01T12:00:00.000Z',
+              processingTimeMillis: 100,
+              spamVerdict: { status: 'PASS' },
+              virusVerdict: { status: 'PASS' },
+              spfVerdict: { status: 'PASS' },
+              dkimVerdict: { status: 'PASS' },
+              dmarcVerdict: { status: 'PASS' },
+              action: {
+                type: 'S3',
+                bucketName: 'test-bucket',
+                objectKey: 'raw-emails/test-message-id-undefined-sender'
+              }
+            }
+          }
+        }]
+      };
+
+      // Mock S3 raw email retrieval
+      const mockEmailContent = Buffer.from('Email content');
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToWebStream: () => ({
+            getReader: () => ({
+              read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: mockEmailContent })
+                .mockResolvedValueOnce({ done: true })
+            })
+          })
+        }
+      });
+
+      // Mock parsed email with undefined from field
+      const mockParsedEmail = {
+        from: undefined, // This will trigger the 'unknown-sender' fallback
+        to: { text: 'reports@warrenresorthotels.com' },
+        subject: 'Daily Report',
+        date: new Date('2024-01-01T12:00:00.000Z'),
+        attachments: [{
+          filename: 'report.pdf',
+          contentType: 'application/pdf',
+          content: Buffer.from('PDF content')
+        }]
+      };
+      
+      (simpleParser as Mock).mockResolvedValue(mockParsedEmail);
+      mockParameterStore.getPropertyMapping.mockResolvedValue({});
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(sesEvent);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedAttachments[0]).toMatch(/daily-files\/unknown-property\/\d{4}-\d{2}-\d{2}\/report\.pdf/);
+    });
+
+    it('should handle attachment with undefined filename', async () => {
+      // Mock SES event
+      const sesEvent: SESEvent = {
+        Records: [{
+          eventSource: 'aws:ses',
+          eventVersion: '1.0',
+          ses: {
+            mail: {
+              messageId: 'test-message-id-undefined-filename',
+              timestamp: '2024-01-01T12:00:00.000Z',
+              source: 'sender@example.com',
+              destination: ['reports@warrenresorthotels.com']
+            } as SESMail,
+            receipt: {
+              recipients: ['reports@warrenresorthotels.com'],
+              timestamp: '2024-01-01T12:00:00.000Z',
+              processingTimeMillis: 100,
+              spamVerdict: { status: 'PASS' },
+              virusVerdict: { status: 'PASS' },
+              spfVerdict: { status: 'PASS' },
+              dkimVerdict: { status: 'PASS' },
+              dmarcVerdict: { status: 'PASS' },
+              action: {
+                type: 'S3',
+                bucketName: 'test-bucket',
+                objectKey: 'raw-emails/test-message-id-undefined-filename'
+              }
+            }
+          }
+        }]
+      };
+
+      // Mock S3 raw email retrieval
+      const mockEmailContent = Buffer.from('Email content');
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToWebStream: () => ({
+            getReader: () => ({
+              read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: mockEmailContent })
+                .mockResolvedValueOnce({ done: true })
+            })
+          })
+        }
+      });
+
+      // Mock parsed email with attachment that has filename as null but contentType suggests PDF
+      const mockParsedEmail = {
+        from: { text: 'sender@example.com' },
+        to: { text: 'reports@warrenresorthotels.com' },
+        subject: 'Daily Report',
+        date: new Date('2024-01-01T12:00:00.000Z'),
+        attachments: [{
+          filename: 'document.pdf', // Valid filename first, then we'll simulate it becoming undefined
+          contentType: 'application/pdf',
+          content: Buffer.from('PDF content')
+        }]
+      };
+      
+      // Modify the attachment to have undefined filename after validation but before processing
+      const attachment = mockParsedEmail.attachments[0];
+      Object.defineProperty(attachment, 'filename', {
+        get: () => undefined,
+        configurable: true
+      });
+      
+      (simpleParser as Mock).mockResolvedValue(mockParsedEmail);
+      mockParameterStore.getPropertyMapping.mockResolvedValue({
+        'sender@example.com': 'property-1'
+      });
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(sesEvent);
+
+      expect(result.statusCode).toBe(200);
+      // This attachment will be filtered out due to no filename
+      expect(result.processedAttachments).toHaveLength(0);
+    });
+
+    it('should handle email with array of recipients', async () => {
+      // Mock SES event
+      const sesEvent: SESEvent = {
+        Records: [{
+          eventSource: 'aws:ses',
+          eventVersion: '1.0',
+          ses: {
+            mail: {
+              messageId: 'test-message-id-array-recipients',
+              timestamp: '2024-01-01T12:00:00.000Z',
+              source: 'sender@example.com',
+              destination: ['reports@warrenresorthotels.com', 'backup@warrenresorthotels.com']
+            } as SESMail,
+            receipt: {
+              recipients: ['reports@warrenresorthotels.com', 'backup@warrenresorthotels.com'],
+              timestamp: '2024-01-01T12:00:00.000Z',
+              processingTimeMillis: 100,
+              action: {
+                type: 'S3',
+                bucketName: 'test-bucket',
+                objectKey: 'raw-emails/test-message-id-array-recipients'
+              }
+            }
+          }
+        }]
+      };
+
+      // Mock S3 raw email retrieval
+      const mockEmailContent = Buffer.from('Email content');
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToWebStream: () => ({
+            getReader: () => ({
+              read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: mockEmailContent })
+                .mockResolvedValueOnce({ done: true })
+            })
+          })
+        }
+      });
+
+      // Mock parsed email with array of recipients
+      const mockParsedEmail = {
+        from: { text: 'sender@example.com' },
+        to: [
+          { text: 'reports@warrenresorthotels.com' },
+          { text: 'backup@warrenresorthotels.com' }
+        ], // This will trigger the Array.isArray branch
+        subject: 'Daily Report',
+        date: new Date('2024-01-01T12:00:00.000Z'),
+        attachments: [{
+          filename: 'report.pdf',
+          contentType: 'application/pdf',
+          content: Buffer.from('PDF content')
+        }]
+      };
+      
+      (simpleParser as Mock).mockResolvedValue(mockParsedEmail);
+      mockParameterStore.getPropertyMapping.mockResolvedValue({
+        'sender@example.com': 'property-1'
+      });
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(sesEvent);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedAttachments).toHaveLength(1);
+    });
+
+    it('should handle missing AWS_REGION environment variable', async () => {
+      // Clear environment variables to test fallback
+      const originalRegion = process.env.AWS_REGION;
+      delete process.env.AWS_REGION;
+      
+      try {
+        // Create new processor instance to test constructor fallback
+        const testProcessor = new EmailProcessor();
+        expect(testProcessor).toBeDefined();
+      } finally {
+        // Restore original environment variable
+        if (originalRegion) {
+          process.env.AWS_REGION = originalRegion;
+        }
+      }
+    });
   });
 
   describe('sanitizeFilename', () => {
