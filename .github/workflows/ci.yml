@@ -113,11 +113,11 @@ jobs:
           path: '.'
           output_path: 'kics-results'
           platform_type: 'cloudformation'
-          exclude_paths: 'node_modules,dist,coverage'
+          exclude_paths: 'node_modules,dist,coverage,docs'
         continue-on-error: true
 
       - name: Upload KICS results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: kics-results
