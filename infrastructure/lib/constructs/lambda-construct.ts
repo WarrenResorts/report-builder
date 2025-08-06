@@ -171,7 +171,7 @@ export class LambdaConstruct extends Construct {
       functionName: `${config.naming.projectPrefix}${config.naming.separator}email-processor${config.naming.separator}${environment}`,
       description: 'Processes incoming emails and extracts attachments for the Report Builder',
       runtime: lambda.Runtime.NODEJS_20_X,
-      entry: '../src/lambda/email-processor.ts',
+      entry: require.resolve('../../../src/lambda/email-processor.ts'),
       handler: 'handler',
       role: this.emailProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.emailProcessor.timeoutMinutes),
@@ -204,7 +204,7 @@ export class LambdaConstruct extends Construct {
       functionName: `${config.naming.projectPrefix}${config.naming.separator}file-processor${config.naming.separator}${environment}`,
       description: 'Processes and transforms files for the Report Builder application',
       runtime: lambda.Runtime.NODEJS_20_X,
-      entry: '../src/lambda/file-processor.ts', // This file doesn't exist yet, but will be created later
+      entry: require.resolve('../../../src/lambda/file-processor.ts'),
       handler: 'handler',
       role: this.fileProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.fileProcessor.timeoutMinutes),
