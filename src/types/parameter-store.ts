@@ -19,4 +19,4 @@ export interface EmailConfiguration {
   alertEmail: string;
   fromEmail: string;
   sesConfigurationSet: string;
-} 
+}

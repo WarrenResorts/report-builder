@@ -9,4 +9,4 @@ export interface EmailProcessorResult {
   statusCode: number;
   body: string;
   processedAttachments: string[];
-} 
+}

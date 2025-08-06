@@ -13,10 +13,10 @@ export interface LogContext {
 }
 
 export enum LogLevel {
-  DEBUG = 'DEBUG',
-  INFO = 'INFO',
-  WARN = 'WARN',
-  ERROR = 'ERROR',
+  DEBUG = "DEBUG",
+  INFO = "INFO",
+  WARN = "WARN",
+  ERROR = "ERROR",
 }
 
 /**
@@ -26,7 +26,10 @@ export class Logger {
   private readonly serviceName: string;
   private readonly defaultContext: LogContext;
 
-  constructor(serviceName: string = 'EmailProcessor', defaultContext: LogContext = {}) {
+  constructor(
+    serviceName: string = "EmailProcessor",
+    defaultContext: LogContext = {},
+  ) {
     this.serviceName = serviceName;
     this.defaultContext = defaultContext;
   }
@@ -35,7 +38,10 @@ export class Logger {
    * Creates a child logger with additional default context
    */
   child(additionalContext: LogContext): Logger {
-    return new Logger(this.serviceName, { ...this.defaultContext, ...additionalContext });
+    return new Logger(this.serviceName, {
+      ...this.defaultContext,
+      ...additionalContext,
+    });
   }
 
   /**
@@ -63,21 +69,27 @@ export class Logger {
    * Logs an error message
    */
   error(message: string, error?: Error, context: LogContext = {}): void {
-    const errorContext = error ? {
-      error: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      }
-    } : {};
-    
+    const errorContext = error
+      ? {
+          error: {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+          },
+        }
+      : {};
+
     this.log(LogLevel.ERROR, message, { ...context, ...errorContext });
   }
 
   /**
    * Core logging method that outputs structured JSON logs
    */
-  private log(level: LogLevel, message: string, context: LogContext = {}): void {
+  private log(
+    level: LogLevel,
+    message: string,
+    context: LogContext = {},
+  ): void {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level,
@@ -112,11 +124,14 @@ export class Logger {
 /**
  * Default logger instance for the email processor
  */
-export const logger = new Logger('EmailProcessor');
+export const logger = new Logger("EmailProcessor");
 
 /**
  * Creates a logger with correlation ID context
  */
-export function createCorrelatedLogger(correlationId: string, additionalContext: LogContext = {}): Logger {
+export function createCorrelatedLogger(
+  correlationId: string,
+  additionalContext: LogContext = {},
+): Logger {
   return logger.child({ correlationId, ...additionalContext });
-} 
+}

@@ -1,31 +1,35 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { SESEvent, SESMail, Context } from 'aws-lambda';
-import { simpleParser, ParsedMail, Attachment } from 'mailparser';
-import { ParameterStoreConfig } from '../config/parameter-store';
-import { environmentConfig } from '../config/environment';
-import { EmailProcessorResult } from '../types/lambda';
-import { 
+import {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
+import { SESEvent, SESMail, Context } from "aws-lambda";
+import { simpleParser, ParsedMail, Attachment } from "mailparser";
+import { ParameterStoreConfig } from "../config/parameter-store";
+import { environmentConfig } from "../config/environment";
+import { EmailProcessorResult } from "../types/lambda";
+import {
   generateCorrelationId,
   EmailRetrievalError,
   EmailParsingError,
   AttachmentProcessingError,
   S3StorageError,
   ConfigurationError,
-} from '../types/errors';
-import { createCorrelatedLogger } from '../utils/logger';
-import { retryS3Operation, retryParameterStoreOperation } from '../utils/retry';
+} from "../types/errors";
+import { createCorrelatedLogger } from "../utils/logger";
+import { retryS3Operation, retryParameterStoreOperation } from "../utils/retry";
 
 /**
  * EmailProcessor handles incoming emails from Amazon SES, extracts attachments,
  * and stores them in S3 with proper organization by property and date.
- * 
+ *
  * This class is the core of the report processing system, responsible for:
  * - Retrieving raw emails from S3 (stored by SES)
  * - Parsing email content and extractments
  * - Filtering valid attachment types (PDF, CSV, TXT, XLSX, XLS)
  * - Organizing files by property ID and date
  * - Storing email metadata for tracking and debugging
- * 
+ *
  * @example
  * ```typescript
  * const processor = new EmailProcessor();
@@ -43,32 +47,35 @@ export class EmailProcessor {
    * Sets up S3 client with appropriate region and retrieves bucket configuration.
    */
   constructor() {
-    this.s3Client = new S3Client({ region: process.env.AWS_REGION || environmentConfig.awsRegion || 'us-east-1' });
+    this.s3Client = new S3Client({
+      region:
+        process.env.AWS_REGION || environmentConfig.awsRegion || "us-east-1",
+    });
     this.parameterStore = new ParameterStoreConfig();
-    this.incomingBucket = process.env.INCOMING_FILES_BUCKET || '';
+    this.incomingBucket = process.env.INCOMING_FILES_BUCKET || "";
 
     // Validate required configuration
     if (!this.incomingBucket) {
       throw new ConfigurationError(
-        'INCOMING_FILES_BUCKET environment variable is required',
+        "INCOMING_FILES_BUCKET environment variable is required",
         generateCorrelationId(),
-        'INCOMING_FILES_BUCKET'
+        "INCOMING_FILES_BUCKET",
       );
     }
   }
 
   /**
    * Processes one or more SES email events, extracting and storing attachments.
-   * 
+   *
    * This is the main entry point for email processing. It handles multiple email
    * records in a single SES event, processes each email's attachments, and stores
    * them in the appropriate S3 location based on property mapping and date.
-   * 
+   *
    * @param sesEvent - The SES event containing one or more email records
    * @returns Promise resolving to processing result with status and attachment info
-   * 
+   *
    * @throws {Error} When email retrieval, parsing, or S3 operations fail
-   * 
+   *
    * @example
    * ```typescript
    * const result = await processor.processEmail(sesEvent);
@@ -82,89 +89,109 @@ export class EmailProcessor {
     const logger = createCorrelatedLogger(correlationId);
     const processedAttachments: string[] = [];
 
-    logger.info('Starting email processing', {
-      eventSource: 'SES',
+    logger.info("Starting email processing", {
+      eventSource: "SES",
       recordCount: sesEvent.Records.length,
-      operation: 'email_processing_start',
+      operation: "email_processing_start",
     });
 
     try {
       for (const [index, record] of sesEvent.Records.entries()) {
         const sesMessage = record.ses.mail;
-        const recordLogger = logger.child({ 
+        const recordLogger = logger.child({
           messageId: sesMessage.messageId,
           recordIndex: index,
         });
 
-        recordLogger.info('Processing email record', {
+        recordLogger.info("Processing email record", {
           source: sesMessage.source,
           timestamp: sesMessage.timestamp,
           destination: sesMessage.destination,
-          operation: 'record_processing_start',
+          operation: "record_processing_start",
         });
 
         try {
           // Retrieve the raw email from S3
-          const rawEmail = await this.getRawEmailFromS3(sesMessage, correlationId);
-          
-          // Parse the email
-          const parsedEmail = await this.parseEmail(rawEmail, sesMessage.messageId, correlationId);
-          
-          // Extract and store attachments
-          const attachmentPaths = await this.processAttachments(parsedEmail, sesMessage, correlationId);
-          processedAttachments.push(...attachmentPaths);
-          
-          // Store email metadata
-          await this.storeEmailMetadata(parsedEmail, sesMessage, attachmentPaths, correlationId);
+          const rawEmail = await this.getRawEmailFromS3(
+            sesMessage,
+            correlationId,
+          );
 
-          recordLogger.info('Email record processed successfully', {
+          // Parse the email
+          const parsedEmail = await this.parseEmail(
+            rawEmail,
+            sesMessage.messageId,
+            correlationId,
+          );
+
+          // Extract and store attachments
+          const attachmentPaths = await this.processAttachments(
+            parsedEmail,
+            sesMessage,
+            correlationId,
+          );
+          processedAttachments.push(...attachmentPaths);
+
+          // Store email metadata
+          await this.storeEmailMetadata(
+            parsedEmail,
+            sesMessage,
+            attachmentPaths,
+            correlationId,
+          );
+
+          recordLogger.info("Email record processed successfully", {
             attachmentCount: attachmentPaths.length,
-            operation: 'record_processing_complete',
+            operation: "record_processing_complete",
           });
         } catch (error) {
-          recordLogger.error('Failed to process email record', error as Error, {
-            operation: 'record_processing_error',
+          recordLogger.error("Failed to process email record", error as Error, {
+            operation: "record_processing_error",
           });
-          
+
           // Re-throw with additional context
-          if (error instanceof EmailRetrievalError || 
-              error instanceof EmailParsingError || 
-              error instanceof AttachmentProcessingError) {
+          if (
+            error instanceof EmailRetrievalError ||
+            error instanceof EmailParsingError ||
+            error instanceof AttachmentProcessingError
+          ) {
             throw error;
           }
-          
+
           // Wrap unknown errors
           throw new AttachmentProcessingError(
             `Failed to process email record: ${(error as Error).message}`,
             correlationId,
-            'email-record',
+            "email-record",
             undefined,
-            { messageId: sesMessage.messageId, originalError: (error as Error).message }
+            {
+              messageId: sesMessage.messageId,
+              originalError: (error as Error).message,
+            },
           );
         }
       }
 
-      logger.info('Email processing completed successfully', {
+      logger.info("Email processing completed successfully", {
         totalAttachments: processedAttachments.length,
         processedRecords: sesEvent.Records.length,
-        operation: 'email_processing_complete',
+        operation: "email_processing_complete",
       });
 
       return {
         statusCode: 200,
         body: JSON.stringify({
-          message: 'Email processed successfully',
+          message: "Email processed successfully",
           attachmentsProcessed: processedAttachments.length,
-          attachmentPaths: processedAttachments
+          attachmentPaths: processedAttachments,
         }),
-        processedAttachments
+        processedAttachments,
       };
-
     } catch (error) {
-      logger.error('Email processing failed', error as Error, {
+      logger.error("Email processing failed", error as Error, {
         totalRecords: sesEvent.Records.length,
         processedAttachments: processedAttachments.length,
-        operation: 'email_processing_error',
+        operation: "email_processing_error",
       });
       throw error;
     }
@@ -172,23 +199,26 @@ export class EmailProcessor {
 
   /**
    * Retrieves the raw email content from S3 where SES stored it.
-   * 
+   *
    * @param sesMessage - SES message metadata containing S3 location info
    * @param correlationId - Correlation ID for tracking and logging
    * @returns Promise resolving to the raw email content as a Buffer
-   * 
+   *
    * @throws {EmailRetrievalError} When S3 object cannot be retrieved or email body is missing
-   * 
+   *
    * @private
    */
-  private async getRawEmailFromS3(sesMessage: SESMail, correlationId: string): Promise<Buffer> {
+  private async getRawEmailFromS3(
+    sesMessage: SESMail,
+    correlationId: string,
+  ): Promise<Buffer> {
     const s3Key = `raw-emails/${sesMessage.messageId}`;
-    const logger = createCorrelatedLogger(correlationId, { 
+    const logger = createCorrelatedLogger(correlationId, {
       messageId: sesMessage.messageId,
-      operation: 'email_retrieval',
+      operation: "email_retrieval",
     });
-    
-    logger.debug('Retrieving email from S3', {
+
+    logger.debug("Retrieving email from S3", {
       bucket: this.incomingBucket,
       key: s3Key,
     });
@@ -202,7 +232,7 @@ export class EmailProcessor {
       const response = await retryS3Operation(
         () => this.s3Client.send(command),
         correlationId,
-        'get_raw_email'
+        "get_raw_email",
       );
 
       if (!response.Body) {
@@ -211,12 +241,12 @@ export class EmailProcessor {
           correlationId,
           this.incomingBucket,
           s3Key,
-          { contentLength: response.ContentLength }
+          { contentLength: response.ContentLength },
         );
       }
 
       const emailBuffer = await response.Body.transformToByteArray();
-      logger.debug('Email retrieved successfully', {
+      logger.debug("Email retrieved successfully", {
         contentLength: emailBuffer.length,
         bucket: this.incomingBucket,
         key: s3Key,
@@ -233,40 +263,46 @@ export class EmailProcessor {
         correlationId,
         this.incomingBucket,
         s3Key,
-        { originalError: (error as Error).message }
+        { originalError: (error as Error).message },
       );
     }
   }
 
   /**
    * Parses raw email content using mailparser.
-   * 
+   *
    * @param rawEmail - Raw email content as Buffer
    * @param messageId - Email message ID for error context
    * @param correlationId - Correlation ID for tracking
    * @returns Promise resolving to parsed email
-   * 
+   *
    * @throws {EmailParsingError} When email parsing fails
-   * 
+   *
    * @private
    */
-  private async parseEmail(rawEmail: Buffer, messageId: string, correlationId: string): Promise<ParsedMail> {
-    const logger = createCorrelatedLogger(correlationId, { 
+  private async parseEmail(
+    rawEmail: Buffer,
+    messageId: string,
+    correlationId: string,
+  ): Promise<ParsedMail> {
+    const logger = createCorrelatedLogger(correlationId, {
       messageId,
-      operation: 'email_parsing',
+      operation: "email_parsing",
     });
 
-    logger.debug('Parsing email content', {
+    logger.debug("Parsing email content", {
       emailSize: rawEmail.length,
     });
 
     try {
       const parsedEmail = await simpleParser(rawEmail);
-      
-      logger.debug('Email parsed successfully', {
+
+      logger.debug("Email parsed successfully", {
         subject: parsedEmail.subject,
         from: parsedEmail.from?.text,
-        to: Array.isArray(parsedEmail.to) ? parsedEmail.to.map(addr => addr.text) : parsedEmail.to?.text,
+        to: Array.isArray(parsedEmail.to)
+          ? parsedEmail.to.map((addr) => addr.text)
+          : parsedEmail.to?.text,
         attachmentCount: parsedEmail.attachments?.length || 0,
       });
 
@@ -276,41 +312,41 @@ export class EmailProcessor {
         `Failed to parse email: ${(error as Error).message}`,
         correlationId,
         messageId,
-        { emailSize: rawEmail.length, originalError: (error as Error).message }
+        { emailSize: rawEmail.length, originalError: (error as Error).message },
       );
     }
   }
 
   /**
    * Processes email attachments by filtering valid types and storing them in S3.
-   * 
+   *
    * @param parsedEmail - Parsed email containing attachments
    * @param sesMessage - SES message metadata for context
    * @param correlationId - Correlation ID for tracking
    * @returns Promise resolving to array of stored attachment S3 keys
-   * 
+   *
    * @throws {AttachmentProcessingError} When attachment processing fails
-   * 
+   *
    * @private
    */
   private async processAttachments(
-    parsedEmail: ParsedMail, 
-    sesMessage: SESMail, 
-    correlationId: string
+    parsedEmail: ParsedMail,
+    sesMessage: SESMail,
+    correlationId: string,
   ): Promise<string[]> {
-    const logger = createCorrelatedLogger(correlationId, { 
+    const logger = createCorrelatedLogger(correlationId, {
       messageId: sesMessage.messageId,
-      operation: 'attachment_processing',
+      operation: "attachment_processing",
     });
 
     if (!parsedEmail.attachments || parsedEmail.attachments.length === 0) {
-      logger.info('No attachments found in email', {
+      logger.info("No attachments found in email", {
         subject: parsedEmail.subject,
       });
       return [];
     }
 
-    logger.info('Processing attachments', {
+    logger.info("Processing attachments", {
       attachmentCount: parsedEmail.attachments.length,
       subject: parsedEmail.subject,
     });
@@ -318,14 +354,14 @@ export class EmailProcessor {
     const storedAttachments: string[] = [];
 
     for (const [index, attachment] of parsedEmail.attachments.entries()) {
-      const attachmentLogger = logger.child({ 
+      const attachmentLogger = logger.child({
         attachmentIndex: index,
-        attachmentName: attachment.filename || 'unknown',
+        attachmentName: attachment.filename || "unknown",
       });
 
       try {
         if (!this.isValidAttachment(attachment)) {
-          attachmentLogger.warn('Skipping invalid attachment', {
+          attachmentLogger.warn("Skipping invalid attachment", {
             filename: attachment.filename,
             contentType: attachment.contentType,
             size: attachment.size,
@@ -333,15 +369,20 @@ export class EmailProcessor {
           continue;
         }
 
-        const storedPath = await this.storeAttachment(attachment, parsedEmail, sesMessage, correlationId);
+        const storedPath = await this.storeAttachment(
+          attachment,
+          parsedEmail,
+          sesMessage,
+          correlationId,
+        );
         storedAttachments.push(storedPath);
 
-        attachmentLogger.info('Attachment processed successfully', {
+        attachmentLogger.info("Attachment processed successfully", {
           storedPath,
           size: attachment.size,
         });
       } catch (error) {
-        attachmentLogger.error('Failed to process attachment', error as Error, {
+        attachmentLogger.error("Failed to process attachment", error as Error, {
           filename: attachment.filename,
           contentType: attachment.contentType,
           size: attachment.size,
@@ -353,7 +394,7 @@ export class EmailProcessor {
       }
     }
 
-    logger.info('Attachment processing completed', {
+    logger.info("Attachment processing completed", {
       totalAttachments: parsedEmail.attachments.length,
       successfullyStored: storedAttachments.length,
       skipped: parsedEmail.attachments.length - storedAttachments.length,
@@ -364,56 +405,61 @@ export class EmailProcessor {
 
   /**
    * Validates if an attachment is a supported file type for processing.
-   * 
+   *
    * @param attachment - The attachment object to validate
    * @returns True if the attachment has a valid filename and supported extension
-   * 
+   *
    * @private
    */
   private isValidAttachment(attachment: Attachment): boolean {
     if (!attachment.filename) return false;
-    
-    const validExtensions = ['.pdf', '.csv', '.txt', '.xlsx', '.xls'];
+
+    const validExtensions = [".pdf", ".csv", ".txt", ".xlsx", ".xls"];
     const filename = attachment.filename.toLowerCase();
-    
-    return validExtensions.some(ext => filename.endsWith(ext));
+
+    return validExtensions.some((ext) => filename.endsWith(ext));
   }
 
   /**
    * Stores a single attachment in S3 with organized structure and metadata.
-   * 
+   *
    * Files are stored with the path: daily-files/{propertyId}/{YYYY-MM-DD}/{filename}
    * Property ID is determined from sender email using Parameter Store mapping.
-   * 
+   *
    * @param attachment - The email attachment to store
    * @param parsedEmail - Parsed email object containing email headers and content
    * @param sesMessage - SES message metadata for context
    * @param correlationId - Correlation ID for tracking
    * @returns Promise resolving to the S3 key where the file was stored
-   * 
+   *
    * @throws {S3StorageError} When S3 upload fails
-   * 
+   *
    * @private
    */
   private async storeAttachment(
     attachment: Attachment,
     parsedEmail: ParsedMail,
     sesMessage: SESMail,
-    correlationId: string
+    correlationId: string,
   ): Promise<string> {
-    const logger = createCorrelatedLogger(correlationId, { 
+    const logger = createCorrelatedLogger(correlationId, {
       messageId: sesMessage.messageId,
-      operation: 'store_attachment',
+      operation: "store_attachment",
     });
 
     // Determine property ID from sender email (will use mapping later)
-    const propertyId = await this.getPropertyIdFromSender(parsedEmail.from?.text || 'unknown-sender', correlationId);
-    
+    const propertyId = await this.getPropertyIdFromSender(
+      parsedEmail.from?.text || "unknown-sender",
+      correlationId,
+    );
+
     // Generate S3 key with organized structure
-    const sanitizedFilename = this.sanitizeFilename(attachment.filename || 'unknown');
-    const s3Key = `daily-files/${propertyId}/${new Date().toISOString().split('T')[0]}/${sanitizedFilename}`;
-    
-    logger.debug('Storing attachment in S3', {
+    const sanitizedFilename = this.sanitizeFilename(
+      attachment.filename || "unknown",
+    );
+    const s3Key = `daily-files/${propertyId}/${new Date().toISOString().split("T")[0]}/${sanitizedFilename}`;
+
+    logger.debug("Storing attachment in S3", {
       bucket: this.incomingBucket,
       key: s3Key,
       size: attachment.size,
@@ -424,23 +470,23 @@ export class EmailProcessor {
         Bucket: this.incomingBucket,
         Key: s3Key,
         Body: attachment.content,
-        ContentType: attachment.contentType || 'application/octet-stream',
+        ContentType: attachment.contentType || "application/octet-stream",
         Metadata: {
-          originalFilename: attachment.filename || 'unknown',
-          senderEmail: parsedEmail.from?.text || 'unknown-sender',
+          originalFilename: attachment.filename || "unknown",
+          senderEmail: parsedEmail.from?.text || "unknown-sender",
           messageId: sesMessage.messageId,
           receivedDate: new Date().toISOString(),
-          propertyId: propertyId
-        }
+          propertyId: propertyId,
+        },
       });
 
       await retryS3Operation(
         () => this.s3Client.send(putObjectCommand),
         correlationId,
-        'put_attachment_to_s3'
+        "put_attachment_to_s3",
       );
 
-      logger.debug('Attachment stored successfully', {
+      logger.debug("Attachment stored successfully", {
         bucket: this.incomingBucket,
         key: s3Key,
       });
@@ -455,28 +501,31 @@ export class EmailProcessor {
         correlationId,
         this.incomingBucket,
         s3Key,
-        'put',
-        { originalError: (error as Error).message }
+        "put",
+        { originalError: (error as Error).message },
       );
     }
   }
 
   /**
    * Determines the property ID from the sender's email address using Parameter Store mapping.
-   * 
+   *
    * @param senderEmail - Email address of the sender
    * @param correlationId - Correlation ID for tracking
    * @returns Promise resolving to property ID or 'unknown-property' if not found or on error
-   * 
+   *
    * @private
    */
-  private async getPropertyIdFromSender(senderEmail: string, correlationId: string): Promise<string> {
-    const logger = createCorrelatedLogger(correlationId, { 
+  private async getPropertyIdFromSender(
+    senderEmail: string,
+    correlationId: string,
+  ): Promise<string> {
+    const logger = createCorrelatedLogger(correlationId, {
       senderEmail,
-      operation: 'get_property_id',
+      operation: "get_property_id",
     });
 
-    logger.debug('Getting property ID from Parameter Store', {
+    logger.debug("Getting property ID from Parameter Store", {
       senderEmail,
     });
 
@@ -485,87 +534,93 @@ export class EmailProcessor {
       const mapping = await retryParameterStoreOperation(
         () => this.parameterStore.getPropertyMapping(),
         correlationId,
-        'get_property_mapping'
+        "get_property_mapping",
       );
-      
+
       // Look up property ID based on sender email
       const propertyId = mapping[senderEmail];
-      
+
       if (!propertyId) {
-        logger.warn('No property mapping found for sender', {
+        logger.warn("No property mapping found for sender", {
           senderEmail,
         });
-        return 'unknown-property';
+        return "unknown-property";
       }
-      
-      logger.debug('Property ID found', {
+
+      logger.debug("Property ID found", {
         senderEmail,
         propertyId,
       });
       return propertyId;
     } catch (error) {
-      logger.error('Failed to get property mapping from Parameter Store, using fallback', error as Error, {
-        senderEmail,
-        fallback: 'unknown-property',
-      });
-      return 'unknown-property';
+      logger.error(
+        "Failed to get property mapping from Parameter Store, using fallback",
+        error as Error,
+        {
+          senderEmail,
+          fallback: "unknown-property",
+        },
+      );
+      return "unknown-property";
     }
   }
 
   /**
    * Sanitizes a filename for safe storage in S3 by removing invalid characters.
-   * 
+   *
    * @param filename - Original filename to sanitize
    * @returns Sanitized filename safe for S3 key usage
-   * 
+   *
    * @private
    */
   private sanitizeFilename(filename: string): string {
     // Remove or replace invalid characters for S3 keys
     return filename
-      .replace(/[^a-zA-Z0-9.\-_]/g, '_')
-      .replace(/_{2,}/g, '_')
+      .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+      .replace(/_{2,}/g, "_")
       .substring(0, 250); // Limit length
   }
 
   /**
    * Stores comprehensive email metadata in S3 for tracking and debugging purposes.
-   * 
+   *
    * Metadata includes sender, recipient, subject, attachment info, and processing timestamps.
    * Files are stored as JSON in: email-metadata/{YYYY-MM-DD}/{messageId}.json
-   * 
+   *
    * @param parsedEmail - Parsed email object containing email headers and content
    * @param sesMessage - SES message metadata
    * @param attachmentPaths - Array of S3 paths where attachments were stored
    * @param correlationId - Correlation ID for tracking
-   * 
+   *
    * @private
    */
   private async storeEmailMetadata(
     parsedEmail: ParsedMail,
     sesMessage: SESMail,
     attachmentPaths: string[],
-    correlationId: string
+    correlationId: string,
   ): Promise<void> {
-    const logger = createCorrelatedLogger(correlationId, { 
+    const logger = createCorrelatedLogger(correlationId, {
       messageId: sesMessage.messageId,
-      operation: 'store_email_metadata',
+      operation: "store_email_metadata",
     });
 
     const metadata = {
       messageId: sesMessage.messageId,
       from: parsedEmail.from?.text,
-      to: Array.isArray(parsedEmail.to) ? parsedEmail.to.map(addr => addr.text).join(', ') : parsedEmail.to?.text,
+      to: Array.isArray(parsedEmail.to)
+        ? parsedEmail.to.map((addr) => addr.text).join(", ")
+        : parsedEmail.to?.text,
       subject: parsedEmail.subject,
       date: parsedEmail.date?.toISOString(),
       attachmentCount: attachmentPaths.length,
       attachmentPaths: attachmentPaths,
-      processedAt: new Date().toISOString()
+      processedAt: new Date().toISOString(),
     };
 
-    const s3Key = `email-metadata/${new Date().toISOString().split('T')[0]}/${sesMessage.messageId}.json`;
-    
-    logger.debug('Storing email metadata in S3', {
+    const s3Key = `email-metadata/${new Date().toISOString().split("T")[0]}/${sesMessage.messageId}.json`;
+
+    logger.debug("Storing email metadata in S3", {
       bucket: this.incomingBucket,
       key: s3Key,
     });
@@ -575,16 +630,16 @@ export class EmailProcessor {
         Bucket: this.incomingBucket,
         Key: s3Key,
         Body: JSON.stringify(metadata, null, 2),
-        ContentType: 'application/json'
+        ContentType: "application/json",
       });
 
       await retryS3Operation(
         () => this.s3Client.send(putObjectCommand),
         correlationId,
-        'put_email_metadata_to_s3'
+        "put_email_metadata_to_s3",
       );
 
-      logger.debug('Email metadata stored successfully', {
+      logger.debug("Email metadata stored successfully", {
         bucket: this.incomingBucket,
         key: s3Key,
       });
@@ -593,7 +648,7 @@ export class EmailProcessor {
         throw error;
       }
 
-      logger.error('Failed to store email metadata in S3', error as Error, {
+      logger.error("Failed to store email metadata in S3", error as Error, {
         bucket: this.incomingBucket,
         key: s3Key,
       });
@@ -602,8 +657,8 @@ export class EmailProcessor {
         correlationId,
         this.incomingBucket,
         s3Key,
-        'put',
-        { originalError: (error as Error).message }
+        "put",
+        { originalError: (error as Error).message },
       );
     }
   }
@@ -611,23 +666,26 @@ export class EmailProcessor {
 
 /**
  * AWS Lambda handler function for processing SES email events.
- * 
+ *
  * This is the main entry point when AWS Lambda is invoked by SES.
  * It creates an EmailProcessor instance and delegates processing to it.
- * 
+ *
  * @param event - SES event containing one or more email records
  * @param context - Lambda context for tracking and timeout information
  * @returns Promise resolving to processing result with status and attachment info
- * 
+ *
  * @throws {EmailProcessingError} When email processing fails
- * 
+ *
  * @example
  * ```typescript
  * // AWS automatically calls this when emails are received:
  * const result = await handler(sesEvent, context);
  * ```
  */
-export const handler = async (event: SESEvent, context: Context): Promise<EmailProcessorResult> => {
+export const handler = async (
+  event: SESEvent,
+  context: Context,
+): Promise<EmailProcessorResult> => {
   const correlationId = generateCorrelationId();
   const logger = createCorrelatedLogger(correlationId, {
     requestId: context.awsRequestId,
@@ -635,27 +693,27 @@ export const handler = async (event: SESEvent, context: Context): Promise<EmailP
     functionVersion: context.functionVersion,
   });
 
-  logger.info('Lambda handler invoked', {
-    eventSource: 'aws:ses',
+  logger.info("Lambda handler invoked", {
+    eventSource: "aws:ses",
     recordCount: event.Records.length,
     remainingTime: context.getRemainingTimeInMillis(),
-    operation: 'lambda_handler_start',
+    operation: "lambda_handler_start",
   });
 
   try {
     const processor = new EmailProcessor();
     const result = await processor.processEmail(event);
 
-    logger.info('Lambda handler completed successfully', {
+    logger.info("Lambda handler completed successfully", {
       statusCode: result.statusCode,
       attachmentsProcessed: result.processedAttachments.length,
-      operation: 'lambda_handler_success',
+      operation: "lambda_handler_success",
     });
 
     return result;
   } catch (error) {
-    logger.error('Lambda handler failed', error as Error, {
-      operation: 'lambda_handler_error',
+    logger.error("Lambda handler failed", error as Error, {
+      operation: "lambda_handler_error",
       remainingTime: context.getRemainingTimeInMillis(),
     });
 
@@ -663,4 +721,4 @@ export const handler = async (event: SESEvent, context: Context): Promise<EmailP
     // This will trigger DLQ if configured (which we'll implement next)
     throw error;
   }
-}; 
+};

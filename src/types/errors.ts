@@ -14,7 +14,7 @@ export abstract class EmailProcessingError extends Error {
   constructor(
     message: string,
     correlationId: string,
-    context: Record<string, unknown> = {}
+    context: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = this.constructor.name;
@@ -53,7 +53,7 @@ export class EmailRetrievalError extends EmailProcessingError {
     correlationId: string,
     bucketName: string,
     objectKey: string,
-    context: Record<string, unknown> = {}
+    context: Record<string, unknown> = {},
   ) {
     super(message, correlationId, { ...context, bucketName, objectKey });
     this.bucketName = bucketName;
@@ -71,7 +71,7 @@ export class EmailParsingError extends EmailProcessingError {
     message: string,
     correlationId: string,
     messageId: string,
-    context: Record<string, unknown> = {}
+    context: Record<string, unknown> = {},
   ) {
     super(message, correlationId, { ...context, messageId });
     this.messageId = messageId;
@@ -90,9 +90,13 @@ export class AttachmentProcessingError extends EmailProcessingError {
     correlationId: string,
     attachmentName: string,
     attachmentSize?: number,
-    context: Record<string, unknown> = {}
+    context: Record<string, unknown> = {},
   ) {
-    super(message, correlationId, { ...context, attachmentName, attachmentSize });
+    super(message, correlationId, {
+      ...context,
+      attachmentName,
+      attachmentSize,
+    });
     this.attachmentName = attachmentName;
     this.attachmentSize = attachmentSize;
   }
@@ -104,17 +108,22 @@ export class AttachmentProcessingError extends EmailProcessingError {
 export class S3StorageError extends EmailProcessingError {
   public readonly bucketName: string;
   public readonly objectKey: string;
-  public readonly operation: 'put' | 'get' | 'delete';
+  public readonly operation: "put" | "get" | "delete";
 
   constructor(
     message: string,
     correlationId: string,
     bucketName: string,
     objectKey: string,
-    operation: 'put' | 'get' | 'delete',
-    context: Record<string, unknown> = {}
+    operation: "put" | "get" | "delete",
+    context: Record<string, unknown> = {},
   ) {
-    super(message, correlationId, { ...context, bucketName, objectKey, operation });
+    super(message, correlationId, {
+      ...context,
+      bucketName,
+      objectKey,
+      operation,
+    });
     this.bucketName = bucketName;
     this.objectKey = objectKey;
     this.operation = operation;
@@ -126,14 +135,14 @@ export class S3StorageError extends EmailProcessingError {
  */
 export class ParameterStoreError extends EmailProcessingError {
   public readonly parameterName: string;
-  public readonly operation: 'get' | 'put';
+  public readonly operation: "get" | "put";
 
   constructor(
     message: string,
     correlationId: string,
     parameterName: string,
-    operation: 'get' | 'put',
-    context: Record<string, unknown> = {}
+    operation: "get" | "put",
+    context: Record<string, unknown> = {},
   ) {
     super(message, correlationId, { ...context, parameterName, operation });
     this.parameterName = parameterName;
@@ -151,7 +160,7 @@ export class ConfigurationError extends EmailProcessingError {
     message: string,
     correlationId: string,
     configKey: string,
-    context: Record<string, unknown> = {}
+    context: Record<string, unknown> = {},
   ) {
     super(message, correlationId, { ...context, configKey });
     this.configKey = configKey;
@@ -182,9 +191,9 @@ export function isRetryableError(error: Error): boolean {
     /504/,
   ];
 
-  return retryablePatterns.some(pattern => 
-    pattern.test(error.message) || 
-    (error.name && pattern.test(error.name))
+  return retryablePatterns.some(
+    (pattern) =>
+      pattern.test(error.message) || (error.name && pattern.test(error.name)),
   );
 }
 
@@ -206,4 +215,4 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   baseDelay: 1000, // 1 second
   maxDelay: 10000, // 10 seconds
   backoffMultiplier: 2,
-}; 
+};
