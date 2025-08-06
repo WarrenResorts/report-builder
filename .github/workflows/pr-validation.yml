@@ -110,27 +110,22 @@ jobs:
       - name: Run tests with coverage
         run: npm test -- --coverage
 
-      - name: Comment coverage on PR
-        uses: romeovs/lcov-reporter-action@v0.3.1
-        if: always()
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          lcov-file: ./coverage/lcov.info
+      # Coverage comment removed due to GitHub token permissions
+      # The coverage results are still available in the test output above
 
-  # Dependency checks
-  dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: moderate
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
+  # Dependency Review disabled - requires GitHub Advanced Security
+  # dependency-review:
+  #   name: Dependency Review
+  #   runs-on: ubuntu-latest
+  #   if: github.event.pull_request.draft == false
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #     - name: Dependency Review
+  #       uses: actions/dependency-review-action@v4
+  #       with:
+  #         fail-on-severity: moderate
+  #         allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
 
   # Security scan for PRs
   security-scan:

@@ -57,7 +57,7 @@ jobs:
         path: '.'
         output_path: 'kics-results'
         output_formats: 'json,sarif'
-        exclude_paths: 'node_modules,dist,build'
+        exclude_paths: 'node_modules,dist,build,docs,coverage'
         fail_on: 'high,medium'
     
     - name: Upload KICS results
