@@ -9,10 +9,14 @@ import { PropertyMappingConfig, EmailConfiguration } from '../types/parameter-st
 export class ParameterStoreConfig {
   private ssmClient: SSMClient;
   private cache = new Map<string, { value: string | null; expiry: number }>();
-  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+  private readonly cacheTTL: number;
 
   constructor() {
     this.ssmClient = new SSMClient({ region: environmentConfig.awsRegion });
+    
+    // Get cache TTL from environment variable or use default
+    const cacheTTLSeconds = parseInt(process.env.PARAMETER_STORE_CACHE_TTL_SECONDS || '300', 10);
+    this.cacheTTL = cacheTTLSeconds * 1000; // Convert to milliseconds
   }
 
   /**
@@ -119,7 +123,7 @@ export class ParameterStoreConfig {
       // Cache the result
       this.cache.set(parameterName, {
         value,
-        expiry: Date.now() + this.CACHE_TTL
+        expiry: Date.now() + this.cacheTTL
       });
 
       return value;

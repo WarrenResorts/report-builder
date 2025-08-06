@@ -1,0 +1,71 @@
+{
+  "environment": "development",
+  "domain": {
+    "domainName": "aws.warrenresorthotels.com",
+    "emailAddress": "reports@aws.warrenresorthotels.com"
+  },
+  "naming": {
+    "projectPrefix": "report-builder",
+    "separator": "-"
+  },
+  "lambda": {
+    "emailProcessor": {
+      "timeoutMinutes": 3,
+      "memoryMB": 384
+    },
+    "fileProcessor": {
+      "timeoutMinutes": 8,
+      "memoryMB": 768
+    }
+  },
+  "storage": {
+    "incomingFiles": {
+      "transitionToIADays": 7,
+      "transitionToGlacierDays": 30
+    },
+    "processedFiles": {
+      "transitionToIADays": 30,
+      "transitionToGlacierDays": 90
+    },
+    "mappingFiles": {
+      "transitionToIADays": 30
+    }
+  },
+  "scheduling": {
+    "dailyProcessing": {
+      "cronExpression": "cron(0 */6 * * ? *)",
+      "description": "Every 6 hours for development testing"
+    },
+    "weeklyReporting": {
+      "cronExpression": "cron(0 12 ? * MON *)",
+      "description": "Weekly on Monday at 12 PM UTC for testing"
+    },
+    "eventRetention": {
+      "maxEventAgeHours": 12,
+      "retryAttempts": 2
+    }
+  },
+  "tagging": {
+    "required": {
+      "Project": "ReportBuilder",
+      "Environment": "development",
+      "ManagedBy": "CDK",
+      "CostCenter": "IT-DataProcessing"
+    },
+    "environmentSpecific": {
+      "AutoShutdown": "Enabled",
+      "Monitoring": "Basic",
+      "BackupRequired": "false"
+    }
+  },
+  "monitoring": {
+    "enhancedMonitoring": false,
+    "lambdaInsights": false,
+    "logRetentionDays": 14
+  },
+  "application": {
+    "parameterStore": {
+      "cacheTTLSeconds": 30
+    }
+  }
+} 

@@ -1,0 +1,72 @@
+{
+  "environment": "production",
+  "domain": {
+    "domainName": "aws.warrenresorthotels.com",
+    "emailAddress": "reports@aws.warrenresorthotels.com"
+  },
+  "naming": {
+    "projectPrefix": "report-builder",
+    "separator": "-"
+  },
+  "lambda": {
+    "emailProcessor": {
+      "timeoutMinutes": 5,
+      "memoryMB": 512
+    },
+    "fileProcessor": {
+      "timeoutMinutes": 10,
+      "memoryMB": 1024
+    }
+  },
+  "storage": {
+    "incomingFiles": {
+      "transitionToIADays": 30,
+      "transitionToGlacierDays": 90
+    },
+    "processedFiles": {
+      "transitionToIADays": 90,
+      "transitionToGlacierDays": 365
+    },
+    "mappingFiles": {
+      "transitionToIADays": 60
+    }
+  },
+  "scheduling": {
+    "dailyProcessing": {
+      "cronExpression": "cron(0 6 * * ? *)",
+      "description": "Daily at 6 AM UTC for production processing"
+    },
+    "weeklyReporting": {
+      "cronExpression": "cron(0 8 ? * MON *)",
+      "description": "Weekly on Monday at 8 AM UTC for production reporting"
+    },
+    "eventRetention": {
+      "maxEventAgeHours": 24,
+      "retryAttempts": 3
+    }
+  },
+  "tagging": {
+    "required": {
+      "Project": "ReportBuilder",
+      "Environment": "production",
+      "ManagedBy": "CDK",
+      "CostCenter": "IT-DataProcessing"
+    },
+    "environmentSpecific": {
+      "Backup": "Required",
+      "Monitoring": "Enhanced",
+      "CriticalSystem": "true",
+      "ComplianceRequired": "true"
+    }
+  },
+  "monitoring": {
+    "enhancedMonitoring": true,
+    "lambdaInsights": true,
+    "logRetentionDays": 90
+  },
+  "application": {
+    "parameterStore": {
+      "cacheTTLSeconds": 900
+    }
+  }
+} 

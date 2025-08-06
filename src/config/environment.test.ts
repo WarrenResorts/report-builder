@@ -1,6 +1,30 @@
 import { describe, it, expect, vi } from 'vitest';
 import { environmentConfig } from './environment';
 
+/**
+ * Test Suite: Environment Configuration
+ * 
+ * This test suite validates the environment configuration module, which is responsible
+ * for loading and validating application environment settings from environment variables.
+ * 
+ * The environment configuration provides:
+ * - Environment variable validation with clear error messages
+ * - Sensible defaults for development and testing
+ * - Type-safe environment configuration object
+ * - Support for multiple environments (development, test, production)
+ * - AWS-specific configuration (region, account)
+ * 
+ * Test Coverage Areas:
+ * - Default value assignment and validation
+ * - Environment variable reading and processing
+ * - NODE_ENV validation and handling
+ * - AWS region configuration
+ * - Error handling for invalid environment values
+ * - Missing environment variable handling
+ * 
+ * This ensures the application starts with valid configuration
+ * and fails fast with clear error messages when misconfigured.
+ */
 describe('Environment Configuration', () => {
   it('should have default values', () => {
     expect(environmentConfig.environment).toBeDefined();

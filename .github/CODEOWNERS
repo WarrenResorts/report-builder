@@ -1,0 +1,20 @@
+# Global owners
+* @warren-resort-hotels/backend-team
+
+# Infrastructure changes
+/infrastructure/ @warren-resort-hotels/infrastructure-team
+/scripts/ @warren-resort-hotels/infrastructure-team
+/.github/ @warren-resort-hotels/infrastructure-team
+
+# Security-sensitive files
+/docs/security/ @warren-resort-hotels/security-team
+package*.json @warren-resort-hotels/security-team
+
+# Testing
+/tests/ @warren-resort-hotels/qa-team
+**/*.test.ts @warren-resort-hotels/qa-team
+/.github/workflows/ @warren-resort-hotels/qa-team
+
+# Documentation
+/docs/ @warren-resort-hotels/backend-team
+README.md @warren-resort-hotels/backend-team

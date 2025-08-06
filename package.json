@@ -1,46 +1,66 @@
 {
   "name": "report-builder",
   "version": "1.0.0",
-  "description": "Report Builder Application",
-  "main": "src/index.js",
+  "description": "Automated report processing system for Warren Resort Hotels",
+  "type": "module",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node dist/index.js",
-    "dev": "ts-node-dev --respawn src/index.ts",
     "build": "tsc",
+    "watch": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "eslint . --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "cdk": "cdk",
-    "prepare": "husky"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:watch": "vitest --config vitest.integration.config.ts",
+    "test:all": "npm run test && npm run test:integration",
+    "clean": "rm -rf dist coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "format:check": "prettier --check src/**/*.ts",
+    "pre-deploy": "./scripts/pre-deploy-check.sh",
+    "deploy:dev": "./scripts/deploy.sh --environment development",
+    "deploy:prod": "./scripts/deploy.sh --environment production",
+    "rollback:dev": "./scripts/rollback.sh --environment development",
+    "rollback:prod": "./scripts/rollback.sh --environment production"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "aws",
+    "lambda",
+    "ses",
+    "s3",
+    "serverless",
+    "email-processing",
+    "report-automation"
+  ],
+  "author": "Warren Resort Hotels",
+  "license": "MIT",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.844.0",
-    "@aws-sdk/client-ssm": "^3.844.0",
-    "@types/aws-lambda": "^8.10.145",
-    "aws-cdk-lib": "^2.0.0",
-    "aws-lambda": "^1.0.7",
-    "constructs": "^10.0.0",
-    "dotenv": "^16.0.0",
-    "mailparser": "^3.7.1"
+    "@aws-sdk/client-lambda": "^3.410.0",
+    "@aws-sdk/client-s3": "^3.410.0",
+    "@aws-sdk/client-ssm": "^3.410.0",
+    "@types/aws-lambda": "^8.10.152",
+    "mailparser": "^3.6.5"
   },
   "devDependencies": {
-    "@commitlint/cli": "^18.0.0",
-    "@commitlint/config-conventional": "^18.0.0",
-    "@types/mailparser": "^3.4.6",
-    "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.38.0",
-    "@typescript-eslint/parser": "^8.38.0",
-    "@vitest/coverage-v8": "^1.0.0",
-    "eslint": "^8.0.0",
-    "husky": "^9.1.7",
-    "prettier": "^2.0.0",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.0.0",
-    "vitest": "^1.0.0"
-  }
+    "@types/node": "^20.5.0",
+    "@typescript-eslint/eslint-plugin": "^6.4.1",
+    "@typescript-eslint/parser": "^6.4.1",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^8.47.0",
+    "prettier": "^3.0.2",
+    "typescript": "^5.1.6",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/warren-resort-hotels/report-builder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/warren-resort-hotels/report-builder/issues"
+  },
+  "homepage": "https://github.com/warren-resort-hotels/report-builder#readme"
 }

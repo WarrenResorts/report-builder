@@ -12,4 +12,7 @@ export * from './environment';
 export * from './parameter-store';
 
 // Lambda function types
-export * from './lambda'; 
+export * from './lambda';
+
+// Error handling types
+export * from './errors'; 

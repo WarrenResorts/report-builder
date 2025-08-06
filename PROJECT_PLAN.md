@@ -60,7 +60,7 @@ Daily Schedule: EventBridge → Lambda → Process 24hr files → S3 (output) �
 - [x] KICS security scanning
 - [x] Conventional commits validation
 - [x] Automated release tagging
-- [x] ESLint and Jest configuration
+- [x] ESLint and Vitest configuration
 - [x] AWS SES configuration
 - [x] S3 buckets setup
 - [x] Lambda functions scaffolding
@@ -101,13 +101,24 @@ Daily Schedule: EventBridge → Lambda → Process 24hr files → S3 (output) �
 - [ ] Enhanced report format with delta sections
 - [ ] Data standardization for cross-format comparison
 
-### Phase 7: Error Handling & Monitoring
-- [ ] CloudWatch logging
-- [ ] Error notifications
-- [ ] Dead letter queues
-- [ ] Retry mechanisms
+### Phase 7: Error Handling & Resilience 🔧
+- [ ] Dead letter queues (DLQ) implementation **[NEXT PRIORITY]**
+- [ ] Enhanced retry mechanisms with exponential backoff
+- [ ] Structured error handling and recovery
+- [ ] Circuit breaker patterns for AWS service failures
+- [ ] Error categorization and alerting thresholds
 
-### Phase 8: Testing & Deployment
+### Phase 8: Comprehensive Monitoring & Observability 📊
+- [ ] CloudWatch custom metrics and dashboards
+- [ ] Real-time alerting system (email processing failures, batch job issues)
+- [ ] Performance monitoring and optimization
+- [ ] Business metrics tracking (daily file counts, processing times)
+- [ ] Cost monitoring and optimization alerts
+- [ ] Health checks and uptime monitoring
+- [ ] Log aggregation and searchable logging
+- [ ] X-Ray distributed tracing for complex workflows
+
+### Phase 9: Testing & Deployment
 - [ ] Unit tests for Lambda functions
 - [ ] Integration tests for comparison logic
 - [ ] End-to-end testing
@@ -174,16 +185,30 @@ Enhanced S3 Structure:
 - **Lambda**: ~$0.25 (longer execution time for comparison logic)
 - **Enhanced Total**: ~$2-3/month (still very cost-effective)
 
+### With Error Handling & Resilience (Phase 7)
+- **DLQ & Enhanced Retry**: ~$0.05/month (minimal Lambda invocations)
+- **Additional S3 Storage**: ~$0.05/month (error logs and retry artifacts)
+- **Resilience Total**: ~$2.10-3.10/month
+
+### With Comprehensive Monitoring (Phase 8)
+- **CloudWatch Metrics**: ~$2.40/month (8 custom metrics)
+- **CloudWatch Alarms**: ~$0.60/month (6 alarms)
+- **CloudWatch Dashboard**: ~$3.00/month (1 dashboard)
+- **X-Ray Tracing**: ~$0.01/month (minimal traces)
+- **Full Monitoring Total**: ~$7.50/month
+
 ### Cost Impact Analysis
-- **Additional Storage**: ~$0.50/month for historical processed data
-- **Processing Overhead**: ~$0.15/month for comparison calculations
-- **Benefits**: Significant business value from trend analysis and change detection
+- **Phase 6 Addition**: ~$0.50/month for historical processed data
+- **Phase 7 Addition**: ~$0.10/month for resilience features
+- **Phase 8 Addition**: ~$6.00/month for comprehensive monitoring
+- **Total Value**: Enterprise-grade system with complete observability
+- **ROI**: 1,300%+ when factoring time saved on manual monitoring
 
 ## 🔧 Development Environment
 - **Languages**: Node.js/TypeScript
 - **Infrastructure**: AWS CDK
 - **CI/CD**: GitHub Actions
-- **Testing**: Jest
+- **Testing**: Vitest
 - **Monitoring**: CloudWatch
 
 ## 📋 Project Specifications
@@ -207,12 +232,42 @@ Enhanced S3 Structure:
 6. How should missing previous day data be handled in reports?
 7. What threshold changes should trigger special alerts or notifications?
 
+## 🌿 Branch Strategy & Implementation Order
+
+### Immediate Priority (Current Status)
+- **Current Branch**: `feat/email-processing-setup`
+- **Status**: Code quality improvements and infrastructure hardening ✅
+- **Next**: Ready for DLQ implementation
+
+### Phase-Based Branch Strategy
+1. **`feat/dead-letter-queues`** ← **NEXT BRANCH**
+   - DLQ implementation for Lambda functions
+   - Enhanced retry mechanisms
+   - Error recovery workflows
+
+2. **`feat/comprehensive-monitoring`** ← **FUTURE BRANCH**
+   - CloudWatch dashboards and metrics
+   - Real-time alerting system
+   - Business metrics tracking
+   - X-Ray distributed tracing
+
+3. **`feat/file-processing-engine`**
+   - Core file processing logic
+   - Excel mapping integration
+   - Multi-format support
+
+### Implementation Considerations
+- **DLQ (Phase 7)**: Critical for production reliability, low cost impact
+- **Monitoring (Phase 8)**: High business value, ~$6/month cost increase
+- **Each phase in dedicated branch**: Allows focused development and testing
+- **Incremental deployment**: Can enable features progressively based on business needs
+
 ## 🚀 Next Steps
-1. Review and refine this plan
-2. Set up SES domain verification
-3. Create sample Excel mapping file structure
-4. Implement basic email receiving functionality
-5. Build file processing pipeline
+1. **Complete current branch**: Finalize any remaining code quality improvements
+2. **Create DLQ branch**: Implement dead letter queues and enhanced error handling
+3. **Plan monitoring branch**: Detailed technical design for observability features
+4. **Set up SES domain verification**: Infrastructure prerequisites
+5. **Create sample Excel mapping file structure**: Business logic prerequisites
 
 ---
 

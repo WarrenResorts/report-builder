@@ -12,17 +12,22 @@ if (!['development', 'production'].includes(environment)) {
   throw new Error(`Invalid environment: ${environment}. Must be 'development' or 'production'`);
 }
 
-// Create stack with environment-specific configuration
-new InfrastructureStack(app, `ReportBuilderStack-${environment}`, {
+// Load environment-specific configuration for consistent naming
+import { ConfigLoader } from '../config';
+const configLoader = ConfigLoader.getInstance();
+const config = configLoader.getConfig(environment as 'development' | 'production');
+
+// Create stack with environment-specific configuration and consistent naming
+new InfrastructureStack(app, `${config.naming.projectPrefix}${config.naming.separator}stack${config.naming.separator}${environment}`, {
   environment: environment as 'development' | 'production',
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
   },
-  description: `Report Builder infrastructure for ${environment} environment`,
+  description: `${config.naming.projectPrefix} infrastructure for ${environment} environment`,
   tags: {
     Environment: environment,
-    Project: 'report-builder',
+    Project: config.naming.projectPrefix,
     ManagedBy: 'CDK',
   },
 });

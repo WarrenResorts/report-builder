@@ -19,6 +19,28 @@ vi.mock('@aws-sdk/client-ssm', () => ({
   GetParametersCommand: vi.fn(),
 }));
 
+/**
+ * Test Suite: ParameterStoreConfig
+ * 
+ * This test suite validates the ParameterStoreConfig class, which is responsible
+ * for managing application configuration stored in AWS Systems Manager Parameter Store.
+ * 
+ * The ParameterStoreConfig provides a centralized, cached approach to:
+ * - Retrieving property mapping configurations (sender email → property ID)
+ * - Loading email configuration (recipients, alert addresses, from addresses)
+ * - Managing environment-specific parameter paths
+ * - Implementing caching to reduce AWS API calls and improve performance
+ * - Handling parameter store errors gracefully with fallbacks
+ * 
+ * Test Coverage Areas:
+ * - Property mapping retrieval and caching
+ * - Email configuration loading with fallback values
+ * - Cache invalidation and refresh mechanisms
+ * - Error handling for missing parameters
+ * - AWS SDK integration and mocking
+ * - Environment-specific parameter path resolution
+ * - Graceful degradation when Parameter Store is unavailable
+ */
 describe('ParameterStoreConfig', () => {
   let parameterStore: ParameterStoreConfig;
   let mockSSMClient: { send: ReturnType<typeof vi.fn> };

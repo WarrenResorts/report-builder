@@ -29,6 +29,39 @@ const mockParameterStore = {
 (S3Client as Mock).mockImplementation(() => mockS3Client);
 (ParameterStoreConfig as Mock).mockImplementation(() => mockParameterStore);
 
+// Helper function to create mock Lambda context
+const createMockLambdaContext = () => ({
+  requestId: 'test-request-id',
+  functionName: 'test-function',
+  functionVersion: '1',
+  getRemainingTimeInMillis: vi.fn().mockReturnValue(30000)
+});
+
+/**
+ * Test Suite: EmailProcessor
+ * 
+ * This comprehensive test suite validates the EmailProcessor class functionality,
+ * which is the core component responsible for processing incoming emails from
+ * Amazon SES. The EmailProcessor handles:
+ * 
+ * - Retrieving raw emails from S3 storage
+ * - Parsing email content and extracting attachments
+ * - Identifying property IDs from sender email mapping
+ * - Storing attachments in organized S3 structure
+ * - Creating email metadata for tracking and debugging
+ * - Error handling and graceful degradation
+ * - Structured logging with correlation IDs
+ * - Retry logic for transient failures
+ * 
+ * Test Coverage Areas:
+ * - Successful email processing workflows
+ * - Edge cases and error conditions
+ * - Property identification logic
+ * - Attachment filtering and validation
+ * - S3 integration and error handling
+ * - Parameter Store integration and fallbacks
+ * - Lambda handler integration testing
+ */
 describe('EmailProcessor', () => {
   let emailProcessor: EmailProcessor;
   
@@ -42,6 +75,21 @@ describe('EmailProcessor', () => {
     emailProcessor = new EmailProcessor();
   });
 
+  /**
+   * Test Group: processEmail Method
+   * 
+   * Tests the main email processing workflow including:
+   * - End-to-end email processing with attachments
+   * - Handling emails without attachments
+   * - Attachment type filtering (PDF, CSV, TXT, XLSX, XLS only)
+   * - Property identification from sender email
+   * - Graceful handling of unknown senders
+   * - S3 storage operations and error recovery
+   * - Parameter Store integration and fallback behavior
+   * - Edge cases like undefined senders and filenames
+   * - Multi-recipient email handling
+   * - Enhanced error handling with structured logging
+   */
   describe('processEmail', () => {
     it('should process email with attachments successfully', async () => {
       // Mock SES event
@@ -76,16 +124,9 @@ describe('EmailProcessor', () => {
       };
 
       // Mock S3 raw email retrieval
-      const mockEmailContent = Buffer.from('Email content');
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
-          transformToWebStream: () => ({
-            getReader: () => ({
-              read: vi.fn()
-                .mockResolvedValueOnce({ done: false, value: mockEmailContent })
-                .mockResolvedValueOnce({ done: true })
-            })
-          })
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
         }
       });
 
@@ -151,13 +192,7 @@ describe('EmailProcessor', () => {
       // Mock S3 and parser for email with no attachments
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
-          transformToWebStream: () => ({
-            getReader: () => ({
-              read: vi.fn()
-                .mockResolvedValueOnce({ done: false, value: Buffer.from('Email content') })
-                .mockResolvedValueOnce({ done: true })
-            })
-          })
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
         }
       });
 
@@ -205,13 +240,7 @@ describe('EmailProcessor', () => {
 
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
-          transformToWebStream: () => ({
-            getReader: () => ({
-              read: vi.fn()
-                .mockResolvedValueOnce({ done: false, value: Buffer.from('Email content') })
-                .mockResolvedValueOnce({ done: true })
-            })
-          })
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
         }
       });
 
@@ -265,13 +294,7 @@ describe('EmailProcessor', () => {
 
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
-          transformToWebStream: () => ({
-            getReader: () => ({
-              read: vi.fn()
-                .mockResolvedValueOnce({ done: false, value: Buffer.from('Email content') })
-                .mockResolvedValueOnce({ done: true })
-            })
-          })
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
         }
       });
 
@@ -322,7 +345,7 @@ describe('EmailProcessor', () => {
       // Mock S3 error
       mockS3Client.send.mockRejectedValue(new Error('S3 access denied'));
 
-      await expect(emailProcessor.processEmail(sesEvent)).rejects.toThrow('S3 access denied');
+      await expect(emailProcessor.processEmail(sesEvent)).rejects.toThrow('Failed to retrieve email from S3: S3 access denied');
     });
 
     it('should handle missing email body from S3', async () => {
@@ -387,13 +410,7 @@ describe('EmailProcessor', () => {
 
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
-          transformToWebStream: () => ({
-            getReader: () => ({
-              read: vi.fn()
-                .mockResolvedValueOnce({ done: false, value: Buffer.from('Email content') })
-                .mockResolvedValueOnce({ done: true })
-            })
-          })
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
         }
       });
 
@@ -453,16 +470,9 @@ describe('EmailProcessor', () => {
       };
 
       // Mock S3 raw email retrieval
-      const mockEmailContent = Buffer.from('Email content');
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
-          transformToWebStream: () => ({
-            getReader: () => ({
-              read: vi.fn()
-                .mockResolvedValueOnce({ done: false, value: mockEmailContent })
-                .mockResolvedValueOnce({ done: true })
-            })
-          })
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
         }
       });
 
@@ -522,16 +532,9 @@ describe('EmailProcessor', () => {
       };
 
       // Mock S3 raw email retrieval
-      const mockEmailContent = Buffer.from('Email content');
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
-          transformToWebStream: () => ({
-            getReader: () => ({
-              read: vi.fn()
-                .mockResolvedValueOnce({ done: false, value: mockEmailContent })
-                .mockResolvedValueOnce({ done: true })
-            })
-          })
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
         }
       });
 
@@ -596,16 +599,9 @@ describe('EmailProcessor', () => {
       };
 
       // Mock S3 raw email retrieval
-      const mockEmailContent = Buffer.from('Email content');
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
-          transformToWebStream: () => ({
-            getReader: () => ({
-              read: vi.fn()
-                .mockResolvedValueOnce({ done: false, value: mockEmailContent })
-                .mockResolvedValueOnce({ done: true })
-            })
-          })
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
         }
       });
 
@@ -702,6 +698,21 @@ describe('EmailProcessor', () => {
   });
 });
 
+/**
+ * Test Group: Lambda Handler Integration
+ * 
+ * Tests the AWS Lambda handler function that serves as the entry point
+ * for SES email processing events. This integration test validates:
+ * 
+ * - Lambda handler receives and processes SES events correctly
+ * - EmailProcessor class is instantiated and called properly
+ * - Return values match the expected EmailProcessorResult interface
+ * - Error handling and logging work through the Lambda context
+ * - Integration between AWS Lambda runtime and EmailProcessor
+ * 
+ * This test ensures the handler function correctly bridges the gap
+ * between AWS Lambda infrastructure and our email processing logic.
+ */
 describe('Lambda Handler', () => {
   it('should process SES event through handler', async () => {
     const sesEvent: SESEvent = {
@@ -729,19 +740,13 @@ describe('Lambda Handler', () => {
       }]
     };
 
-    const context = {} as unknown as Context;
+    const context = createMockLambdaContext() as unknown as Context;
 
     // Mock the dependencies
     mockS3Client.send.mockResolvedValueOnce({
       Body: {
-        transformToWebStream: () => ({
-          getReader: () => ({
-            read: vi.fn()
-              .mockResolvedValueOnce({ done: false, value: Buffer.from('Email content') })
-              .mockResolvedValueOnce({ done: true })
-          })
-        })
-      }
+          transformToByteArray: () => Promise.resolve(Buffer.from("Email content"))
+        }
     });
 
     (simpleParser as Mock).mockResolvedValue({
