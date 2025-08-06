@@ -29,7 +29,7 @@ jobs:
       run: npm run lint
     
     - name: Run tests
-      run: npm run test:run
+      run: npm run test
     
     - name: Install infrastructure dependencies
       run: |
@@ -112,6 +112,12 @@ jobs:
           echo "Validating commit: $commit"
           MESSAGE=$(git log --format="%s" -n 1 $commit)
           echo "Message: $MESSAGE"
+          
+          # Skip merge commits (they start with "Merge")
+          if [[ "$MESSAGE" == Merge* ]]; then
+            echo "Skipping merge commit: $MESSAGE"
+            continue
+          fi
           
           # Use commitlint to validate
           if ! echo "$MESSAGE" | npx commitlint --verbose; then
