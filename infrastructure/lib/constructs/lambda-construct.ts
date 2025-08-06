@@ -177,6 +177,13 @@ export class LambdaConstruct extends Construct {
       role: this.emailProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.emailProcessor.timeoutMinutes),
       memorySize: config.lambda.emailProcessor.memoryMB,
+      bundling: {
+        nodeModules: ['mailparser'],
+        externalModules: ['@aws-sdk/*'],
+        format: lambdaNodejs.OutputFormat.ESM,
+        target: 'es2022',
+        sourceMap: true,
+      },
       environment: {
         NODE_ENV: environment,
         INCOMING_FILES_BUCKET: incomingFilesBucket.bucketName,
@@ -210,6 +217,12 @@ export class LambdaConstruct extends Construct {
       role: this.fileProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.fileProcessor.timeoutMinutes),
       memorySize: config.lambda.fileProcessor.memoryMB,
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        format: lambdaNodejs.OutputFormat.ESM,
+        target: 'es2022',
+        sourceMap: true,
+      },
       environment: {
         NODE_ENV: environment,
         INCOMING_FILES_BUCKET: incomingFilesBucket.bucketName,
