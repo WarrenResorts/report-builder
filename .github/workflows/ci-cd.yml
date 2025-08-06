@@ -137,9 +137,9 @@ jobs:
         echo "✅ All commits validated successfully"
 
   deploy-development:
-    needs: [test, security-scan]
+    needs: [test, security-scan, validate-commits]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@v4
     
