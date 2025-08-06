@@ -4,6 +4,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as path from 'path';
 import { EnvironmentConfig } from '../../config';
 
 /**
@@ -171,7 +172,7 @@ export class LambdaConstruct extends Construct {
       functionName: `${config.naming.projectPrefix}${config.naming.separator}email-processor${config.naming.separator}${environment}`,
       description: 'Processes incoming emails and extracts attachments for the Report Builder',
       runtime: lambda.Runtime.NODEJS_20_X,
-      entry: `${__dirname}/../../../src/lambda/email-processor.ts`,
+      entry: path.join(__dirname, '..', '..', '..', 'src', 'lambda', 'email-processor.ts'),
       handler: 'handler',
       role: this.emailProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.emailProcessor.timeoutMinutes),
@@ -204,7 +205,7 @@ export class LambdaConstruct extends Construct {
       functionName: `${config.naming.projectPrefix}${config.naming.separator}file-processor${config.naming.separator}${environment}`,
       description: 'Processes and transforms files for the Report Builder application',
       runtime: lambda.Runtime.NODEJS_20_X,
-      entry: `${__dirname}/../../../src/lambda/file-processor.ts`,
+      entry: path.join(__dirname, '..', '..', '..', 'src', 'lambda', 'file-processor.ts'),
       handler: 'handler',
       role: this.fileProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.fileProcessor.timeoutMinutes),

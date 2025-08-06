@@ -171,13 +171,11 @@ jobs:
     
     - name: Bootstrap CDK (if needed)
       run: |
-        cd infrastructure
-        npx cdk bootstrap --context environment=development
+        npx cdk bootstrap --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=development
     
     - name: Deploy infrastructure to development
       run: |
-        cd infrastructure
-        npx cdk deploy --context environment=development --require-approval never
+        npx cdk deploy --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=development --require-approval never
     
     - name: Comment PR with deployment info
       if: github.event_name == 'pull_request'
