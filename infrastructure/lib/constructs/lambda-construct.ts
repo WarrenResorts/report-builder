@@ -191,14 +191,6 @@ export class LambdaConstruct extends Construct {
         MAPPING_FILES_BUCKET: mappingFilesBucket.bucketName,
         PARAMETER_STORE_CACHE_TTL_SECONDS: config.application.parameterStore.cacheTTLSeconds.toString(),
       },
-      bundling: {
-        externalModules: [], // Bundle all dependencies
-        minify: environment === 'production',
-        sourceMap: environment === 'development',
-        target: 'es2022',
-        format: lambdaNodejs.OutputFormat.ESM,
-        banner: 'import { createRequire } from "module"; const require = createRequire(import.meta.url);',
-      },
       // Enable Lambda insights based on monitoring configuration
       insightsVersion: config.monitoring.lambdaInsights ? lambda.LambdaInsightsVersion.VERSION_1_0_229_0 : undefined,
     });
@@ -230,14 +222,7 @@ export class LambdaConstruct extends Construct {
         MAPPING_FILES_BUCKET: mappingFilesBucket.bucketName,
         PARAMETER_STORE_CACHE_TTL_SECONDS: config.application.parameterStore.cacheTTLSeconds.toString(),
       },
-      bundling: {
-        externalModules: [],
-        minify: environment === 'production',
-        sourceMap: environment === 'development',
-        target: 'es2022',
-        format: lambdaNodejs.OutputFormat.ESM,
-        banner: 'import { createRequire } from "module"; const require = createRequire(import.meta.url);',
-      },
+      // Enable Lambda insights based on monitoring configuration
       insightsVersion: config.monitoring.lambdaInsights ? lambda.LambdaInsightsVersion.VERSION_1_0_229_0 : undefined,
     });
 
