@@ -67,36 +67,36 @@ export class EventsConstruct extends Construct {
     // These parameters store sensitive email configurations and property mappings
     
     // Email recipients configuration (encrypted for security)
-    // Using CfnParameter for SecureString support in CDK v2
-    const emailRecipientsParam = new ssm.CfnParameter(this, 'EmailRecipientsParameter', {
-      name: `/${config.naming.projectPrefix}/${environment}/email/recipients`,
-      value: 'example@domain.com', // Default placeholder - to be updated manually
+    // Using StringParameter with encryption key instead of CfnParameter for better CDK support
+    const emailRecipientsParam = new ssm.StringParameter(this, 'EmailRecipientsParameter', {
+      parameterName: `/${config.naming.projectPrefix}/${environment}/email/recipients`,
+      stringValue: 'example@domain.com', // Default placeholder - to be updated manually
       description: 'Comma-separated list of email recipients for reports (encrypted)',
-      type: 'SecureString', // Encrypted parameter using AWS KMS
+      type: ssm.ParameterType.SECURE_STRING, // Encrypted parameter using AWS KMS
     });
 
     // Alert notification email (encrypted for security)
-    const alertEmailParam = new ssm.CfnParameter(this, 'AlertEmailParameter', {
-      name: `/${config.naming.projectPrefix}/${environment}/email/alert-notifications`,
-      value: `alerts@${config.domain.domainName}`, // Default based on domain
+    const alertEmailParam = new ssm.StringParameter(this, 'AlertEmailParameter', {
+      parameterName: `/${config.naming.projectPrefix}/${environment}/email/alert-notifications`,
+      stringValue: `alerts@${config.domain.domainName}`, // Default based on domain
       description: 'Email address for system alerts and notifications (encrypted)',
-      type: 'SecureString', // Encrypted parameter using AWS KMS
+      type: ssm.ParameterType.SECURE_STRING, // Encrypted parameter using AWS KMS
     });
 
     // From email address (encrypted for security)
-    const fromEmailParam = new ssm.CfnParameter(this, 'FromEmailParameter', {
-      name: `/${config.naming.projectPrefix}/${environment}/email/from-address`,
-      value: config.domain.emailAddress, // Use configured email address
+    const fromEmailParam = new ssm.StringParameter(this, 'FromEmailParameter', {
+      parameterName: `/${config.naming.projectPrefix}/${environment}/email/from-address`,
+      stringValue: config.domain.emailAddress, // Use configured email address
       description: 'From email address for outbound reports (encrypted)',
-      type: 'SecureString', // Encrypted parameter using AWS KMS
+      type: ssm.ParameterType.SECURE_STRING, // Encrypted parameter using AWS KMS
     });
 
     // Property mapping configuration (encrypted for security)
-    const propertyMappingParam = new ssm.CfnParameter(this, 'PropertyMappingParameter', {
-      name: `/${config.naming.projectPrefix}/${environment}/config/property-mapping`,
-      value: '{}', // Default empty JSON object - to be populated manually
+    const propertyMappingParam = new ssm.StringParameter(this, 'PropertyMappingParameter', {
+      parameterName: `/${config.naming.projectPrefix}/${environment}/config/property-mapping`,
+      stringValue: '{}', // Default empty JSON object - to be populated manually
       description: 'JSON configuration mapping sender emails to property IDs (encrypted)',
-      type: 'SecureString', // Encrypted parameter using AWS KMS
+      type: ssm.ParameterType.SECURE_STRING, // Encrypted parameter using AWS KMS
     });
 
     // ===================================================================
@@ -204,16 +204,16 @@ export class EventsConstruct extends Construct {
     new cdk.CfnOutput(this, 'SecureParametersInfo', {
       value: [
         'SECURE CONFIGURATION PARAMETERS (Encrypted with AWS KMS):',
-        `Email Recipients: ${emailRecipientsParam.name}`,
-        `Alert Email: ${alertEmailParam.name}`,
-        `From Email: ${fromEmailParam.name}`,
-        `Property Mapping: ${propertyMappingParam.name}`,
+        `Email Recipients: ${emailRecipientsParam.parameterName}`,
+        `Alert Email: ${alertEmailParam.parameterName}`,
+        `From Email: ${fromEmailParam.parameterName}`,
+        `Property Mapping: ${propertyMappingParam.parameterName}`,
         '',
         'To update encrypted parameters:',
-        `aws ssm put-parameter --name "${emailRecipientsParam.name}" --value "user1@domain.com,user2@domain.com" --type "SecureString" --overwrite`,
-        `aws ssm put-parameter --name "${alertEmailParam.name}" --value "alerts@yourdomain.com" --type "SecureString" --overwrite`,
-        `aws ssm put-parameter --name "${fromEmailParam.name}" --value "reports@yourdomain.com" --type "SecureString" --overwrite`,
-        `aws ssm put-parameter --name "${propertyMappingParam.name}" --value "{\\"sender@property1.com\\":\\"PROP001\\"}" --type "SecureString" --overwrite`,
+        `aws ssm put-parameter --name "${emailRecipientsParam.parameterName}" --value "user1@domain.com,user2@domain.com" --type "SecureString" --overwrite`,
+        `aws ssm put-parameter --name "${alertEmailParam.parameterName}" --value "alerts@yourdomain.com" --type "SecureString" --overwrite`,
+        `aws ssm put-parameter --name "${fromEmailParam.parameterName}" --value "reports@yourdomain.com" --type "SecureString" --overwrite`,
+        `aws ssm put-parameter --name "${propertyMappingParam.parameterName}" --value "{\\"sender@property1.com\\":\\"PROP001\\"}" --type "SecureString" --overwrite`,
         '',
         'NOTE: Encrypted parameters use AWS KMS for security and require decryption permissions.',
       ].join('\\n'),
