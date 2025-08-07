@@ -18,7 +18,6 @@ const configLoader = ConfigLoader.getInstance();
 const config = configLoader.getConfig(environment as 'development' | 'production');
 
 // Create stack with environment-specific configuration and consistent naming
-// Match existing stack name format: ReportBuilderStack-development
 new InfrastructureStack(app, `ReportBuilderStack-${environment}`, {
   environment: environment as 'development' | 'production',
   env: {
