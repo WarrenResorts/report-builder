@@ -18,8 +18,8 @@ const configLoader = ConfigLoader.getInstance();
 const config = configLoader.getConfig(environment as 'development' | 'production');
 
 // Create stack with environment-specific configuration and consistent naming
-// Adding "v2" suffix to avoid conflicts with existing stacks
-new InfrastructureStack(app, `${config.naming.projectPrefix}${config.naming.separator}stack${config.naming.separator}v2${config.naming.separator}${environment}`, {
+// Match existing stack name format: ReportBuilderStack-development
+new InfrastructureStack(app, `ReportBuilderStack-${environment}`, {
   environment: environment as 'development' | 'production',
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
