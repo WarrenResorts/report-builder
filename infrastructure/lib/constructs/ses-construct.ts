@@ -34,7 +34,7 @@ export interface SESConstructProps {
  */
 export class SESConstruct extends Construct {
   /** SES domain identity for email verification */
-  public readonly domainIdentity: ses.EmailIdentity;
+  public readonly domainIdentity: ses.IEmailIdentity;
   
   /** SES configuration set for email tracking */
   public readonly configurationSet: ses.ConfigurationSet;
@@ -166,10 +166,13 @@ export class SESConstruct extends Construct {
     // CLOUDFORMATION OUTPUTS
     // ===================================================================
     
-    new cdk.CfnOutput(this, 'SESdomainVerificationToken', {
-      value: this.domainIdentity.dkimDnsTokenName1,
-      description: 'SES domain verification token for DNS configuration',
-    });
+    // Only output DKIM tokens when we create the domain identity (development)
+    if (environment === 'development' && this.domainIdentity instanceof ses.EmailIdentity) {
+      new cdk.CfnOutput(this, 'SESdomainVerificationToken', {
+        value: this.domainIdentity.dkimDnsTokenName1,
+        description: 'SES domain verification token for DNS configuration',
+      });
+    }
 
     new cdk.CfnOutput(this, 'SESConfigurationSetName', {
       value: this.configurationSet.configurationSetName,
@@ -190,18 +193,29 @@ export class SESConstruct extends Construct {
     // MANUAL SETUP INSTRUCTIONS
     // ===================================================================
     
+    const setupInstructions = [
+      'MANUAL SETUP REQUIRED:',
+      '1. Add DNS TXT record for domain verification:',
+      `   Name: _amazonses.${domainName}`,
+    ];
+
+    // Only include DKIM token in development where we create the identity
+    if (environment === 'development' && this.domainIdentity instanceof ses.EmailIdentity) {
+      setupInstructions.push(`   Value: ${this.domainIdentity.dkimDnsTokenName1}`);
+    } else {
+      setupInstructions.push('   Value: <Check AWS SES Console for verification token>');
+    }
+
+    setupInstructions.push(
+      '2. Configure MX record to receive emails:',
+      `   Name: ${domainName}`,
+      '   Value: 10 inbound-smtp.<region>.amazonaws.com',
+      '3. Activate the SES receipt rule set in the AWS Console',
+      '4. Verify domain identity status in SES console'
+    );
+
     new cdk.CfnOutput(this, 'ManualSetupInstructions', {
-      value: [
-        'MANUAL SETUP REQUIRED:',
-        '1. Add DNS TXT record for domain verification:',
-        `   Name: _amazonses.${domainName}`,
-        `   Value: ${this.domainIdentity.dkimDnsTokenName1}`,
-        '2. Configure MX record to receive emails:',
-        `   Name: ${domainName}`,
-        '   Value: 10 inbound-smtp.<region>.amazonaws.com',
-        '3. Activate the SES receipt rule set in the AWS Console',
-        '4. Verify domain identity status in SES console'
-      ].join('\\n'),
+      value: setupInstructions.join('\\n'),
       description: 'Manual setup steps required after deployment',
     });
   }
