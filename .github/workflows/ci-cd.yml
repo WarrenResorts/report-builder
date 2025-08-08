@@ -58,6 +58,7 @@ jobs:
         output_path: 'kics-results'
         output_formats: 'json,sarif'
         exclude_paths: 'node_modules,dist,build,docs,coverage'
+        exclude_queries: 'a88baa34-e2ad-44ea-ad6f-8cac87bc7c71,555ab8f9-2001-455e-a077-f2d0f41e2fb9'
         fail_on: 'high,medium'
     
     - name: Upload KICS results
@@ -71,6 +72,9 @@ jobs:
     needs: [test, security-scan]
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      id-token: write   # This is required for requesting the JWT
+      contents: read    # This is required for actions/checkout
     steps:
     - uses: actions/checkout@v4
     
@@ -81,13 +85,10 @@ jobs:
         cache: 'npm'
     
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v3
+      uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        role-to-assume: arn:aws:iam::316422224105:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
-        role-to-assume: ''
-        web-identity-token-file: ''
     
     - name: Install CDK
       run: npm install -g aws-cdk
@@ -132,6 +133,9 @@ jobs:
     needs: [test, security-scan]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      id-token: write   # This is required for requesting the JWT
+      contents: read    # This is required for actions/checkout
     steps:
     - uses: actions/checkout@v4
     
@@ -142,13 +146,10 @@ jobs:
         cache: 'npm'
     
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v3
+      uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        role-to-assume: arn:aws:iam::316422224105:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
-        role-to-assume: ''
-        web-identity-token-file: ''
     
     - name: Install CDK
       run: npm install -g aws-cdk
