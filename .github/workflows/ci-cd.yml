@@ -70,7 +70,7 @@ jobs:
   deploy-development:
     needs: [test, security-scan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && secrets.AWS_ACCESS_KEY_ID != ''
     steps:
     - uses: actions/checkout@v4
     
@@ -86,6 +86,7 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ""
     
     - name: Install CDK
       run: npm install -g aws-cdk
@@ -145,6 +146,7 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ""
     
     - name: Install CDK
       run: npm install -g aws-cdk
