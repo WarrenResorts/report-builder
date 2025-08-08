@@ -15,6 +15,39 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
+    # Auto-merge configuration (conservative approach)
+    auto-merge:
+      # Auto-merge security updates for all dependencies
+      - dependency-type: "direct:production"
+        update-type: "security"
+      - dependency-type: "indirect:production"
+        update-type: "security"
+      - dependency-type: "direct:development"
+        update-type: "security"
+      - dependency-type: "indirect:development"
+        update-type: "security"
+      # Auto-merge patch updates for development dependencies only
+      - dependency-type: "direct:development"
+        update-type: "patch"
+      - dependency-type: "indirect:development"
+        update-type: "patch"
+    # Allow specific safe packages to auto-merge minor updates
+    auto-approve:
+      # TypeScript definitions (very safe)
+      - dependency-name: "@types/*"
+        update-type: "minor"
+      # Development tools (safe, don't affect runtime)
+      - dependency-name: "eslint"
+        update-type: "minor"
+      - dependency-name: "prettier"
+        update-type: "minor"
+      - dependency-name: "@typescript-eslint/*"
+        update-type: "minor"
+      # Testing frameworks (comprehensive test coverage provides safety)
+      - dependency-name: "vitest"
+        update-type: "patch"
+      - dependency-name: "@vitest/*"
+        update-type: "patch"
 
   # Infrastructure dependencies
   - package-ecosystem: "npm"
@@ -26,6 +59,28 @@ updates:
     open-pull-requests-limit: 3
     reviewers:
       - "@warren-resort-hotels/infrastructure-team"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    # Conservative auto-merge for infrastructure (more careful)
+    auto-merge:
+      # Security updates only for infrastructure
+      - dependency-type: "direct:production"
+        update-type: "security"
+      - dependency-type: "indirect:production"
+        update-type: "security"
+      - dependency-type: "direct:development"
+        update-type: "security"
+      - dependency-type: "indirect:development"
+        update-type: "security"
+      # Development dependencies patch updates
+      - dependency-type: "direct:development"
+        update-type: "patch"
+    # Infrastructure-specific safe packages
+    auto-approve:
+      # TypeScript definitions
+      - dependency-name: "@types/*"
+        update-type: "minor"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
@@ -37,3 +92,13 @@ updates:
     open-pull-requests-limit: 2
     reviewers:
       - "@warren-resort-hotels/infrastructure-team"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    # GitHub Actions are generally safe to auto-merge
+    auto-merge:
+      # Auto-merge patch and minor updates for GitHub Actions
+      - dependency-type: "direct:production"
+        update-type: "patch"
+      - dependency-type: "direct:production"
+        update-type: "minor"
