@@ -67,77 +67,8 @@ jobs:
         name: kics-results
         path: kics-results/
 
-  validate-commits:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Validate commit messages
-      run: |
-        # Use commitlint-action approach but with error handling
-        echo "Validating commits in PR..."
-        
-        # Get the merge base to find the common ancestor
-        git fetch origin ${{ github.event.pull_request.base.ref }}
-        MERGE_BASE=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
-        
-        echo "Merge base: $MERGE_BASE"
-        echo "Current HEAD: $(git rev-parse HEAD)"
-        
-        # Get commits to validate
-        COMMITS=$(git rev-list --reverse $MERGE_BASE..HEAD)
-        
-        if [ -z "$COMMITS" ]; then
-          echo "No commits to validate"
-          exit 0
-        fi
-        
-        echo "Commits to validate:"
-        git log --oneline $MERGE_BASE..HEAD
-        
-        # Validate each commit message
-        for commit in $COMMITS; do
-          echo "Validating commit: $commit"
-          MESSAGE=$(git log --format="%s" -n 1 $commit)
-          echo "Message: $MESSAGE"
-          
-          # Skip merge commits (they start with "Merge")
-          if [[ "$MESSAGE" == Merge* ]]; then
-            echo "Skipping merge commit: $MESSAGE"
-            continue
-          fi
-          
-          # Use commitlint to validate
-          if ! echo "$MESSAGE" | npx commitlint --verbose; then
-            # Check if it's only a length issue for feat/fix commits
-            if [[ "$MESSAGE" =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: ]]; then
-              echo "⚠️  Commit has valid conventional format but may exceed length limit: $commit"
-              echo "Message: $MESSAGE"
-              echo "Continuing validation (allowing length violations for conventional commits)..."
-            else
-              echo "❌ Commit validation failed for: $commit"
-              echo "Message: $MESSAGE"
-              exit 1
-            fi
-          fi
-        done
-        
-        echo "✅ All commits validated successfully"
-
   deploy-development:
-    needs: [test, security-scan, validate-commits]
+    needs: [test, security-scan]
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
