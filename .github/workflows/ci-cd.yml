@@ -81,12 +81,11 @@ jobs:
         cache: 'npm'
     
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v3
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-        role-to-assume: ""
     
     - name: Install CDK
       run: npm install -g aws-cdk
@@ -141,12 +140,11 @@ jobs:
         cache: 'npm'
     
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v3
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-        role-to-assume: ""
     
     - name: Install CDK
       run: npm install -g aws-cdk
