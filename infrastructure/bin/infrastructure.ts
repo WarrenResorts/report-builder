@@ -18,7 +18,7 @@ const configLoader = ConfigLoader.getInstance();
 const config = configLoader.getConfig(environment as 'development' | 'production');
 
 // Create stack with environment-specific configuration and consistent naming
-new InfrastructureStack(app, `ReportBuilderV2Stack-${environment}`, {
+new InfrastructureStack(app, `ReportBuilderStack-${environment}`, {
   environment: environment as 'development' | 'production',
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
