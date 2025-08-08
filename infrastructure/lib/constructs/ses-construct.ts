@@ -111,9 +111,10 @@ export class SESConstruct extends Construct {
     });
 
     // Make the rule set active (only one can be active at a time)
-    new ses.CfnReceiptRuleSet(this, 'ActiveRuleSet', {
-      ruleSetName: this.receiptRuleSet.receiptRuleSetName,
-    });
+    // Temporarily commented out to debug deployment issues
+    // new ses.CfnReceiptRuleSet(this, 'ActiveRuleSet', {
+    //   ruleSetName: this.receiptRuleSet.receiptRuleSetName,
+    // });
 
     // ===================================================================
     // CLOUDFORMATION OUTPUTS
