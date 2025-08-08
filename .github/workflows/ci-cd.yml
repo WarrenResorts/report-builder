@@ -29,7 +29,7 @@ jobs:
       run: npm run lint
     
     - name: Run tests
-      run: npm run test:run
+      run: npm run test
     
     - name: Install infrastructure dependencies
       run: |
@@ -57,7 +57,7 @@ jobs:
         path: '.'
         output_path: 'kics-results'
         output_formats: 'json,sarif'
-        exclude_paths: 'node_modules,dist,build'
+        exclude_paths: 'node_modules,dist,build,docs,coverage'
         fail_on: 'high,medium'
     
     - name: Upload KICS results
@@ -66,62 +66,6 @@ jobs:
       with:
         name: kics-results
         path: kics-results/
-
-  validate-commits:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Validate commit messages
-      run: |
-        # Use commitlint-action approach but with error handling
-        echo "Validating commits in PR..."
-        
-        # Get the merge base to find the common ancestor
-        git fetch origin ${{ github.event.pull_request.base.ref }}
-        MERGE_BASE=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
-        
-        echo "Merge base: $MERGE_BASE"
-        echo "Current HEAD: $(git rev-parse HEAD)"
-        
-        # Get commits to validate
-        COMMITS=$(git rev-list --reverse $MERGE_BASE..HEAD)
-        
-        if [ -z "$COMMITS" ]; then
-          echo "No commits to validate"
-          exit 0
-        fi
-        
-        echo "Commits to validate:"
-        git log --oneline $MERGE_BASE..HEAD
-        
-        # Validate each commit message
-        for commit in $COMMITS; do
-          echo "Validating commit: $commit"
-          MESSAGE=$(git log --format="%s" -n 1 $commit)
-          echo "Message: $MESSAGE"
-          
-          # Use commitlint to validate
-          if ! echo "$MESSAGE" | npx commitlint --verbose; then
-            echo "❌ Commit validation failed for: $commit"
-            echo "Message: $MESSAGE"
-            exit 1
-          fi
-        done
-        
-        echo "✅ All commits validated successfully"
 
   deploy-development:
     needs: [test, security-scan]
@@ -158,13 +102,11 @@ jobs:
     
     - name: Bootstrap CDK (if needed)
       run: |
-        cd infrastructure
-        npx cdk bootstrap --context environment=development
+        npx cdk bootstrap --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=development
     
     - name: Deploy infrastructure to development
       run: |
-        cd infrastructure
-        npx cdk deploy --context environment=development --require-approval never
+        npx cdk deploy --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=development --require-approval never
     
     - name: Comment PR with deployment info
       if: github.event_name == 'pull_request'

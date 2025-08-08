@@ -1,0 +1,289 @@
+openapi: 3.0.3
+info:
+  title: SES Email Event Schema
+  description: Schema definition for Amazon SES email events that trigger the Email Processor Lambda
+  version: 1.0.0
+
+components:
+  schemas:
+    SESEvent:
+      type: object
+      required:
+        - Records
+      properties:
+        Records:
+          type: array
+          items:
+            $ref: '#/components/schemas/SESRecord'
+          description: Array of SES email records
+
+    SESRecord:
+      type: object
+      required:
+        - eventSource
+        - eventVersion
+        - ses
+      properties:
+        eventSource:
+          type: string
+          enum: ['aws:ses']
+          description: Event source identifier
+        eventVersion:
+          type: string
+          enum: ['1.0']
+          description: SES event version
+        ses:
+          $ref: '#/components/schemas/SESData'
+
+    SESData:
+      type: object
+      required:
+        - mail
+        - receipt
+      properties:
+        mail:
+          $ref: '#/components/schemas/SESMail'
+        receipt:
+          $ref: '#/components/schemas/SESReceipt'
+
+    SESMail:
+      type: object
+      required:
+        - timestamp
+        - source
+        - messageId
+        - destination
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Email timestamp
+          example: "2024-01-15T10:30:00.000Z"
+        source:
+          type: string
+          format: email
+          description: Sender email address
+          example: "property1@warrenresorthotels.com"
+        messageId:
+          type: string
+          description: Unique message identifier
+          example: "0000014a-f4d4-4f89-b0d5-123456789abc"
+        destination:
+          type: array
+          items:
+            type: string
+            format: email
+          description: Recipient email addresses
+          example: ["reports@aws.warrenresorthotels.com"]
+        headersTruncated:
+          type: boolean
+          description: Whether email headers were truncated
+          default: false
+        headers:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmailHeader'
+          description: Email headers
+        commonHeaders:
+          $ref: '#/components/schemas/CommonHeaders'
+
+    EmailHeader:
+      type: object
+      required:
+        - name
+        - value
+      properties:
+        name:
+          type: string
+          description: Header name
+          example: "From"
+        value:
+          type: string
+          description: Header value
+          example: "property1@warrenresorthotels.com"
+
+    CommonHeaders:
+      type: object
+      required:
+        - from
+        - to
+        - messageId
+        - date
+      properties:
+        from:
+          type: array
+          items:
+            type: string
+            format: email
+          description: From email addresses
+          example: ["property1@warrenresorthotels.com"]
+        to:
+          type: array
+          items:
+            type: string
+            format: email
+          description: To email addresses
+          example: ["reports@aws.warrenresorthotels.com"]
+        cc:
+          type: array
+          items:
+            type: string
+            format: email
+          description: CC email addresses
+        bcc:
+          type: array
+          items:
+            type: string
+            format: email
+          description: BCC email addresses
+        sender:
+          type: array
+          items:
+            type: string
+            format: email
+          description: Sender email addresses
+        replyTo:
+          type: array
+          items:
+            type: string
+            format: email
+          description: Reply-to email addresses
+        returnPath:
+          type: string
+          format: email
+          description: Return path email address
+        messageId:
+          type: string
+          description: Message identifier
+          example: "0000014a-f4d4-4f89-b0d5-123456789abc"
+        date:
+          type: string
+          description: Email date header
+          example: "Mon, 15 Jan 2024 10:30:00 +0000"
+        subject:
+          type: string
+          description: Email subject
+          example: "Daily Report - Property 1"
+
+    SESReceipt:
+      type: object
+      required:
+        - timestamp
+        - processingTimeMillis
+        - recipients
+        - spamVerdict
+        - virusVerdict
+        - spfVerdict
+        - dkimVerdict
+        - dmarcVerdict
+        - action
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Receipt timestamp
+          example: "2024-01-15T10:30:00.000Z"
+        processingTimeMillis:
+          type: integer
+          description: Processing time in milliseconds
+          minimum: 0
+          example: 150
+        recipients:
+          type: array
+          items:
+            type: string
+            format: email
+          description: Receipt recipients
+          example: ["reports@aws.warrenresorthotels.com"]
+        spamVerdict:
+          $ref: '#/components/schemas/SESVerdict'
+        virusVerdict:
+          $ref: '#/components/schemas/SESVerdict'
+        spfVerdict:
+          $ref: '#/components/schemas/SESVerdict'
+        dkimVerdict:
+          $ref: '#/components/schemas/SESVerdict'
+        dmarcVerdict:
+          $ref: '#/components/schemas/SESVerdict'
+        action:
+          $ref: '#/components/schemas/SESAction'
+
+    SESVerdict:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: ['PASS', 'FAIL', 'GRAY', 'PROCESSING_FAILED']
+          description: Verdict status
+          example: "PASS"
+
+    SESAction:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: ['S3', 'Lambda', 'SNS', 'Bounce', 'Stop']
+          description: Action type
+          example: "S3"
+        bucketName:
+          type: string
+          description: S3 bucket name (for S3 action)
+          example: "report-builder-incoming-files-dev"
+        objectKey:
+          type: string
+          description: S3 object key (for S3 action)
+          example: "raw-emails/0000014a-f4d4-4f89-b0d5-123456789abc"
+        functionArn:
+          type: string
+          description: Lambda function ARN (for Lambda action)
+        topicArn:
+          type: string
+          description: SNS topic ARN (for SNS action)
+
+# Example SES Event
+example:
+  Records:
+    - eventSource: "aws:ses"
+      eventVersion: "1.0"
+      ses:
+        mail:
+          timestamp: "2024-01-15T10:30:00.000Z"
+          source: "property1@warrenresorthotels.com"
+          messageId: "0000014a-f4d4-4f89-b0d5-123456789abc"
+          destination: ["reports@aws.warrenresorthotels.com"]
+          headersTruncated: false
+          headers:
+            - name: "From"
+              value: "property1@warrenresorthotels.com"
+            - name: "To"
+              value: "reports@aws.warrenresorthotels.com"
+            - name: "Subject"
+              value: "Daily Report - Property 1"
+          commonHeaders:
+            from: ["property1@warrenresorthotels.com"]
+            to: ["reports@aws.warrenresorthotels.com"]
+            subject: "Daily Report - Property 1"
+            date: "Mon, 15 Jan 2024 10:30:00 +0000"
+            messageId: "0000014a-f4d4-4f89-b0d5-123456789abc"
+        receipt:
+          timestamp: "2024-01-15T10:30:00.000Z"
+          processingTimeMillis: 150
+          recipients: ["reports@aws.warrenresorthotels.com"]
+          spamVerdict:
+            status: "PASS"
+          virusVerdict:
+            status: "PASS"
+          spfVerdict:
+            status: "PASS"
+          dkimVerdict:
+            status: "PASS"
+          dmarcVerdict:
+            status: "PASS"
+          action:
+            type: "S3"
+            bucketName: "report-builder-incoming-files-dev"
+            objectKey: "raw-emails/0000014a-f4d4-4f89-b0d5-123456789abc" 

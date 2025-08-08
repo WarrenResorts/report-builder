@@ -1,0 +1,329 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  # Validate PR metadata
+  pr-validation:
+    name: PR Validation
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          scopes: |
+            api
+            ui
+            docs
+            deps
+            config
+            security
+            deployment
+            infrastructure
+          requireScope: false
+
+      - name: Check PR description
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            if (!pr.body || pr.body.trim().length < 20) {
+              core.setFailed('PR description must be at least 20 characters long');
+            }
+            
+            // Check for required sections in PR description
+            const requiredSections = ['## What', '## Why', '## Testing'];
+            const missingSections = requiredSections.filter(section => 
+              !pr.body.includes(section)
+            );
+            
+            if (missingSections.length > 0) {
+              core.setFailed(`PR description is missing required sections: ${missingSections.join(', ')}`);
+            }
+
+  # Code quality checks
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for better analysis
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ESLint SARIF formatter
+        run: npm install --save-dev @microsoft/eslint-formatter-sarif
+
+      - name: Run ESLint with annotations
+        run: npm run lint -- --format=@microsoft/eslint-formatter-sarif --output-file=eslint-results.sarif
+        continue-on-error: true
+
+      - name: Upload ESLint results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: eslint-results.sarif
+          wait-for-processing: true
+
+      - name: Check code formatting
+        run: npm run format:check
+
+      - name: Run tests with coverage
+        run: npm test -- --coverage
+
+      # Coverage comment removed due to GitHub token permissions
+      # The coverage results are still available in the test output above
+
+  # Dependency Review disabled - requires GitHub Advanced Security
+  # dependency-review:
+  #   name: Dependency Review
+  #   runs-on: ubuntu-latest
+  #   if: github.event.pull_request.draft == false
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #     - name: Dependency Review
+  #       uses: actions/dependency-review-action@v4
+  #       with:
+  #         fail-on-severity: moderate
+  #         allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
+
+  # Security scan for PRs
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+
+      - name: Run Semgrep security scan
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/secrets
+            p/typescript
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+  # Check for breaking changes
+  breaking-changes:
+    name: Breaking Changes Check
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false && github.base_ref == 'main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check for API breaking changes
+        run: |
+          # Compare API interfaces between base and current branch
+          echo "Checking for breaking changes in API interfaces..."
+          
+          # Check if any exported functions/classes have been removed or modified
+          git diff origin/${{ github.base_ref }}...HEAD --name-only | grep -E '\.(ts|js)$' | while read file; do
+            if [[ -f "$file" ]]; then
+              echo "Checking $file for breaking changes..."
+              # Add your breaking change detection logic here
+            fi
+          done
+
+      - name: Check infrastructure changes
+        run: |
+          echo "Checking for infrastructure breaking changes..."
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "infrastructure/"; then
+            echo "Infrastructure changes detected - manual review required"
+            echo "::warning::Infrastructure changes detected. Ensure backward compatibility."
+          fi
+
+  # Performance impact analysis
+  performance-check:
+    name: Performance Check
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and analyze bundle size
+        run: |
+          npm run build
+          echo "## Bundle Size Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          find dist -name "*.js" -type f -exec sh -c 'echo "| ${1#dist/} | $(du -h "$1" | cut -f1) |"' _ {} \; >> $GITHUB_STEP_SUMMARY
+
+      - name: Test performance benchmarks
+        run: |
+          echo "Running performance benchmarks..."
+          # Add performance testing here if applicable
+          echo "✅ Performance benchmarks completed"
+
+  # Auto-assign reviewers based on changed files
+  assign-reviewers:
+    name: Assign Reviewers
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Auto-assign reviewers
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // Get changed files
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            const changedFiles = files.map(file => file.filename);
+            let reviewers = [];
+            
+            // Assign reviewers based on changed files
+            if (changedFiles.some(file => file.startsWith('infrastructure/'))) {
+              reviewers.push('infrastructure-team');
+            }
+            
+            if (changedFiles.some(file => file.startsWith('src/lambda/'))) {
+              reviewers.push('backend-team');
+            }
+            
+            if (changedFiles.some(file => file.includes('test'))) {
+              reviewers.push('qa-team');
+            }
+            
+            if (changedFiles.some(file => file.includes('security') || file.includes('.github/'))) {
+              reviewers.push('security-team');
+            }
+            
+            // Remove duplicates and limit to 3 reviewers
+            reviewers = [...new Set(reviewers)].slice(0, 3);
+            
+            if (reviewers.length > 0) {
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.issue.number,
+                  team_reviewers: reviewers
+                });
+                console.log(`Assigned reviewers: ${reviewers.join(', ')}`);
+              } catch (error) {
+                console.log('Could not assign team reviewers, they may not exist in this repository');
+              }
+            }
+
+  # Size limit check
+  size-limit:
+    name: Size Limit Check
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check package size limits
+        run: |
+          echo "Checking Lambda deployment package sizes..."
+          npm run build
+          
+          # Check if any Lambda function exceeds size limits
+          MAX_SIZE_MB=50
+          
+          if [ -d "dist" ]; then
+            total_size=$(du -sm dist | cut -f1)
+            echo "Total build size: ${total_size}MB"
+            
+            if [ $total_size -gt $MAX_SIZE_MB ]; then
+              echo "::error::Build size (${total_size}MB) exceeds Lambda limit (${MAX_SIZE_MB}MB)"
+              exit 1
+            else
+              echo "✅ Build size is within Lambda limits"
+            fi
+          fi

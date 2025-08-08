@@ -1,0 +1,240 @@
+openapi: 3.0.3
+info:
+  title: EventBridge File Processing Event Schema
+  description: Schema definition for Amazon EventBridge scheduled events that trigger the File Processor Lambda
+  version: 1.0.0
+
+components:
+  schemas:
+    EventBridgeEvent:
+      type: object
+      required:
+        - version
+        - id
+        - detail-type
+        - source
+        - account
+        - time
+        - region
+        - detail
+      properties:
+        version:
+          type: string
+          description: EventBridge event version
+          example: "0"
+        id:
+          type: string
+          description: Unique event identifier
+          example: "12345678-1234-1234-1234-123456789012"
+        detail-type:
+          type: string
+          description: Event detail type
+          example: "Scheduled File Processing"
+        source:
+          type: string
+          description: Event source
+          example: "report-builder.scheduler"
+        account:
+          type: string
+          description: AWS account ID
+          pattern: '^[0-9]{12}$'
+          example: "123456789012"
+        time:
+          type: string
+          format: date-time
+          description: Event timestamp
+          example: "2024-01-15T06:00:00Z"
+        region:
+          type: string
+          description: AWS region
+          example: "us-east-1"
+        detail:
+          $ref: '#/components/schemas/FileProcessingDetail'
+        resources:
+          type: array
+          items:
+            type: string
+          description: Associated AWS resources
+          example: ["arn:aws:events:us-east-1:123456789012:rule/report-builder-daily-processing"]
+
+    FileProcessingDetail:
+      type: object
+      required:
+        - processingType
+        - environment
+        - timestamp
+        - scheduleExpression
+      properties:
+        processingType:
+          type: string
+          enum: ['daily-batch', 'weekly-report']
+          description: Type of processing to perform
+          example: "daily-batch"
+        environment:
+          type: string
+          enum: ['development', 'production']
+          description: Target environment
+          example: "production"
+        timestamp:
+          type: string
+          format: date-time
+          description: Scheduled processing timestamp
+          example: "2024-01-15T06:00:00Z"
+        scheduleExpression:
+          type: string
+          description: EventBridge schedule expression
+          pattern: '^(rate|cron)\(.+\)$'
+          example: "cron(0 6 * * ? *)"
+        batchId:
+          type: string
+          description: Optional batch identifier for tracking
+          example: "batch-20240115-060000"
+        configuration:
+          $ref: '#/components/schemas/ProcessingConfiguration'
+
+    ProcessingConfiguration:
+      type: object
+      description: Optional processing configuration overrides
+      properties:
+        maxFiles:
+          type: integer
+          description: Maximum number of files to process
+          minimum: 1
+          maximum: 1000
+          example: 100
+        timeout:
+          type: integer
+          description: Processing timeout in seconds
+          minimum: 60
+          maximum: 900
+          example: 600
+        retryAttempts:
+          type: integer
+          description: Number of retry attempts for failed files
+          minimum: 0
+          maximum: 5
+          example: 3
+        parallelism:
+          type: integer
+          description: Number of parallel processing streams
+          minimum: 1
+          maximum: 10
+          example: 2
+        outputFormat:
+          type: string
+          enum: ['csv', 'excel', 'json']
+          description: Output report format
+          default: 'csv'
+          example: "csv"
+        includeMetadata:
+          type: boolean
+          description: Whether to include processing metadata
+          default: true
+          example: true
+        dateRange:
+          $ref: '#/components/schemas/DateRange'
+
+    DateRange:
+      type: object
+      description: Date range for file processing
+      properties:
+        startDate:
+          type: string
+          format: date
+          description: Start date for file processing (ISO 8601)
+          example: "2024-01-14"
+        endDate:
+          type: string
+          format: date
+          description: End date for file processing (ISO 8601)
+          example: "2024-01-15"
+        relativeDays:
+          type: integer
+          description: Number of days to look back from current date
+          minimum: 1
+          maximum: 30
+          example: 1
+
+# Example Events
+examples:
+  DailyBatchEvent:
+    summary: Daily batch processing event
+    value:
+      version: "0"
+      id: "12345678-1234-1234-1234-123456789012"
+      detail-type: "Scheduled File Processing"
+      source: "report-builder.scheduler"
+      account: "123456789012"
+      time: "2024-01-15T06:00:00Z"
+      region: "us-east-1"
+      detail:
+        processingType: "daily-batch"
+        environment: "production"
+        timestamp: "2024-01-15T06:00:00Z"
+        scheduleExpression: "cron(0 6 * * ? *)"
+        batchId: "batch-20240115-060000"
+        configuration:
+          maxFiles: 50
+          timeout: 600
+          retryAttempts: 3
+          parallelism: 2
+          outputFormat: "csv"
+          includeMetadata: true
+          dateRange:
+            relativeDays: 1
+      resources:
+        - "arn:aws:events:us-east-1:123456789012:rule/report-builder-daily-processing"
+
+  WeeklyReportEvent:
+    summary: Weekly report processing event
+    value:
+      version: "0"
+      id: "87654321-4321-4321-4321-210987654321"
+      detail-type: "Scheduled File Processing"
+      source: "report-builder.scheduler"
+      account: "123456789012"
+      time: "2024-01-21T07:00:00Z"
+      region: "us-east-1"
+      detail:
+        processingType: "weekly-report"
+        environment: "production"
+        timestamp: "2024-01-21T07:00:00Z"
+        scheduleExpression: "cron(0 7 ? * SUN *)"
+        batchId: "weekly-20240121-070000"
+        configuration:
+          maxFiles: 350
+          timeout: 900
+          retryAttempts: 2
+          parallelism: 4
+          outputFormat: "excel"
+          includeMetadata: true
+          dateRange:
+            startDate: "2024-01-15"
+            endDate: "2024-01-21"
+      resources:
+        - "arn:aws:events:us-east-1:123456789012:rule/report-builder-weekly-reporting"
+
+  DevelopmentTestEvent:
+    summary: Development environment test event
+    value:
+      version: "0"
+      id: "test-event-12345"
+      detail-type: "Scheduled File Processing"
+      source: "report-builder.scheduler"
+      account: "123456789012"
+      time: "2024-01-15T10:30:00Z"
+      region: "us-east-1"
+      detail:
+        processingType: "daily-batch"
+        environment: "development"
+        timestamp: "2024-01-15T10:30:00Z"
+        scheduleExpression: "rate(30 minutes)"
+        configuration:
+          maxFiles: 10
+          timeout: 300
+          retryAttempts: 1
+          parallelism: 1
+          outputFormat: "csv"
+          includeMetadata: true
+          dateRange:
+            relativeDays: 1 

@@ -1,0 +1,453 @@
+openapi: 3.0.3
+info:
+  title: File Processor Response Schema
+  description: Schema definition for File Processor Lambda function responses
+  version: 1.0.0
+
+components:
+  schemas:
+    FileProcessorSuccessResponse:
+      type: object
+      required:
+        - statusCode
+        - message
+        - processedFiles
+        - timestamp
+        - processingType
+        - environment
+        - correlationId
+      properties:
+        statusCode:
+          type: integer
+          enum: [200]
+          description: HTTP status code for success
+          example: 200
+        message:
+          type: string
+          description: Success message describing the processing result
+          example: "Daily batch processing completed successfully"
+        processedFiles:
+          type: integer
+          description: Number of files processed in this batch
+          minimum: 0
+          example: 14
+        timestamp:
+          type: string
+          format: date-time
+          description: Processing completion timestamp
+          example: "2024-01-15T06:15:30.000Z"
+        processingType:
+          type: string
+          enum: ['daily-batch', 'weekly-report']
+          description: Type of processing performed
+          example: "daily-batch"
+        environment:
+          type: string
+          enum: ['development', 'production']
+          description: Environment where processing occurred
+          example: "production"
+        correlationId:
+          type: string
+          description: Unique correlation ID for batch tracking
+          pattern: '^fproc-[0-9]+-[a-z0-9]+$'
+          example: "fproc-1705305330000-xyz789abc"
+        duration:
+          type: integer
+          description: Total processing duration in milliseconds
+          minimum: 0
+          example: 45230
+        generatedReports:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeneratedReport'
+          description: List of reports generated during processing
+        processingStats:
+          $ref: '#/components/schemas/ProcessingStats'
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Non-fatal warnings during processing
+          example: ["Property-5 had no files for processing date range"]
+
+    GeneratedReport:
+      type: object
+      required:
+        - reportType
+        - fileName
+        - s3Key
+        - size
+        - recordCount
+      properties:
+        reportType:
+          type: string
+          enum: ['consolidated-daily', 'property-summary', 'processing-log', 'weekly-summary', 'data-quality']
+          description: Type of report generated
+          example: "consolidated-daily"
+        fileName:
+          type: string
+          description: Generated file name
+          example: "daily-report-2024-01-15.csv"
+        s3Key:
+          type: string
+          description: S3 object key where the report is stored
+          example: "processed-reports/2024/01/15/daily-report-2024-01-15.csv"
+        size:
+          type: integer
+          description: File size in bytes
+          minimum: 0
+          example: 2456789
+        recordCount:
+          type: integer
+          description: Number of data records in the report
+          minimum: 0
+          example: 15420
+        format:
+          type: string
+          enum: ['csv', 'excel', 'json', 'txt']
+          description: Report file format
+          example: "csv"
+        timestamp:
+          type: string
+          format: date-time
+          description: Report generation timestamp
+          example: "2024-01-15T06:14:25.000Z"
+        checksum:
+          type: string
+          description: MD5 checksum for file integrity
+          example: "e1f2d3a4b5c6789012345678901234567"
+
+    ProcessingStats:
+      type: object
+      required:
+        - totalFilesDiscovered
+        - filesProcessedSuccessfully
+        - filesSkipped
+        - totalRecordsProcessed
+      properties:
+        totalFilesDiscovered:
+          type: integer
+          description: Total files found for processing
+          minimum: 0
+          example: 16
+        filesProcessedSuccessfully:
+          type: integer
+          description: Files processed without errors
+          minimum: 0
+          example: 14
+        filesSkipped:
+          type: integer
+          description: Files skipped due to validation errors
+          minimum: 0
+          example: 2
+        filesFailed:
+          type: integer
+          description: Files that failed processing
+          minimum: 0
+          default: 0
+          example: 0
+        totalRecordsProcessed:
+          type: integer
+          description: Total data records processed across all files
+          minimum: 0
+          example: 15420
+        dataQualityScore:
+          type: number
+          format: float
+          description: Data quality score as percentage (0-100)
+          minimum: 0
+          maximum: 100
+          example: 97.5
+        processingRate:
+          type: number
+          format: float
+          description: Processing rate in files per minute
+          minimum: 0
+          example: 18.6
+        propertiesProcessed:
+          type: array
+          items:
+            $ref: '#/components/schemas/PropertyProcessingStats'
+          description: Per-property processing statistics
+
+    PropertyProcessingStats:
+      type: object
+      required:
+        - propertyId
+        - filesProcessed
+        - recordsProcessed
+      properties:
+        propertyId:
+          type: string
+          description: Property identifier
+          example: "property-1"
+        filesProcessed:
+          type: integer
+          description: Number of files processed for this property
+          minimum: 0
+          example: 3
+        recordsProcessed:
+          type: integer
+          description: Number of records processed for this property
+          minimum: 0
+          example: 1250
+        avgFileSize:
+          type: integer
+          description: Average file size in bytes
+          minimum: 0
+          example: 156789
+        processingTime:
+          type: integer
+          description: Processing time for this property in milliseconds
+          minimum: 0
+          example: 3420
+
+    FileProcessorErrorResponse:
+      type: object
+      required:
+        - statusCode
+        - error
+        - message
+        - correlationId
+        - timestamp
+      properties:
+        statusCode:
+          type: integer
+          enum: [400, 500]
+          description: HTTP status code for error
+          example: 500
+        error:
+          type: string
+          description: Error type identifier
+          example: "FileDiscoveryError"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Failed to discover files for processing: S3 bucket access denied"
+        correlationId:
+          type: string
+          description: Unique correlation ID for batch tracking
+          pattern: '^fproc-[0-9]+-[a-z0-9]+$'
+          example: "fproc-1705305330000-error456"
+        timestamp:
+          type: string
+          format: date-time
+          description: Error occurrence timestamp
+          example: "2024-01-15T06:05:00.000Z"
+        processingType:
+          type: string
+          enum: ['daily-batch', 'weekly-report']
+          description: Type of processing that failed
+          example: "daily-batch"
+        environment:
+          type: string
+          enum: ['development', 'production']
+          description: Environment where error occurred
+          example: "production"
+        context:
+          type: object
+          description: Additional error context for debugging
+          properties:
+            bucketName:
+              type: string
+              description: S3 bucket being accessed
+              example: "report-builder-incoming-files-prod"
+            dateRange:
+              type: string
+              description: Date range being processed
+              example: "2024-01-14 to 2024-01-15"
+            expectedFiles:
+              type: integer
+              description: Expected number of files
+              example: 14
+            foundFiles:
+              type: integer
+              description: Actual number of files found
+              example: 0
+            operation:
+              type: string
+              description: Operation that failed
+              example: "file_discovery"
+        partialResults:
+          type: object
+          description: Partial processing results if applicable
+          properties:
+            filesProcessedBeforeError:
+              type: integer
+              minimum: 0
+              example: 8
+            lastSuccessfulFile:
+              type: string
+              example: "daily-files/property-4/2024-01-15/report.pdf"
+        retryable:
+          type: boolean
+          description: Whether the error is retryable
+          default: false
+          example: true
+
+# Example Responses
+examples:
+  SuccessfulDailyBatch:
+    summary: Successful daily batch processing
+    value:
+      statusCode: 200
+      message: "Daily batch processing completed successfully"
+      processedFiles: 14
+      timestamp: "2024-01-15T06:15:30.000Z"
+      processingType: "daily-batch"
+      environment: "production"
+      correlationId: "fproc-1705305330000-xyz789abc"
+      duration: 45230
+      generatedReports:
+        - reportType: "consolidated-daily"
+          fileName: "daily-report-2024-01-15.csv"
+          s3Key: "processed-reports/2024/01/15/daily-report-2024-01-15.csv"
+          size: 2456789
+          recordCount: 15420
+          format: "csv"
+          timestamp: "2024-01-15T06:14:25.000Z"
+          checksum: "e1f2d3a4b5c6789012345678901234567"
+        - reportType: "property-summary"
+          fileName: "property-summary-2024-01-15.json"
+          s3Key: "processed-reports/2024/01/15/property-summary-2024-01-15.json"
+          size: 145678
+          recordCount: 14
+          format: "json"
+          timestamp: "2024-01-15T06:14:30.000Z"
+          checksum: "a2b3c4d5e6f7890123456789012345678"
+      processingStats:
+        totalFilesDiscovered: 16
+        filesProcessedSuccessfully: 14
+        filesSkipped: 2
+        filesFailed: 0
+        totalRecordsProcessed: 15420
+        dataQualityScore: 97.5
+        processingRate: 18.6
+        propertiesProcessed:
+          - propertyId: "property-1"
+            filesProcessed: 3
+            recordsProcessed: 1250
+            avgFileSize: 156789
+            processingTime: 3420
+          - propertyId: "property-2"
+            filesProcessed: 2
+            recordsProcessed: 890
+            avgFileSize: 134567
+            processingTime: 2100
+      warnings: []
+
+  SuccessfulWeeklyReport:
+    summary: Successful weekly report processing
+    value:
+      statusCode: 200
+      message: "Weekly report processing completed successfully"
+      processedFiles: 98
+      timestamp: "2024-01-21T07:25:45.000Z"
+      processingType: "weekly-report"
+      environment: "production"
+      correlationId: "fproc-1705903545000-weekly123"
+      duration: 125670
+      generatedReports:
+        - reportType: "weekly-summary"
+          fileName: "weekly-report-2024-W03.xlsx"
+          s3Key: "processed-reports/2024/01/21/weekly-report-2024-W03.xlsx"
+          size: 5234567
+          recordCount: 108450
+          format: "excel"
+          timestamp: "2024-01-21T07:23:15.000Z"
+          checksum: "w1e2e3k4l5y6789012345678901234567"
+      processingStats:
+        totalFilesDiscovered: 100
+        filesProcessedSuccessfully: 98
+        filesSkipped: 2
+        filesFailed: 0
+        totalRecordsProcessed: 108450
+        dataQualityScore: 98.2
+        processingRate: 46.8
+        propertiesProcessed:
+          - propertyId: "property-1"
+            filesProcessed: 21
+            recordsProcessed: 8750
+            avgFileSize: 156789
+            processingTime: 15420
+      warnings:
+        - "Property-13 had no files for one day in the date range"
+
+  PartialProcessingWithErrors:
+    summary: Partial processing with some file errors
+    value:
+      statusCode: 200
+      message: "Batch processing completed with 2 file errors"
+      processedFiles: 12
+      timestamp: "2024-01-15T06:18:45.000Z"
+      processingType: "daily-batch"
+      environment: "production"
+      correlationId: "fproc-1705305525000-partial789"
+      duration: 52340
+      generatedReports:
+        - reportType: "consolidated-daily"
+          fileName: "daily-report-2024-01-15.csv"
+          s3Key: "processed-reports/2024/01/15/daily-report-2024-01-15.csv"
+          size: 2156789
+          recordCount: 13890
+          format: "csv"
+          timestamp: "2024-01-15T06:17:25.000Z"
+          checksum: "p1a2r3t4i5a6789012345678901234567"
+      processingStats:
+        totalFilesDiscovered: 14
+        filesProcessedSuccessfully: 12
+        filesSkipped: 0
+        filesFailed: 2
+        totalRecordsProcessed: 13890
+        dataQualityScore: 94.8
+        processingRate: 13.8
+        propertiesProcessed:
+          - propertyId: "property-1"
+            filesProcessed: 3
+            recordsProcessed: 1250
+            avgFileSize: 156789
+            processingTime: 3420
+      warnings:
+        - "Failed to process property-7/2024-01-15/corrupted-file.pdf - file corrupted"
+        - "Failed to process property-9/2024-01-15/malformed-data.csv - invalid format"
+
+  FileDiscoveryError:
+    summary: S3 bucket access error during file discovery
+    value:
+      statusCode: 500
+      error: "FileDiscoveryError"
+      message: "Failed to discover files for processing: S3 bucket access denied"
+      correlationId: "fproc-1705305330000-error456"
+      timestamp: "2024-01-15T06:05:00.000Z"
+      processingType: "daily-batch"
+      environment: "production"
+      context:
+        bucketName: "report-builder-incoming-files-prod"
+        dateRange: "2024-01-14 to 2024-01-15"
+        expectedFiles: 14
+        foundFiles: 0
+        operation: "file_discovery"
+      partialResults:
+        filesProcessedBeforeError: 0
+        lastSuccessfulFile: null
+      retryable: true
+
+  DataProcessingError:
+    summary: Error during file data processing
+    value:
+      statusCode: 500
+      error: "DataProcessingError"
+      message: "Failed to process file data: Excel file format not supported"
+      correlationId: "fproc-1705305330000-dataerr789"
+      timestamp: "2024-01-15T06:12:30.000Z"
+      processingType: "daily-batch"
+      environment: "production"
+      context:
+        fileName: "property-3/2024-01-15/legacy-format.xls"
+        fileType: "excel"
+        propertyId: "property-3"
+        operation: "excel_processing"
+      partialResults:
+        filesProcessedBeforeError: 8
+        lastSuccessfulFile: "property-2/2024-01-15/report.pdf"
+      retryable: false 

@@ -56,7 +56,7 @@ coverage/
 # TypeScript
 *.tsbuildinfo
 *.js
-!jest.config.js
+# Removed - using Vitest instead of Jest
 !.eslintrc.js
 *.d.ts
 
@@ -201,3 +201,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Data files and reference materials
+WRHMappingFile*.csv
+*.mapping.csv
+reference-data/

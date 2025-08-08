@@ -1,0 +1,260 @@
+openapi: 3.0.3
+info:
+  title: Email Processor Response Schema
+  description: Schema definition for Email Processor Lambda function responses
+  version: 1.0.0
+
+components:
+  schemas:
+    EmailProcessorSuccessResponse:
+      type: object
+      required:
+        - statusCode
+        - message
+        - processedAttachments
+        - totalRecords
+        - correlationId
+        - timestamp
+      properties:
+        statusCode:
+          type: integer
+          enum: [200]
+          description: HTTP status code for success
+          example: 200
+        message:
+          type: string
+          description: Success message describing the processing result
+          example: "Successfully processed 2 attachments from 1 email records"
+        processedAttachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProcessedAttachment'
+          description: Array of successfully processed attachments
+        totalRecords:
+          type: integer
+          description: Total number of email records processed
+          minimum: 0
+          example: 1
+        correlationId:
+          type: string
+          description: Unique correlation ID for request tracking
+          pattern: '^eproc-[0-9]+-[a-z0-9]+$'
+          example: "eproc-1705316400000-abc123def"
+        timestamp:
+          type: string
+          format: date-time
+          description: Processing completion timestamp
+          example: "2024-01-15T10:30:00.000Z"
+        processingDuration:
+          type: integer
+          description: Processing duration in milliseconds
+          minimum: 0
+          example: 2340
+        skippedAttachments:
+          type: integer
+          description: Number of attachments skipped (invalid types, etc.)
+          minimum: 0
+          default: 0
+          example: 1
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Non-fatal warnings during processing
+          example: ["Property mapping not found for unknown@example.com, using fallback"]
+
+    ProcessedAttachment:
+      type: object
+      required:
+        - filename
+        - contentType
+        - size
+        - s3Key
+        - propertyId
+      properties:
+        filename:
+          type: string
+          description: Original attachment filename
+          example: "daily-report.pdf"
+        contentType:
+          type: string
+          description: MIME content type of the attachment
+          example: "application/pdf"
+        size:
+          type: integer
+          description: File size in bytes
+          minimum: 0
+          example: 156789
+        s3Key:
+          type: string
+          description: S3 object key where the attachment is stored
+          example: "daily-files/property-1/2024-01-15/daily-report.pdf"
+        propertyId:
+          type: string
+          description: Identified property ID for the attachment
+          example: "property-1"
+        timestamp:
+          type: string
+          format: date-time
+          description: Attachment processing timestamp
+          example: "2024-01-15T10:30:15.000Z"
+        checksum:
+          type: string
+          description: MD5 checksum of the file for integrity verification
+          example: "d41d8cd98f00b204e9800998ecf8427e"
+
+    EmailProcessorErrorResponse:
+      type: object
+      required:
+        - statusCode
+        - error
+        - message
+        - correlationId
+        - timestamp
+      properties:
+        statusCode:
+          type: integer
+          enum: [400, 500]
+          description: HTTP status code for error
+          example: 500
+        error:
+          type: string
+          description: Error type identifier
+          example: "EmailRetrievalError"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Failed to retrieve email from S3: Access denied"
+        correlationId:
+          type: string
+          description: Unique correlation ID for request tracking
+          pattern: '^eproc-[0-9]+-[a-z0-9]+$'
+          example: "eproc-1705316400000-abc123def"
+        timestamp:
+          type: string
+          format: date-time
+          description: Error occurrence timestamp
+          example: "2024-01-15T10:30:00.000Z"
+        context:
+          type: object
+          description: Additional error context for debugging
+          properties:
+            messageId:
+              type: string
+              description: Email message ID that caused the error
+              example: "0000014a-f4d4-4f89-b0d5-123456789abc"
+            bucketName:
+              type: string
+              description: S3 bucket name (for S3-related errors)
+              example: "report-builder-incoming-files-dev"
+            objectKey:
+              type: string
+              description: S3 object key (for S3-related errors)
+              example: "raw-emails/0000014a-f4d4-4f89-b0d5-123456789abc"
+            operation:
+              type: string
+              description: Operation that failed
+              example: "email_retrieval"
+        stackTrace:
+          type: string
+          description: Error stack trace (development only)
+          example: "EmailRetrievalError: Failed to retrieve email from S3\\n    at EmailProcessor.getRawEmailFromS3..."
+        retryable:
+          type: boolean
+          description: Whether the error is retryable
+          default: false
+          example: false
+
+# Example Responses
+examples:
+  SuccessfulProcessing:
+    summary: Successful email processing with attachments
+    value:
+      statusCode: 200
+      message: "Successfully processed 2 attachments from 1 email records"
+      processedAttachments:
+        - filename: "daily-report.pdf"
+          contentType: "application/pdf"
+          size: 156789
+          s3Key: "daily-files/property-1/2024-01-15/daily-report.pdf"
+          propertyId: "property-1"
+          timestamp: "2024-01-15T10:30:15.000Z"
+          checksum: "a1b2c3d4e5f6789012345678901234567"
+        - filename: "transactions.csv"
+          contentType: "text/csv"
+          size: 45231
+          s3Key: "daily-files/property-1/2024-01-15/transactions.csv"
+          propertyId: "property-1"
+          timestamp: "2024-01-15T10:30:16.000Z"
+          checksum: "987654321098765432109876543210987"
+      totalRecords: 1
+      correlationId: "eproc-1705316400000-abc123def"
+      timestamp: "2024-01-15T10:30:00.000Z"
+      processingDuration: 2340
+      skippedAttachments: 0
+      warnings: []
+
+  NoAttachmentsProcessing:
+    summary: Email processed but no valid attachments found
+    value:
+      statusCode: 200
+      message: "Successfully processed 0 attachments from 1 email records"
+      processedAttachments: []
+      totalRecords: 1
+      correlationId: "eproc-1705316400000-xyz789abc"
+      timestamp: "2024-01-15T10:30:00.000Z"
+      processingDuration: 1250
+      skippedAttachments: 2
+      warnings:
+        - "Skipped attachment 'image.jpg' - invalid file type"
+        - "Skipped attachment 'virus.exe' - invalid file type"
+
+  UnknownPropertyProcessing:
+    summary: Processing with unknown property mapping
+    value:
+      statusCode: 200
+      message: "Successfully processed 1 attachments from 1 email records"
+      processedAttachments:
+        - filename: "report.pdf"
+          contentType: "application/pdf"
+          size: 123456
+          s3Key: "daily-files/unknown-property/2024-01-15/report.pdf"
+          propertyId: "unknown-property"
+          timestamp: "2024-01-15T10:30:15.000Z"
+          checksum: "unknown123456789012345678901234567"
+      totalRecords: 1
+      correlationId: "eproc-1705316400000-def456ghi"
+      timestamp: "2024-01-15T10:30:00.000Z"
+      processingDuration: 1890
+      skippedAttachments: 0
+      warnings:
+        - "Property mapping not found for unknown@example.com, using fallback"
+
+  S3AccessError:
+    summary: S3 access denied error
+    value:
+      statusCode: 500
+      error: "EmailRetrievalError"
+      message: "Failed to retrieve email from S3: Access denied"
+      correlationId: "eproc-1705316400000-error123"
+      timestamp: "2024-01-15T10:30:00.000Z"
+      context:
+        messageId: "0000014a-f4d4-4f89-b0d5-123456789abc"
+        bucketName: "report-builder-incoming-files-dev"
+        objectKey: "raw-emails/0000014a-f4d4-4f89-b0d5-123456789abc"
+        operation: "email_retrieval"
+      retryable: false
+
+  EmailParsingError:
+    summary: Email content parsing failure
+    value:
+      statusCode: 500
+      error: "EmailParsingError"
+      message: "Failed to parse email content: Invalid email format"
+      correlationId: "eproc-1705316400000-parse567"
+      timestamp: "2024-01-15T10:30:00.000Z"
+      context:
+        messageId: "malformed-email-id"
+        operation: "email_parsing"
+        emailSize: 0
+      retryable: false 
