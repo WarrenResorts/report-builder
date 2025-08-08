@@ -70,7 +70,7 @@ jobs:
   deploy-development:
     needs: [test, security-scan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && secrets.AWS_ACCESS_KEY_ID != ''
+    if: github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@v4
     
