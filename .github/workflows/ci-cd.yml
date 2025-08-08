@@ -177,6 +177,9 @@ jobs:
     needs: [deploy-production]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+      pull-requests: read
     steps:
     - uses: actions/checkout@v4
       with:
@@ -223,17 +226,14 @@ jobs:
         echo "version=v$NEW_VERSION" >> $GITHUB_OUTPUT
     
     - name: Create Release
-      uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.version.outputs.version }}
-        release_name: Release ${{ steps.version.outputs.version }}
-        body: |
-          ## Changes in this Release
-          
-          Infrastructure deployed to production environment.
-          
-          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.previous_version }}...${{ steps.version.outputs.version }}
-        draft: false
-        prerelease: false 
+      run: |
+        gh release create ${{ steps.version.outputs.version }} \
+          --title "Release ${{ steps.version.outputs.version }}" \
+          --notes "## Changes in this Release
+
+        Infrastructure deployed to production environment.
+        
+        **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.previous_version }}...${{ steps.version.outputs.version }}" \
+          --latest 
