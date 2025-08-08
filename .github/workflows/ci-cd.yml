@@ -171,8 +171,7 @@ jobs:
     
     - name: Deploy infrastructure to production
       run: |
-        cd infrastructure
-        npx cdk deploy --context environment=production --require-approval never
+        npx cdk deploy --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=production --require-approval never
 
   release:
     needs: [deploy-production]
