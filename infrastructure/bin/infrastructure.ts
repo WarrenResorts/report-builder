@@ -24,7 +24,7 @@ new InfrastructureStack(app, `ReportBuilderStack-${environment}`, {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
   },
-  description: `${config.naming.projectPrefix} infrastructure for ${environment} environment`,
+  description: `${config.naming.projectPrefix} infrastructure for ${environment} environment - Lambda paths fixed`,
   tags: {
     Environment: environment,
     Project: config.naming.projectPrefix,
