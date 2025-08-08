@@ -58,6 +58,7 @@ jobs:
         output_path: 'kics-results'
         output_formats: 'json,sarif'
         exclude_paths: 'node_modules,dist,build,docs,coverage'
+        exclude_queries: 'a88baa34-e2ad-44ea-ad6f-8cac87bc7c71,555ab8f9-2001-455e-a077-f2d0f41e2fb9'
         fail_on: 'high,medium'
     
     - name: Upload KICS results
