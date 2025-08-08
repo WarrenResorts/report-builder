@@ -4,6 +4,9 @@ import * as ses from 'aws-cdk-lib/aws-ses';
 import * as sesActions from 'aws-cdk-lib/aws-ses-actions';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as cr from 'aws-cdk-lib/custom-resources';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import { EnvironmentConfig } from '../../config';
 
 /**
@@ -111,10 +114,43 @@ export class SESConstruct extends Construct {
     });
 
     // Make the rule set active (only one can be active at a time)
-    // Temporarily commented out to debug deployment issues
-    // new ses.CfnReceiptRuleSet(this, 'ActiveRuleSet', {
-    //   ruleSetName: this.receiptRuleSet.receiptRuleSetName,
-    // });
+    // Use Custom Resource to properly activate the receipt rule set
+    new cr.AwsCustomResource(this, 'ActivateReceiptRuleSet', {
+      onCreate: {
+        service: 'SES',
+        action: 'setActiveReceiptRuleSet',
+        parameters: {
+          RuleSetName: this.receiptRuleSet.receiptRuleSetName,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
+      },
+      onUpdate: {
+        service: 'SES', 
+        action: 'setActiveReceiptRuleSet',
+        parameters: {
+          RuleSetName: this.receiptRuleSet.receiptRuleSetName,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
+      },
+      onDelete: {
+        service: 'SES',
+        action: 'setActiveReceiptRuleSet',
+        parameters: {
+          // Deactivate by setting no active rule set
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
+      },
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: [
+            'ses:SetActiveReceiptRuleSet',
+            'ses:DescribeActiveReceiptRuleSet'
+          ],
+          resources: ['*'],
+        }),
+      ]),
+      logRetention: logs.RetentionDays.ONE_WEEK,
+    });
 
     // ===================================================================
     // CLOUDFORMATION OUTPUTS
