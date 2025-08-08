@@ -206,3 +206,6 @@ dist
 WRHMappingFile*.csv
 *.mapping.csv
 reference-data/
+
+# CDK context files (auto-generated)
+infrastructure/cdk.context.json
