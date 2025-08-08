@@ -86,6 +86,8 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ''
+        web-identity-token-file: ''
     
     - name: Install CDK
       run: npm install -g aws-cdk
@@ -145,6 +147,8 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ''
+        web-identity-token-file: ''
     
     - name: Install CDK
       run: npm install -g aws-cdk
