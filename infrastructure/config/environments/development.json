@@ -20,8 +20,8 @@
   },
   "storage": {
     "incomingFiles": {
-      "transitionToIADays": 7,
-      "transitionToGlacierDays": 30
+      "transitionToIADays": 30,
+      "transitionToGlacierDays": 60
     },
     "processedFiles": {
       "transitionToIADays": 30,
