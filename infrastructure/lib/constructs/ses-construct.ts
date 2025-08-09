@@ -168,9 +168,11 @@ export class SESConstruct extends Construct {
     
     // Only output DKIM tokens when we create the domain identity (development)
     if (environment === 'development' && this.domainIdentity instanceof ses.EmailIdentity) {
+      // Access the underlying CloudFormation resource to get DKIM tokens
+      const cfnEmailIdentity = this.domainIdentity.node.defaultChild as ses.CfnEmailIdentity;
       new cdk.CfnOutput(this, 'SESdomainVerificationToken', {
-        value: this.domainIdentity.dkimRecords[0].name,
-        description: 'SES domain verification token for DNS configuration (first DKIM record)',
+        value: cfnEmailIdentity.attrDkimDnsTokenName1,
+        description: 'SES domain verification token for DNS configuration (first DKIM token)',
       });
     }
 
@@ -201,7 +203,9 @@ export class SESConstruct extends Construct {
 
     // Only include DKIM token in development where we create the identity
     if (environment === 'development' && this.domainIdentity instanceof ses.EmailIdentity) {
-      setupInstructions.push(`   Value: ${this.domainIdentity.dkimRecords[0].value}`);
+      // Access the underlying CloudFormation resource to get DKIM tokens
+      const cfnEmailIdentity = this.domainIdentity.node.defaultChild as ses.CfnEmailIdentity;
+      setupInstructions.push(`   Value: ${cfnEmailIdentity.attrDkimDnsTokenName1}`);
     } else {
       setupInstructions.push('   Value: <Check AWS SES Console for verification token>');
     }
