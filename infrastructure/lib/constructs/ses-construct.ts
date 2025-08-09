@@ -89,127 +89,88 @@ export class SESConstruct extends Construct {
     // EMAIL ADDRESS PARAMETER STORE CONFIGURATION
     // ===================================================================
     
-    // Get email addresses from Parameter Store
-    const devEmailParam = ssm.StringParameter.fromStringParameterName(
+    // Get email addresses from Parameter Store based on environment
+    // Only reference parameters that exist or will be created in the current deployment
+    const currentEmailParam = ssm.StringParameter.fromStringParameterName(
       this,
-      'DevEmailParameter',
-      `/report-builder/development/email/incoming-address`
-    );
-    
-    const prodEmailParam = ssm.StringParameter.fromStringParameterName(
-      this,
-      'ProdEmailParameter', 
-      `/report-builder/production/email/incoming-address`
+      'CurrentEmailParameter',
+      `/${config.naming.projectPrefix}/${environment}/email/incoming-address`
     );
 
     // ===================================================================
     // SES EMAIL RECEIPT RULE CONFIGURATION
     // ===================================================================
     
-    // Use a shared rule set name across all environments to handle both dev and prod emails
-    const sharedRuleSetName = `${config.naming.projectPrefix}${config.naming.separator}rules${config.naming.separator}shared`;
-    
-    // Only create the rule set in production environment to avoid conflicts
-    if (environment === 'production') {
-      // Create shared receipt rule set
-      this.receiptRuleSet = new ses.ReceiptRuleSet(this, 'SharedEmailReceiptRuleSet', {
-        receiptRuleSetName: sharedRuleSetName,
-      });
-    } else {
-      // In development, reference the shared rule set created by production
-      this.receiptRuleSet = ses.ReceiptRuleSet.fromReceiptRuleSetName(
-        this, 
-        'SharedReceiptRuleSet', 
-        sharedRuleSetName
+        // Each environment has its own rule set
+    const ruleSetName = `${config.naming.projectPrefix}${config.naming.separator}rules${config.naming.separator}${environment}`;
+
+    // Create rule set for current environment
+    this.receiptRuleSet = new ses.ReceiptRuleSet(this, 'EmailReceiptRuleSet', {
+      receiptRuleSetName: ruleSetName,
+    });
+
+    // Create rule for the current environment
+    const emailActions = [
+      new sesActions.S3({
+        bucket: incomingFilesBucket,
+        objectKeyPrefix: 'raw-emails/',
+      }),
+    ];
+
+    if (emailProcessorLambda) {
+      emailActions.push(
+        new sesActions.Lambda({
+          function: emailProcessorLambda,
+          invocationType: sesActions.LambdaInvocationType.EVENT,
+        }) as any
       );
     }
 
-    // Only create rules in production environment (where the rule set is created)
-    if (environment === 'production') {
-      // Create rule for development emails
-      const devActions = [
-        new sesActions.S3({
-          bucket: s3.Bucket.fromBucketName(this, 'DevIncomingBucket', 'report-builder-incoming-files-development'),
-          objectKeyPrefix: 'raw-emails/',
+    this.receiptRuleSet.addRule(`ProcessEmails${environment.charAt(0).toUpperCase() + environment.slice(1)}`, {
+      enabled: true,
+      recipients: [currentEmailParam.stringValue],
+      actions: emailActions,
+      scanEnabled: true,
+    });
+
+    // Activate the rule set for the current environment
+    // Note: Only one rule set can be active at a time across all environments
+    new cr.AwsCustomResource(this, 'ActivateReceiptRuleSet', {
+      onCreate: {
+        service: 'SES',
+        action: 'setActiveReceiptRuleSet',
+        parameters: {
+          RuleSetName: ruleSetName,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${ruleSetName}`),
+      },
+      onUpdate: {
+        service: 'SES', 
+        action: 'setActiveReceiptRuleSet',
+        parameters: {
+          RuleSetName: ruleSetName,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${ruleSetName}`),
+      },
+      onDelete: {
+        service: 'SES',
+        action: 'setActiveReceiptRuleSet',
+        parameters: {
+          // Deactivate by setting no active rule set
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${ruleSetName}`),
+      },
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: [
+            'ses:SetActiveReceiptRuleSet',
+            'ses:DescribeActiveReceiptRuleSet'
+          ],
+          resources: ['*'],
         }),
-        new sesActions.Lambda({
-          function: lambda.Function.fromFunctionName(this, 'DevEmailProcessor', 'report-builder-email-processor-development'),
-          invocationType: sesActions.LambdaInvocationType.EVENT,
-        }) as any,
-      ];
-
-      this.receiptRuleSet.addRule('ProcessDevEmails', {
-        enabled: true,
-        recipients: [devEmailParam.stringValue],
-        actions: devActions,
-        scanEnabled: true,
-      });
-
-      // Create rule for production emails  
-      const prodActions = [
-        new sesActions.S3({
-          bucket: incomingFilesBucket,
-          objectKeyPrefix: 'raw-emails/',
-        }),
-      ];
-
-      if (emailProcessorLambda) {
-        prodActions.push(
-          new sesActions.Lambda({
-            function: emailProcessorLambda,
-            invocationType: sesActions.LambdaInvocationType.EVENT,
-          }) as any
-        );
-      }
-
-      this.receiptRuleSet.addRule('ProcessProdEmails', {
-        enabled: true,
-        recipients: [prodEmailParam.stringValue],
-        actions: prodActions,
-        scanEnabled: true,
-      });
-    }
-
-    // Only activate the rule set in production (where it's created)
-    if (environment === 'production') {
-      // Make the shared rule set active (only one can be active at a time)
-      new cr.AwsCustomResource(this, 'ActivateSharedReceiptRuleSet', {
-        onCreate: {
-          service: 'SES',
-          action: 'setActiveReceiptRuleSet',
-          parameters: {
-            RuleSetName: sharedRuleSetName,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of(`activate-${sharedRuleSetName}`),
-        },
-        onUpdate: {
-          service: 'SES', 
-          action: 'setActiveReceiptRuleSet',
-          parameters: {
-            RuleSetName: sharedRuleSetName,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of(`activate-${sharedRuleSetName}`),
-        },
-        onDelete: {
-          service: 'SES',
-          action: 'setActiveReceiptRuleSet',
-          parameters: {
-            // Deactivate by setting no active rule set
-          },
-          physicalResourceId: cr.PhysicalResourceId.of(`activate-${sharedRuleSetName}`),
-        },
-        policy: cr.AwsCustomResourcePolicy.fromStatements([
-          new iam.PolicyStatement({
-            actions: [
-              'ses:SetActiveReceiptRuleSet',
-              'ses:DescribeActiveReceiptRuleSet'
-            ],
-            resources: ['*'],
-          }),
-        ]),
-        logRetention: logs.RetentionDays.ONE_WEEK,
-      });
-    }
+      ]),
+      logRetention: logs.RetentionDays.ONE_WEEK,
+    });
 
     // ===================================================================
     // CLOUDFORMATION OUTPUTS
@@ -230,8 +191,8 @@ export class SESConstruct extends Construct {
     });
 
     new cdk.CfnOutput(this, 'EmailAddressParameters', {
-      value: `Development: ${devEmailParam.parameterName}, Production: ${prodEmailParam.parameterName}`,
-      description: 'Parameter Store paths for incoming email addresses',
+      value: `${environment}: ${currentEmailParam.parameterName}`,
+      description: 'Parameter Store path for incoming email address',
     });
 
     // ===================================================================
