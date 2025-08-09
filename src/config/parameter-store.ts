@@ -60,9 +60,12 @@ export class ParameterStoreConfig {
     const value = await this.getParameter(paramName);
     // Use environment-aware fallback if parameter not found
     if (!value) {
-      console.warn(`From email parameter not found: ${paramName}, using environment fallback`);
-      return environmentConfig.environment === 'development' || environmentConfig.environment === 'test' 
-        ? "dev@aws.warrenresorthotels.com" 
+      console.warn(
+        `From email parameter not found: ${paramName}, using environment fallback`,
+      );
+      return environmentConfig.environment === "development" ||
+        environmentConfig.environment === "test"
+        ? "dev@aws.warrenresorthotels.com"
         : "reports@aws.warrenresorthotels.com";
     }
     return value;
@@ -114,12 +117,15 @@ export class ParameterStoreConfig {
             .split(",")
             .map((email: string) => email.trim())
         : [],
-      alertEmail: parameters[paramNames[1]] || `alerts@${environmentConfig.environment === 'test' ? 'example.com' : 'warrenresorthotels.com'}`,
-      fromEmail: parameters[paramNames[2]] || (
-        environmentConfig.environment === 'development' || environmentConfig.environment === 'test' 
-          ? "dev@aws.warrenresorthotels.com" 
-          : "reports@aws.warrenresorthotels.com"
-      ),
+      alertEmail:
+        parameters[paramNames[1]] ||
+        `alerts@${environmentConfig.environment === "test" ? "example.com" : "warrenresorthotels.com"}`,
+      fromEmail:
+        parameters[paramNames[2]] ||
+        (environmentConfig.environment === "development" ||
+        environmentConfig.environment === "test"
+          ? "dev@aws.warrenresorthotels.com"
+          : "reports@aws.warrenresorthotels.com"),
       sesConfigurationSet:
         parameters[paramNames[3]] ||
         `report-builder-${environmentConfig.environment}`,
