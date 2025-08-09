@@ -103,15 +103,15 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
                 commonHeaders: {
                   from: ["sender@example.com"],
-                  to: ["reports@warrenresorthotels.com"],
+                  to: ["test@example.com"],
                   subject: "Daily Report",
                 },
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 action: {
@@ -136,7 +136,7 @@ describe("EmailProcessor", () => {
       // Mock parsed email with attachment
       const mockParsedEmail = {
         from: { text: "sender@example.com" },
-        to: { text: "reports@warrenresorthotels.com" },
+        to: { text: "test@example.com" },
         subject: "Daily Report",
         date: new Date("2024-01-01T12:00:00.000Z"),
         attachments: [
@@ -181,10 +181,10 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-2",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 action: {
@@ -233,10 +233,10 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-3",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 action: {
@@ -290,10 +290,10 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-4",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "unknown@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 action: {
@@ -347,10 +347,10 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-5",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 action: {
@@ -383,10 +383,10 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-6",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 action: {
@@ -421,10 +421,10 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-7",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 action: {
@@ -481,15 +481,15 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-undefined-sender",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
                 commonHeaders: {
                   from: ["sender@example.com"],
-                  to: ["reports@warrenresorthotels.com"],
+                  to: ["test@example.com"],
                   subject: "Daily Report",
                 },
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 spamVerdict: { status: "PASS" },
@@ -519,7 +519,7 @@ describe("EmailProcessor", () => {
       // Mock parsed email with undefined from field
       const mockParsedEmail = {
         from: undefined, // This will trigger the 'unknown-sender' fallback
-        to: { text: "reports@warrenresorthotels.com" },
+        to: { text: "test@example.com" },
         subject: "Daily Report",
         date: new Date("2024-01-01T12:00:00.000Z"),
         attachments: [
@@ -555,10 +555,10 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-undefined-filename",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: ["reports@warrenresorthotels.com"],
+                destination: ["test@example.com"],
               } as SESMail,
               receipt: {
-                recipients: ["reports@warrenresorthotels.com"],
+                recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 spamVerdict: { status: "PASS" },
@@ -588,7 +588,7 @@ describe("EmailProcessor", () => {
       // Mock parsed email with attachment that has filename as null but contentType suggests PDF
       const mockParsedEmail = {
         from: { text: "sender@example.com" },
-        to: { text: "reports@warrenresorthotels.com" },
+        to: { text: "test@example.com" },
         subject: "Daily Report",
         date: new Date("2024-01-01T12:00:00.000Z"),
         attachments: [
@@ -633,13 +633,13 @@ describe("EmailProcessor", () => {
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
                 destination: [
-                  "reports@warrenresorthotels.com",
+                  "test@example.com",
                   "backup@warrenresorthotels.com",
                 ],
               } as SESMail,
               receipt: {
                 recipients: [
-                  "reports@warrenresorthotels.com",
+                  "test@example.com",
                   "backup@warrenresorthotels.com",
                 ],
                 timestamp: "2024-01-01T12:00:00.000Z",
@@ -667,7 +667,7 @@ describe("EmailProcessor", () => {
       const mockParsedEmail = {
         from: { text: "sender@example.com" },
         to: [
-          { text: "reports@warrenresorthotels.com" },
+          { text: "test@example.com" },
           { text: "backup@warrenresorthotels.com" },
         ], // This will trigger the Array.isArray branch
         subject: "Daily Report",
@@ -801,10 +801,10 @@ describe("Lambda Handler", () => {
               messageId: "handler-test",
               timestamp: "2024-01-01T12:00:00.000Z",
               source: "sender@example.com",
-              destination: ["reports@warrenresorthotels.com"],
+              destination: ["test@example.com"],
             } as SESMail,
             receipt: {
-              recipients: ["reports@warrenresorthotels.com"],
+              recipients: ["test@example.com"],
               timestamp: "2024-01-01T12:00:00.000Z",
               processingTimeMillis: 100,
               action: {

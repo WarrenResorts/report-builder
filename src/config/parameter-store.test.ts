@@ -135,7 +135,7 @@ describe("ParameterStoreConfig", () => {
       });
 
       const result = await parameterStore.getFromEmailAddress();
-      expect(result).toBe("reports@warrenresorthotels.com");
+      expect(result).toBe("dev@aws.warrenresorthotels.com"); // test environment gets dev email
     });
   });
 
@@ -251,8 +251,8 @@ describe("ParameterStoreConfig", () => {
 
       expect(result).toEqual({
         recipients: [],
-        alertEmail: "alerts@warrenresorthotels.com",
-        fromEmail: "reports@warrenresorthotels.com",
+        alertEmail: "alerts@example.com",
+        fromEmail: "dev@aws.warrenresorthotels.com",
         sesConfigurationSet: "report-builder-test",
       });
     });

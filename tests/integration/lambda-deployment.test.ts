@@ -173,10 +173,10 @@ describe('Lambda Deployment Validation', () => {
               messageId: 'invalid-test',
               timestamp: '2024-01-01T12:00:00.000Z',
               source: 'test@example.com',
-              destination: ['reports@warrenresorthotels.com'],
+              destination: ['test@example.com'],
             },
             receipt: {
-              recipients: ['reports@warrenresorthotels.com'],
+              recipients: ['test@example.com'],
               timestamp: '2024-01-01T12:00:00.000Z',
               processingTimeMillis: 100,
               action: {

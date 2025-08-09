@@ -11,7 +11,7 @@
  * Sample email content for testing
  */
 export const TEST_EMAIL_CONTENT = `From: test-sender@example.com
-To: reports@warrenresorthotels.com
+To: test@example.com
 Subject: Daily Report - Integration Test
 Date: Mon, 01 Jan 2024 12:00:00 +0000
 Message-ID: <integration-test-message-id@example.com>
@@ -52,7 +52,7 @@ Date,Property,Revenue,Occupancy
  * Simple email content without attachments
  */
 export const TEST_EMAIL_NO_ATTACHMENTS = `From: test-sender@example.com
-To: reports@warrenresorthotels.com
+To: test@example.com
 Subject: Simple Test Email
 Date: Mon, 01 Jan 2024 12:00:00 +0000
 Message-ID: <simple-test-message-id@example.com>
@@ -107,10 +107,10 @@ export const createTestSESEvent = (messageId: string, bucketName: string, object
         messageId,
         timestamp: '2024-01-01T12:00:00.000Z',
         source: 'test-sender@example.com',
-        destination: ['reports@warrenresorthotels.com'],
+        destination: ['test@example.com'],
         commonHeaders: {
           from: ['test-sender@example.com'],
-          to: ['reports@warrenresorthotels.com'],
+          to: ['test@example.com'],
           subject: 'Daily Report - Integration Test',
           messageId: `<${messageId}@example.com>`,
           date: 'Mon, 01 Jan 2024 12:00:00 +0000'
@@ -123,7 +123,7 @@ export const createTestSESEvent = (messageId: string, bucketName: string, object
         }
       },
       receipt: {
-        recipients: ['reports@warrenresorthotels.com'],
+        recipients: ['test@example.com'],
         timestamp: '2024-01-01T12:00:00.000Z',
         processingTimeMillis: 150,
         action: {
