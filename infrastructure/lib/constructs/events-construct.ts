@@ -93,12 +93,7 @@ export class EventsConstruct extends Construct {
       description: 'From email address for outbound reports (convert to SecureString post-deployment)',
     });
 
-    // Incoming email address for SES receipt rules
-    const incomingEmailParam = new ssm.StringParameter(this, 'IncomingEmailParameter', {
-      parameterName: `/${config.naming.projectPrefix}/${environment}/email/incoming-address`,
-      stringValue: defaultFromEmail, // Same as from email for now
-      description: 'Incoming email address for SES receipt rules',
-    });
+    // Note: Incoming email parameter is now created in SES construct to avoid dependency issues
 
     // Property mapping configuration (will be encrypted post-deployment)
     const propertyMappingParam = new ssm.StringParameter(this, 'PropertyMappingParameter', {

@@ -89,13 +89,14 @@ export class SESConstruct extends Construct {
     // EMAIL ADDRESS PARAMETER STORE CONFIGURATION
     // ===================================================================
     
-    // Get email addresses from Parameter Store based on environment
-    // Only reference parameters that exist or will be created in the current deployment
-    const currentEmailParam = ssm.StringParameter.fromStringParameterName(
-      this,
-      'CurrentEmailParameter',
-      `/${config.naming.projectPrefix}/${environment}/email/incoming-address`
-    );
+    // Create the incoming email parameter in the SES construct to avoid dependency issues
+    const defaultFromEmail = environment === 'development' ? 'dev@example.com' : 'test@example.com';
+    
+    const currentEmailParam = new ssm.StringParameter(this, 'IncomingEmailParameter', {
+      parameterName: `/${config.naming.projectPrefix}/${environment}/email/incoming-address`,
+      stringValue: defaultFromEmail,
+      description: 'Incoming email address for SES receipt rules',
+    });
 
     // ===================================================================
     // SES EMAIL RECEIPT RULE CONFIGURATION
