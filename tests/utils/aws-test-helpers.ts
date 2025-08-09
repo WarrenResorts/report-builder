@@ -355,15 +355,15 @@ export class LambdaTestHelper {
             messageId,
             timestamp: new Date().toISOString(),
             source: 'test-sender@example.com',
-            destination: ['reports@warrenresorthotels.com'],
+            destination: ['test@example.com'],
             commonHeaders: {
               from: ['test-sender@example.com'],
-              to: ['reports@warrenresorthotels.com'],
+              to: ['test@example.com'],
               subject: 'Integration Test Email'
             }
           },
           receipt: {
-            recipients: ['reports@warrenresorthotels.com'],
+            recipients: ['test@example.com'],
             timestamp: new Date().toISOString(),
             processingTimeMillis: 100,
             action: {
