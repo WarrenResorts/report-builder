@@ -50,7 +50,7 @@ describe("ParameterStoreConfig", () => {
 
     parameterStore = new ParameterStoreConfig();
     mockSSMClient = (
-      parameterStore as { ssmClient: { send: ReturnType<typeof vi.fn> } }
+      parameterStore as unknown as { ssmClient: { send: ReturnType<typeof vi.fn> } }
     ).ssmClient;
   });
 
