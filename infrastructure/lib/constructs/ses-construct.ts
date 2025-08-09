@@ -168,12 +168,14 @@ export class SESConstruct extends Construct {
     
     // Only output DKIM tokens when we create the domain identity (development)
     if (environment === 'development' && this.domainIdentity instanceof ses.EmailIdentity) {
-      // Access the underlying CloudFormation resource to get DKIM tokens
-      const cfnEmailIdentity = this.domainIdentity.node.defaultChild as ses.CfnEmailIdentity;
-      new cdk.CfnOutput(this, 'SESdomainVerificationToken', {
-        value: cfnEmailIdentity.attrDkimDnsTokenName1,
-        description: 'SES domain verification token for DNS configuration (first DKIM token)',
-      });
+      // Access DKIM records from the high-level construct
+      const dkimRecords = this.domainIdentity.dkimRecords;
+      if (dkimRecords.length > 0) {
+        new cdk.CfnOutput(this, 'SESdomainVerificationToken', {
+          value: dkimRecords[0].name,
+          description: 'SES domain verification token for DNS configuration (first DKIM record name)',
+        });
+      }
     }
 
     new cdk.CfnOutput(this, 'SESConfigurationSetName', {
@@ -203,9 +205,13 @@ export class SESConstruct extends Construct {
 
     // Only include DKIM token in development where we create the identity
     if (environment === 'development' && this.domainIdentity instanceof ses.EmailIdentity) {
-      // Access the underlying CloudFormation resource to get DKIM tokens
-      const cfnEmailIdentity = this.domainIdentity.node.defaultChild as ses.CfnEmailIdentity;
-      setupInstructions.push(`   Value: ${cfnEmailIdentity.attrDkimDnsTokenName1}`);
+      // Access DKIM records from the high-level construct
+      const dkimRecords = this.domainIdentity.dkimRecords;
+      if (dkimRecords.length > 0) {
+        setupInstructions.push(`   Value: ${dkimRecords[0].value}`);
+      } else {
+        setupInstructions.push('   Value: <DKIM records not available - check AWS SES Console>');
+      }
     } else {
       setupInstructions.push('   Value: <Check AWS SES Console for verification token>');
     }
