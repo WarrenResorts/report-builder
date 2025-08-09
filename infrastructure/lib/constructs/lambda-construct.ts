@@ -182,6 +182,7 @@ export class LambdaConstruct extends Construct {
         format: lambdaNodejs.OutputFormat.ESM,
         target: 'es2022',
         sourceMap: true,
+        forceDockerBundling: false,
       },
       environment: {
         NODE_ENV: environment,
