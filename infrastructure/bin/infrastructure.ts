@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Retrigger deployment after fixing Lambda bundling
 import * as cdk from 'aws-cdk-lib';
 import { InfrastructureStack } from '../lib/infrastructure-stack';
 
