@@ -25,8 +25,8 @@ infrastructure/config/environments/development.json
 ```json
 {
   "domain": {
-    "domainName": "aws.warrenresorthotels.com",
-    "emailAddress": "reports-dev@warrenresorthotels.com"
+    "domainName": "aws.example.com",
+    "emailAddress": "dev@example.com"
   },
   "storage": {
     "lifecycleTransitionDays": 7,
@@ -96,7 +96,7 @@ infrastructure/config/environments/development.json
      --type SecureString
    ```
 
-2. **Send test email** to `reports-dev@warrenresorthotels.com`
+2. **Send test email** to `dev@example.com`
 
 3. **Check processing**:
    ```bash
@@ -112,7 +112,7 @@ infrastructure/config/environments/development.json
 # Send multiple test emails
 for i in {1..10}; do
   # Send test email with different properties
-  echo "Test $i" | mail -s "Test Report $i" reports-dev@warrenresorthotels.com
+  echo "Test $i" | mail -s "Test Report $i" dev@example.com
 done
 ```
 
@@ -121,7 +121,7 @@ done
 # Update parameter and verify cache refresh
 aws ssm put-parameter \
   --name "/report-builder/development/email/recipients" \
-  --value "dev-team@warrenresorthotels.com" \
+  --value "dev-team@example.com" \
   --type SecureString \
   --overwrite
 
@@ -140,8 +140,8 @@ infrastructure/config/environments/production.json
 ```json
 {
   "domain": {
-    "domainName": "aws.warrenresorthotels.com",
-    "emailAddress": "reports@warrenresorthotels.com"
+    "domainName": "aws.example.com",
+    "emailAddress": "test@example.com"
   },
   "storage": {
     "lifecycleTransitionDays": 90,
@@ -280,19 +280,19 @@ aws ssm put-parameter \
   --value '{
     "property1-dev@example.com": "property-dev-1",
     "property2-dev@example.com": "property-dev-2",
-    "test@warrenresorthotels.com": "property-test-1"
+    "test@example.com": "property-test-1"
   }' \
   --type SecureString
 
 # Email configuration (development)
 aws ssm put-parameter \
   --name "/report-builder/development/email/recipients" \
-  --value "dev-team@warrenresorthotels.com,qa-team@warrenresorthotels.com" \
+  --value "dev-team@example.com,qa-team@example.com" \
   --type SecureString
 
 aws ssm put-parameter \
   --name "/report-builder/development/email/alert-notifications" \
-  --value "dev-alerts@warrenresorthotels.com" \
+  --value "dev-alerts@example.com" \
   --type SecureString
 ```
 
@@ -303,21 +303,21 @@ aws ssm put-parameter \
 aws ssm put-parameter \
   --name "/report-builder/production/config/property-mapping" \
   --value '{
-    "property1@warrenresorthotels.com": "property-001",
-    "property2@warrenresorthotels.com": "property-002",
-    "property3@warrenresorthotels.com": "property-003"
+    "property1@example.com": "property-001",
+    "property2@example.com": "property-002",
+    "property3@example.com": "property-003"
   }' \
   --type SecureString
 
 # Email configuration (production)
 aws ssm put-parameter \
   --name "/report-builder/production/email/recipients" \
-  --value "management@warrenresorthotels.com,operations@warrenresorthotels.com" \
+  --value "management@example.com,operations@example.com" \
   --type SecureString
 
 aws ssm put-parameter \
   --name "/report-builder/production/email/alert-notifications" \
-  --value "alerts@warrenresorthotels.com,on-call@warrenresorthotels.com" \
+  --value "alerts@example.com,on-call@example.com" \
   --type SecureString
 ```
 
@@ -399,7 +399,7 @@ aws ssm get-parameters-by-path \
 # Symptoms: Email not received, SES bounce notifications
 # Solution: Check domain verification status
 aws ses get-identity-verification-attributes \
-  --identities aws.warrenresorthotels.com
+  --identities aws.example.com
 ```
 
 #### 3. Lambda Timeout Issues

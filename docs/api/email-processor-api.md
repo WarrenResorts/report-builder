@@ -86,18 +86,18 @@ interface SESVerdict {
       "ses": {
         "mail": {
           "timestamp": "2024-01-15T10:30:00.000Z",
-          "source": "property1@warrenresorthotels.com",
+          "source": "property1@example.com",
           "messageId": "0000014a-f4d4-4f89-b0d5-123456789abc",
-          "destination": ["reports@aws.warrenresorthotels.com"],
+          "destination": ["test@example.com"],
           "headersTruncated": false,
           "headers": [
-            {"name": "From", "value": "property1@warrenresorthotels.com"},
-            {"name": "To", "value": "reports@aws.warrenresorthotels.com"},
+            {"name": "From", "value": "property1@example.com"},
+            {"name": "To", "value": "test@example.com"},
             {"name": "Subject", "value": "Daily Report - Property 1"}
           ],
           "commonHeaders": {
-            "from": ["property1@warrenresorthotels.com"],
-            "to": ["reports@aws.warrenresorthotels.com"],
+            "from": ["property1@example.com"],
+            "to": ["test@example.com"],
             "subject": "Daily Report - Property 1",
             "date": "Mon, 15 Jan 2024 10:30:00 +0000",
             "messageId": "0000014a-f4d4-4f89-b0d5-123456789abc"
@@ -106,7 +106,7 @@ interface SESVerdict {
         "receipt": {
           "timestamp": "2024-01-15T10:30:00.000Z",
           "processingTimeMillis": 150,
-          "recipients": ["reports@aws.warrenresorthotels.com"],
+          "recipients": ["test@example.com"],
           "spamVerdict": {"status": "PASS"},
           "virusVerdict": {"status": "PASS"},
           "spfVerdict": {"status": "PASS"},

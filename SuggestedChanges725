@@ -336,7 +336,7 @@ Examples:
      ```json
      "Resource": [
        "arn:aws:ses:us-east-1:316422224105:configuration-set/report-builder-development",
-       "arn:aws:ses:us-east-1:316422224105:identity/aws.warrenresorthotels.com"
+       "arn:aws:ses:us-east-1:316422224105:identity/example.com"
      ]
      ```
 
@@ -346,7 +346,7 @@ Examples:
    - **Moved:** SES construct creation before Lambda construct to enable proper scoping
 
 3. **Enhanced Security Controls:**
-   - **SES Domain Identity:** Scoped to specific domain (`aws.warrenresorthotels.com`)
+   - **SES Domain Identity:** Scoped to specific domain (`example.com`)
    - **SES Configuration Set:** Scoped to environment-specific configuration set (`report-builder-development`)
    - **Source Account Restrictions:** Added `sourceAccount` conditions for Lambda invocation permissions
 
@@ -429,7 +429,7 @@ Examples:
 # Update encrypted parameter
 aws ssm put-parameter \
   --name "/report-builder/production/email/recipients" \
-  --value "admin@company.com,reports@company.com" \
+  --value "admin@company.com,test@company.com" \
   --type "SecureString" \
   --overwrite
 

@@ -7,6 +7,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { EnvironmentConfig } from '../../config';
 
 /**
@@ -40,7 +41,7 @@ export class SESConstruct extends Construct {
   public readonly configurationSet: ses.ConfigurationSet;
   
   /** SES receipt rule set for processing incoming emails */
-  public readonly receiptRuleSet: ses.ReceiptRuleSet;
+  public readonly receiptRuleSet: ses.IReceiptRuleSet;
 
   /** Store configuration for later use */
   private readonly config: EnvironmentConfig;
@@ -51,7 +52,7 @@ export class SESConstruct extends Construct {
     super(scope, id);
 
     const { environment, config, incomingFilesBucket, emailProcessorLambda } = props;
-    const { domainName, emailAddress } = config.domain;
+    const { domainName } = config.domain;
 
     // Store for later use
     this.config = config;
@@ -85,82 +86,130 @@ export class SESConstruct extends Construct {
     });
 
     // ===================================================================
+    // EMAIL ADDRESS PARAMETER STORE CONFIGURATION
+    // ===================================================================
+    
+    // Get email addresses from Parameter Store
+    const devEmailParam = ssm.StringParameter.fromStringParameterName(
+      this,
+      'DevEmailParameter',
+      `/report-builder/development/email/incoming-address`
+    );
+    
+    const prodEmailParam = ssm.StringParameter.fromStringParameterName(
+      this,
+      'ProdEmailParameter', 
+      `/report-builder/production/email/incoming-address`
+    );
+
+    // ===================================================================
     // SES EMAIL RECEIPT RULE CONFIGURATION
     // ===================================================================
     
-    // Receipt Rule Set - defines how to handle incoming emails
-    this.receiptRuleSet = new ses.ReceiptRuleSet(this, 'EmailReceiptRuleSet', {
-      receiptRuleSetName: `${config.naming.projectPrefix}${config.naming.separator}rules${config.naming.separator}${environment}`,
-    });
-
-    // Receipt Rule - process emails sent to the specified address
-    const actions = [
-      // First: Store raw email in S3
-      new sesActions.S3({
-        bucket: incomingFilesBucket,
-        objectKeyPrefix: 'raw-emails/',
-        topic: undefined, // We'll use Lambda for processing instead of SNS
-      }),
-    ];
-
-    // Add Lambda action only if emailProcessorLambda is provided
-    if (emailProcessorLambda) {
-      actions.push(
-        new sesActions.Lambda({
-          function: emailProcessorLambda,
-          invocationType: sesActions.LambdaInvocationType.EVENT, // Async processing
-        }) as any // Type assertion needed due to CDK typing complexity
+    // Use a shared rule set name across all environments to handle both dev and prod emails
+    const sharedRuleSetName = `${config.naming.projectPrefix}${config.naming.separator}rules${config.naming.separator}shared`;
+    
+    // Only create the rule set in production environment to avoid conflicts
+    if (environment === 'production') {
+      // Create shared receipt rule set
+      this.receiptRuleSet = new ses.ReceiptRuleSet(this, 'SharedEmailReceiptRuleSet', {
+        receiptRuleSetName: sharedRuleSetName,
+      });
+    } else {
+      // In development, reference the shared rule set created by production
+      this.receiptRuleSet = ses.ReceiptRuleSet.fromReceiptRuleSetName(
+        this, 
+        'SharedReceiptRuleSet', 
+        sharedRuleSetName
       );
     }
 
-    const emailReceiptRule = this.receiptRuleSet.addRule('ProcessIncomingEmails', {
-      enabled: true,
-      // Match emails sent to our reports address
-      recipients: [emailAddress],
-      // Define actions to take when email is received
-      actions,
-      // Scan for spam and viruses
-      scanEnabled: true,
-    });
-
-    // Make the rule set active (only one can be active at a time)
-    // Use Custom Resource to properly activate the receipt rule set
-    new cr.AwsCustomResource(this, 'ActivateReceiptRuleSet', {
-      onCreate: {
-        service: 'SES',
-        action: 'setActiveReceiptRuleSet',
-        parameters: {
-          RuleSetName: this.receiptRuleSet.receiptRuleSetName,
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
-      },
-      onUpdate: {
-        service: 'SES', 
-        action: 'setActiveReceiptRuleSet',
-        parameters: {
-          RuleSetName: this.receiptRuleSet.receiptRuleSetName,
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
-      },
-      onDelete: {
-        service: 'SES',
-        action: 'setActiveReceiptRuleSet',
-        parameters: {
-          // Deactivate by setting no active rule set
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
-      },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: [
-            'ses:SetActiveReceiptRuleSet',
-            'ses:DescribeActiveReceiptRuleSet'
-          ],
-          resources: ['*'],
+    // Only create rules in production environment (where the rule set is created)
+    if (environment === 'production') {
+      // Create rule for development emails
+      const devActions = [
+        new sesActions.S3({
+          bucket: s3.Bucket.fromBucketName(this, 'DevIncomingBucket', 'report-builder-incoming-files-development'),
+          objectKeyPrefix: 'raw-emails/',
         }),
-      ]),
-      logRetention: logs.RetentionDays.ONE_WEEK,
-    });
+        new sesActions.Lambda({
+          function: lambda.Function.fromFunctionName(this, 'DevEmailProcessor', 'report-builder-email-processor-development'),
+          invocationType: sesActions.LambdaInvocationType.EVENT,
+        }) as any,
+      ];
+
+      this.receiptRuleSet.addRule('ProcessDevEmails', {
+        enabled: true,
+        recipients: [devEmailParam.stringValue],
+        actions: devActions,
+        scanEnabled: true,
+      });
+
+      // Create rule for production emails  
+      const prodActions = [
+        new sesActions.S3({
+          bucket: incomingFilesBucket,
+          objectKeyPrefix: 'raw-emails/',
+        }),
+      ];
+
+      if (emailProcessorLambda) {
+        prodActions.push(
+          new sesActions.Lambda({
+            function: emailProcessorLambda,
+            invocationType: sesActions.LambdaInvocationType.EVENT,
+          }) as any
+        );
+      }
+
+      this.receiptRuleSet.addRule('ProcessProdEmails', {
+        enabled: true,
+        recipients: [prodEmailParam.stringValue],
+        actions: prodActions,
+        scanEnabled: true,
+      });
+    }
+
+    // Only activate the rule set in production (where it's created)
+    if (environment === 'production') {
+      // Make the shared rule set active (only one can be active at a time)
+      new cr.AwsCustomResource(this, 'ActivateSharedReceiptRuleSet', {
+        onCreate: {
+          service: 'SES',
+          action: 'setActiveReceiptRuleSet',
+          parameters: {
+            RuleSetName: sharedRuleSetName,
+          },
+          physicalResourceId: cr.PhysicalResourceId.of(`activate-${sharedRuleSetName}`),
+        },
+        onUpdate: {
+          service: 'SES', 
+          action: 'setActiveReceiptRuleSet',
+          parameters: {
+            RuleSetName: sharedRuleSetName,
+          },
+          physicalResourceId: cr.PhysicalResourceId.of(`activate-${sharedRuleSetName}`),
+        },
+        onDelete: {
+          service: 'SES',
+          action: 'setActiveReceiptRuleSet',
+          parameters: {
+            // Deactivate by setting no active rule set
+          },
+          physicalResourceId: cr.PhysicalResourceId.of(`activate-${sharedRuleSetName}`),
+        },
+        policy: cr.AwsCustomResourcePolicy.fromStatements([
+          new iam.PolicyStatement({
+            actions: [
+              'ses:SetActiveReceiptRuleSet',
+              'ses:DescribeActiveReceiptRuleSet'
+            ],
+            resources: ['*'],
+          }),
+        ]),
+        logRetention: logs.RetentionDays.ONE_WEEK,
+      });
+    }
 
     // ===================================================================
     // CLOUDFORMATION OUTPUTS
@@ -180,9 +229,9 @@ export class SESConstruct extends Construct {
       description: 'SES receipt rule set name for email processing',
     });
 
-    new cdk.CfnOutput(this, 'EmailAddress', {
-      value: emailAddress,
-      description: 'Email address for receiving reports',
+    new cdk.CfnOutput(this, 'EmailAddressParameters', {
+      value: `Development: ${devEmailParam.parameterName}, Production: ${prodEmailParam.parameterName}`,
+      description: 'Parameter Store paths for incoming email addresses',
     });
 
     // ===================================================================
@@ -245,36 +294,7 @@ export class SESConstruct extends Construct {
     };
   }
 
-  /**
-   * Add Lambda function to the existing receipt rule
-   * Call this after the Lambda function has been created
-   * 
-   * @param emailProcessorLambda - Lambda function to add to receipt rule actions
-   */
-  public addLambdaToReceiptRule(emailProcessorLambda: lambda.Function): void {
-    const { emailAddress } = this.config.domain;
-
-    // Create a new receipt rule that includes the Lambda action
-    // This will replace the existing rule that only had S3 action
-    this.receiptRuleSet.addRule('ProcessIncomingEmailsWithLambda', {
-      enabled: true,
-      recipients: [emailAddress],
-      actions: [
-        // First: Store raw email in S3
-        new sesActions.S3({
-          bucket: this.incomingFilesBucket,
-          objectKeyPrefix: 'raw-emails/',
-          topic: undefined,
-        }),
-        // Second: Trigger Lambda function for processing
-        new sesActions.Lambda({
-          function: emailProcessorLambda,
-          invocationType: sesActions.LambdaInvocationType.EVENT,
-        }),
-      ],
-             scanEnabled: true,
-    });
-  }
+    // Note: Lambda functions are now added to receipt rules automatically in the constructor
 
   /**
    * Get the SES service principal for S3 bucket policies

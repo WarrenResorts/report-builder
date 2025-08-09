@@ -48,7 +48,7 @@ export class ParameterStoreConfig {
   async getAlertNotificationEmail(): Promise<string> {
     const paramName = `/report-builder/${environmentConfig.environment}/email/alert-notifications`;
     const value = await this.getParameter(paramName);
-    return value || "alerts@warrenresorthotels.com"; // fallback
+    return value || "alerts@example.com"; // fallback
   }
 
   /**
@@ -65,8 +65,8 @@ export class ParameterStoreConfig {
       );
       return environmentConfig.environment === "development" ||
         environmentConfig.environment === "test"
-        ? "dev@aws.warrenresorthotels.com"
-        : "reports@aws.warrenresorthotels.com";
+        ? "dev@example.com"
+        : "test@example.com";
     }
     return value;
   }
@@ -117,15 +117,13 @@ export class ParameterStoreConfig {
             .split(",")
             .map((email: string) => email.trim())
         : [],
-      alertEmail:
-        parameters[paramNames[1]] ||
-        `alerts@${environmentConfig.environment === "test" ? "example.com" : "warrenresorthotels.com"}`,
+      alertEmail: parameters[paramNames[1]] || "alerts@example.com",
       fromEmail:
         parameters[paramNames[2]] ||
         (environmentConfig.environment === "development" ||
         environmentConfig.environment === "test"
-          ? "dev@aws.warrenresorthotels.com"
-          : "reports@aws.warrenresorthotels.com"),
+          ? "dev@example.com"
+          : "test@example.com"),
       sesConfigurationSet:
         parameters[paramNames[3]] ||
         `report-builder-${environmentConfig.environment}`,

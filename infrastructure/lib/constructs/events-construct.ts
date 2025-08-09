@@ -82,10 +82,22 @@ export class EventsConstruct extends Construct {
     });
 
     // From email address (will be encrypted post-deployment)
+    // Determine the default from email address based on environment
+    const defaultFromEmail = environment === 'development' 
+      ? 'dev@example.com'
+      : 'test@example.com';
+      
     const fromEmailParam = new ssm.StringParameter(this, 'FromEmailParameter', {
       parameterName: `/${config.naming.projectPrefix}/${environment}/email/from-address`,
-      stringValue: config.domain.emailAddress, // Use configured email address
+      stringValue: defaultFromEmail,
       description: 'From email address for outbound reports (convert to SecureString post-deployment)',
+    });
+
+    // Incoming email address for SES receipt rules
+    const incomingEmailParam = new ssm.StringParameter(this, 'IncomingEmailParameter', {
+      parameterName: `/${config.naming.projectPrefix}/${environment}/email/incoming-address`,
+      stringValue: defaultFromEmail, // Same as from email for now
+      description: 'Incoming email address for SES receipt rules',
     });
 
     // Property mapping configuration (will be encrypted post-deployment)
@@ -208,7 +220,7 @@ export class EventsConstruct extends Construct {
         'IMPORTANT - For production security, convert to SecureString and update values:',
         `aws ssm put-parameter --name "${emailRecipientsParam.parameterName}" --value "user1@domain.com,user2@domain.com" --type "SecureString" --overwrite`,
         `aws ssm put-parameter --name "${alertEmailParam.parameterName}" --value "alerts@yourdomain.com" --type "SecureString" --overwrite`,
-        `aws ssm put-parameter --name "${fromEmailParam.parameterName}" --value "reports@yourdomain.com" --type "SecureString" --overwrite`,
+        `aws ssm put-parameter --name "${fromEmailParam.parameterName}" --value "test@yourdomain.com" --type "SecureString" --overwrite`,
         `aws ssm put-parameter --name "${propertyMappingParam.parameterName}" --value "{\\"sender@property1.com\\":\\"PROP001\\"}" --type "SecureString" --overwrite`,
         '',
         'NOTE: After converting to SecureString, update Lambda IAM roles to include KMS permissions for decryption.',
