@@ -178,7 +178,6 @@ export class LambdaConstruct extends Construct {
       timeout: cdk.Duration.minutes(config.lambda.emailProcessor.timeoutMinutes),
       memorySize: config.lambda.emailProcessor.memoryMB,
       bundling: {
-        nodeModules: ['mailparser'],
         externalModules: ['@aws-sdk/*'],
         format: lambdaNodejs.OutputFormat.ESM,
         target: 'es2022',

@@ -115,7 +115,7 @@ describe("ParameterStoreConfig", () => {
       });
 
       const result = await parameterStore.getAlertNotificationEmail();
-      expect(result).toBe("alerts@warrenresorthotels.com");
+      expect(result).toBe("alerts@example.com");
     });
   });
 
@@ -135,7 +135,7 @@ describe("ParameterStoreConfig", () => {
       });
 
       const result = await parameterStore.getFromEmailAddress();
-      expect(result).toBe("dev@aws.warrenresorthotels.com"); // test environment gets dev email
+      expect(result).toBe("dev@example.com"); // test environment gets dev email
     });
   });
 
@@ -217,7 +217,7 @@ describe("ParameterStoreConfig", () => {
           },
           {
             Name: "/report-builder/test/email/from-address",
-            Value: "reports@example.com",
+            Value: "test@example.com",
           },
           {
             Name: "/report-builder/test/ses/configuration-set",
@@ -231,7 +231,7 @@ describe("ParameterStoreConfig", () => {
       expect(result).toEqual({
         recipients: ["user1@example.com", "user2@example.com"],
         alertEmail: "alerts@example.com",
-        fromEmail: "reports@example.com",
+        fromEmail: "test@example.com",
         sesConfigurationSet: "test-config-set",
       });
     });
@@ -252,7 +252,7 @@ describe("ParameterStoreConfig", () => {
       expect(result).toEqual({
         recipients: [],
         alertEmail: "alerts@example.com",
-        fromEmail: "dev@aws.warrenresorthotels.com",
+        fromEmail: "dev@example.com",
         sesConfigurationSet: "report-builder-test",
       });
     });
@@ -303,7 +303,7 @@ describe("ParameterStoreConfig", () => {
         .mockImplementation(() => undefined);
 
       const result = await parameterStore.getAlertNotificationEmail();
-      expect(result).toBe("alerts@warrenresorthotels.com");
+      expect(result).toBe("alerts@example.com");
       expect(consoleSpy).toHaveBeenCalledWith(
         "Parameter not found: /report-builder/test/email/alert-notifications",
       );

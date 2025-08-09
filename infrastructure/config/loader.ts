@@ -75,9 +75,7 @@ export class ConfigLoader {
       errors.push('Domain name is required');
     }
 
-    if (!config.domain?.emailAddress) {
-      errors.push('Email address is required');
-    }
+    // Email address is now retrieved from Parameter Store at runtime
 
     if (!config.naming?.projectPrefix) {
       errors.push('Project prefix is required');
@@ -134,10 +132,7 @@ export class ConfigLoader {
       errors.push('Invalid domain name format');
     }
 
-    // Validate email address format
-    if (config.domain?.emailAddress && !this.isValidEmailAddress(config.domain.emailAddress)) {
-      errors.push('Invalid email address format');
-    }
+    // Email address validation is now handled at runtime via Parameter Store
 
     // Generate warnings for potential issues
     if (config.environment === 'production' && config.lambda.emailProcessor.timeoutMinutes < 5) {

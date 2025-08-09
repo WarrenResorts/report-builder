@@ -632,16 +632,10 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-array-recipients",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: [
-                  "test@example.com",
-                  "backup@warrenresorthotels.com",
-                ],
+                destination: ["test@example.com", "backup@example.com"],
               } as SESMail,
               receipt: {
-                recipients: [
-                  "test@example.com",
-                  "backup@warrenresorthotels.com",
-                ],
+                recipients: ["test@example.com", "backup@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
                 action: {
@@ -666,10 +660,7 @@ describe("EmailProcessor", () => {
       // Mock parsed email with array of recipients
       const mockParsedEmail = {
         from: { text: "sender@example.com" },
-        to: [
-          { text: "test@example.com" },
-          { text: "backup@warrenresorthotels.com" },
-        ], // This will trigger the Array.isArray branch
+        to: [{ text: "test@example.com" }, { text: "backup@example.com" }], // This will trigger the Array.isArray branch
         subject: "Daily Report",
         date: new Date("2024-01-01T12:00:00.000Z"),
         attachments: [

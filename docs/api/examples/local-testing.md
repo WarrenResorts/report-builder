@@ -51,8 +51,8 @@ describe('Email Processor Local Testing', () => {
   it('should process email with PDF attachment', async () => {
     // Mock S3 email retrieval
     const mockEmailContent = Buffer.from(`
-From: property1@warrenresorthotels.com
-To: reports@aws.warrenresorthotels.com
+From: property1@example.com
+To: test@example.com
 Subject: Test Email
 Content-Type: multipart/mixed; boundary="boundary123"
 
@@ -79,7 +79,7 @@ Content-Disposition: attachment; filename="test-report.pdf"
     ssmMock.on(GetParameterCommand).resolves({
       Parameter: {
         Value: JSON.stringify({
-          "property1@warrenresorthotels.com": "property-1"
+          "property1@example.com": "property-1"
         })
       }
     });
@@ -96,19 +96,19 @@ Content-Disposition: attachment; filename="test-report.pdf"
           ses: {
             mail: {
               messageId: 'test-message-123',
-              source: 'property1@warrenresorthotels.com',
+              source: 'property1@example.com',
               timestamp: '2024-01-15T10:30:00.000Z',
-              destination: ['reports@aws.warrenresorthotels.com'],
+              destination: ['test@example.com'],
               commonHeaders: {
                 subject: 'Test Email',
-                from: ['property1@warrenresorthotels.com'],
-                to: ['reports@aws.warrenresorthotels.com']
+                from: ['property1@example.com'],
+                to: ['test@example.com']
               }
             },
             receipt: {
               timestamp: '2024-01-15T10:30:00.000Z',
               processingTimeMillis: 150,
-              recipients: ['reports@aws.warrenresorthotels.com'],
+              recipients: ['test@example.com'],
               spamVerdict: { status: 'PASS' },
               virusVerdict: { status: 'PASS' },
               spfVerdict: { status: 'PASS' },
@@ -185,7 +185,7 @@ describe('Email Processor Integration Tests', () => {
     await ssm.putParameter({
       Name: '/report-builder/test/config/property-mapping',
       Value: JSON.stringify({
-        "property1@warrenresorthotels.com": "property-1"
+        "property1@example.com": "property-1"
       }),
       Type: 'String'
     }).promise();
@@ -281,8 +281,8 @@ export AWS_ENDPOINT_URL=http://localhost:4566
 
 # Create test email file
 cat > test-email.eml << 'EOF'
-From: property1@warrenresorthotels.com
-To: reports@aws.warrenresorthotels.com
+From: property1@example.com
+To: test@example.com
 Subject: Test Daily Report
 Content-Type: multipart/mixed; boundary="boundary123"
 
@@ -312,7 +312,7 @@ cat > test-event.json << 'EOF'
       "ses": {
         "mail": {
           "messageId": "test-message-id",
-          "source": "property1@warrenresorthotels.com",
+          "source": "property1@example.com",
           "commonHeaders": {
             "subject": "Test Daily Report"
           }
@@ -432,8 +432,8 @@ mkdir -p test-data/emails test-data/attachments
 
 # Generate sample email
 cat > test-data/emails/sample-email.eml << 'EOF'
-From: property1@warrenresorthotels.com
-To: reports@aws.warrenresorthotels.com
+From: property1@example.com
+To: test@example.com
 Subject: Sample Daily Report
 /* ... email content ... */
 EOF

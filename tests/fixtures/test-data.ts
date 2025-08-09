@@ -89,8 +89,8 @@ export const TEST_PROPERTY_MAPPING = {
  * Test email configuration
  */
 export const TEST_EMAIL_CONFIG = {
-  recipients: 'test-reports@warrenresorts.com',
-  alertEmail: 'test-alerts@warrenresorts.com',
+  recipients: 'test@example.com',
+  alertEmail: 'alerts@example.com',
   fromEmail: 'test-noreply@warrenresorts.com',
   configurationSet: 'test-report-builder-config',
 };
