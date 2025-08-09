@@ -169,8 +169,8 @@ export class SESConstruct extends Construct {
     // Only output DKIM tokens when we create the domain identity (development)
     if (environment === 'development' && this.domainIdentity instanceof ses.EmailIdentity) {
       new cdk.CfnOutput(this, 'SESdomainVerificationToken', {
-        value: this.domainIdentity.dkimDnsTokenName1,
-        description: 'SES domain verification token for DNS configuration',
+        value: this.domainIdentity.dkimRecords[0].name,
+        description: 'SES domain verification token for DNS configuration (first DKIM record)',
       });
     }
 
@@ -201,7 +201,7 @@ export class SESConstruct extends Construct {
 
     // Only include DKIM token in development where we create the identity
     if (environment === 'development' && this.domainIdentity instanceof ses.EmailIdentity) {
-      setupInstructions.push(`   Value: ${this.domainIdentity.dkimDnsTokenName1}`);
+      setupInstructions.push(`   Value: ${this.domainIdentity.dkimRecords[0].value}`);
     } else {
       setupInstructions.push('   Value: <Check AWS SES Console for verification token>');
     }
