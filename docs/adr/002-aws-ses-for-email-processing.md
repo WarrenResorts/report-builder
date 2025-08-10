@@ -63,7 +63,7 @@ We will use **AWS Simple Email Service (SES)** for receiving and processing inco
 ## Implementation Notes
 
 ### SES Configuration
-- **Domain identity**: Verified `aws.warrenresorthotels.com` for receiving emails
+- **Domain identity**: Verified `example.com` for receiving emails
 - **Receipt rules**: Configured to store raw emails in S3 and trigger Lambda
 - **Configuration set**: Environment-specific settings for tracking and reputation management
 - **IAM permissions**: Least-privilege access for Lambda functions to SES resources

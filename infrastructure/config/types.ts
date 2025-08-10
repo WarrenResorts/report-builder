@@ -3,13 +3,11 @@
  */
 
 /**
- * Domain and email configuration
+ * Domain configuration
  */
 export interface DomainConfig {
-  /** Primary domain name for SES (e.g., 'aws.warrenresorthotels.com') */
+  /** Primary domain name for SES (e.g., 'example.com') */
   domainName: string;
-  /** Email address for receiving reports (e.g., 'reports@aws.warrenresorthotels.com') */
-  emailAddress: string;
 }
 
 /**

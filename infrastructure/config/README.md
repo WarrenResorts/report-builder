@@ -109,8 +109,8 @@ Controls how all AWS resources are named. Results in names like:
 ```json
 {
   "domain": {
-    "domainName": "aws.warrenresorthotels.com",
-    "emailAddress": "reports@aws.warrenresorthotels.com"
+    "domainName": "aws.example.com",
+    "emailAddress": "test@example.com"
   }
 }
 ```

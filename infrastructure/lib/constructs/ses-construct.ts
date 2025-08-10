@@ -7,6 +7,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { EnvironmentConfig } from '../../config';
 
 /**
@@ -40,7 +41,7 @@ export class SESConstruct extends Construct {
   public readonly configurationSet: ses.ConfigurationSet;
   
   /** SES receipt rule set for processing incoming emails */
-  public readonly receiptRuleSet: ses.ReceiptRuleSet;
+  public readonly receiptRuleSet: ses.IReceiptRuleSet;
 
   /** Store configuration for later use */
   private readonly config: EnvironmentConfig;
@@ -51,7 +52,7 @@ export class SESConstruct extends Construct {
     super(scope, id);
 
     const { environment, config, incomingFilesBucket, emailProcessorLambda } = props;
-    const { domainName, emailAddress } = config.domain;
+    const { domainName } = config.domain;
 
     // Store for later use
     this.config = config;
@@ -85,62 +86,72 @@ export class SESConstruct extends Construct {
     });
 
     // ===================================================================
+    // EMAIL ADDRESS PARAMETER STORE CONFIGURATION
+    // ===================================================================
+    
+    // Create the incoming email parameter in the SES construct to avoid dependency issues
+    const defaultFromEmail = environment === 'development' ? 'dev@example.com' : 'test@example.com';
+    
+    const currentEmailParam = new ssm.StringParameter(this, 'IncomingEmailParameter', {
+      parameterName: `/${config.naming.projectPrefix}/${environment}/email/incoming-address`,
+      stringValue: defaultFromEmail,
+      description: 'Incoming email address for SES receipt rules',
+    });
+
+    // ===================================================================
     // SES EMAIL RECEIPT RULE CONFIGURATION
     // ===================================================================
     
-    // Receipt Rule Set - defines how to handle incoming emails
+        // Each environment has its own rule set
+    const ruleSetName = `${config.naming.projectPrefix}${config.naming.separator}rules${config.naming.separator}${environment}`;
+
+    // Create rule set for current environment
     this.receiptRuleSet = new ses.ReceiptRuleSet(this, 'EmailReceiptRuleSet', {
-      receiptRuleSetName: `${config.naming.projectPrefix}${config.naming.separator}rules${config.naming.separator}${environment}`,
+      receiptRuleSetName: ruleSetName,
     });
 
-    // Receipt Rule - process emails sent to the specified address
-    const actions = [
-      // First: Store raw email in S3
+    // Create rule for the current environment
+    const emailActions = [
       new sesActions.S3({
         bucket: incomingFilesBucket,
         objectKeyPrefix: 'raw-emails/',
-        topic: undefined, // We'll use Lambda for processing instead of SNS
       }),
     ];
 
-    // Add Lambda action only if emailProcessorLambda is provided
     if (emailProcessorLambda) {
-      actions.push(
+      emailActions.push(
         new sesActions.Lambda({
           function: emailProcessorLambda,
-          invocationType: sesActions.LambdaInvocationType.EVENT, // Async processing
-        }) as any // Type assertion needed due to CDK typing complexity
+          invocationType: sesActions.LambdaInvocationType.EVENT,
+        }) as any
       );
     }
 
-    const emailReceiptRule = this.receiptRuleSet.addRule('ProcessIncomingEmails', {
+    this.receiptRuleSet.addRule(`ProcessEmails${environment.charAt(0).toUpperCase() + environment.slice(1)}`, {
       enabled: true,
-      // Match emails sent to our reports address
-      recipients: [emailAddress],
-      // Define actions to take when email is received
-      actions,
-      // Scan for spam and viruses
+      recipients: [currentEmailParam.stringValue],
+      actions: emailActions,
       scanEnabled: true,
     });
 
-    // Make the rule set active (only one can be active at a time)
-    // Use Custom Resource to properly activate the receipt rule set
+    // Activate the rule set for the current environment
+    // Note: Only one rule set can be active at a time across all environments
     new cr.AwsCustomResource(this, 'ActivateReceiptRuleSet', {
       onCreate: {
         service: 'SES',
         action: 'setActiveReceiptRuleSet',
         parameters: {
-          RuleSetName: this.receiptRuleSet.receiptRuleSetName,
+          RuleSetName: ruleSetName,
         },
-        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${ruleSetName}`),
       },
       onUpdate: {
         service: 'SES', 
         action: 'setActiveReceiptRuleSet',
         parameters: {
-          RuleSetName: this.receiptRuleSet.receiptRuleSetName,
+          RuleSetName: ruleSetName,
         },
-        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${ruleSetName}`),
       },
       onDelete: {
         service: 'SES',
@@ -148,7 +159,7 @@ export class SESConstruct extends Construct {
         parameters: {
           // Deactivate by setting no active rule set
         },
-        physicalResourceId: cr.PhysicalResourceId.of(`activate-${this.receiptRuleSet.receiptRuleSetName}`),
+        physicalResourceId: cr.PhysicalResourceId.of(`activate-${ruleSetName}`),
       },
       policy: cr.AwsCustomResourcePolicy.fromStatements([
         new iam.PolicyStatement({
@@ -180,9 +191,9 @@ export class SESConstruct extends Construct {
       description: 'SES receipt rule set name for email processing',
     });
 
-    new cdk.CfnOutput(this, 'EmailAddress', {
-      value: emailAddress,
-      description: 'Email address for receiving reports',
+    new cdk.CfnOutput(this, 'EmailAddressParameters', {
+      value: `${environment}: ${currentEmailParam.parameterName}`,
+      description: 'Parameter Store path for incoming email address',
     });
 
     // ===================================================================
@@ -245,36 +256,7 @@ export class SESConstruct extends Construct {
     };
   }
 
-  /**
-   * Add Lambda function to the existing receipt rule
-   * Call this after the Lambda function has been created
-   * 
-   * @param emailProcessorLambda - Lambda function to add to receipt rule actions
-   */
-  public addLambdaToReceiptRule(emailProcessorLambda: lambda.Function): void {
-    const { emailAddress } = this.config.domain;
-
-    // Create a new receipt rule that includes the Lambda action
-    // This will replace the existing rule that only had S3 action
-    this.receiptRuleSet.addRule('ProcessIncomingEmailsWithLambda', {
-      enabled: true,
-      recipients: [emailAddress],
-      actions: [
-        // First: Store raw email in S3
-        new sesActions.S3({
-          bucket: this.incomingFilesBucket,
-          objectKeyPrefix: 'raw-emails/',
-          topic: undefined,
-        }),
-        // Second: Trigger Lambda function for processing
-        new sesActions.Lambda({
-          function: emailProcessorLambda,
-          invocationType: sesActions.LambdaInvocationType.EVENT,
-        }),
-      ],
-             scanEnabled: true,
-    });
-  }
+    // Note: Lambda functions are now added to receipt rules automatically in the constructor
 
   /**
    * Get the SES service principal for S3 bucket policies

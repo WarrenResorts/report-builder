@@ -9,8 +9,8 @@ This document captures the requirements for the email processing functionality o
 - **Number of senders**: 14 different property management systems
 - **Sender addresses**: 14 different email addresses (one per property management system)
 - **Configuration control**: We can configure each management system to send to any email address we specify
-- **Target domain**: `warrenresorthotels.com` (DNS control available)
-- **Proposed SES email**: `reports@warrenresorthotels.com` (or similar)
+- **Target domain**: `example.com` (DNS control available)
+- **Proposed SES email**: `test@example.com` (or similar)
 
 ### 2. Email Format
 - **Attachment types**: PDF, CSV, and TXT files
@@ -33,7 +33,7 @@ This document captures the requirements for the email processing functionality o
 ## 🚀 Technical Implementation Plan
 
 ### Phase 2A: SES Email Receiving Setup
-- Configure SES to receive emails at `reports@warrenresorthotels.com`
+- Configure SES to receive emails at `test@example.com`
 - Set up DNS records (MX, TXT) for domain verification
 - Configure S3 integration for raw email storage
 - Create email processing rules

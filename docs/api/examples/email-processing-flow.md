@@ -8,7 +8,7 @@ This document provides detailed examples of the email processing workflow, from 
 
 ### Step 1: Email Reception via SES
 
-When an email is sent to `reports@aws.warrenresorthotels.com`, Amazon SES:
+When an email is sent to `test@example.com`, Amazon SES:
 
 1. **Receives the email** and performs spam/virus scanning
 2. **Stores raw email** in S3 bucket: `report-builder-incoming-files-{env}/raw-emails/{messageId}`
@@ -24,13 +24,13 @@ When an email is sent to `reports@aws.warrenresorthotels.com`, Amazon SES:
       "ses": {
         "mail": {
           "timestamp": "2024-01-15T10:30:00.000Z",
-          "source": "property1@warrenresorthotels.com",
+          "source": "property1@example.com",
           "messageId": "0000014a-f4d4-4f89-b0d5-123456789abc",
-          "destination": ["reports@aws.warrenresorthotels.com"],
+          "destination": ["test@example.com"],
           "commonHeaders": {
             "subject": "Daily Report - Property 1",
-            "from": ["property1@warrenresorthotels.com"],
-            "to": ["reports@aws.warrenresorthotels.com"]
+            "from": ["property1@example.com"],
+            "to": ["test@example.com"]
           }
         },
         "receipt": {
@@ -63,9 +63,9 @@ The Email Processor Lambda function:
 **Parameter Store Configuration:**
 ```json
 {
-  "property1@warrenresorthotels.com": "property-1",
-  "property2@warrenresorthotels.com": "property-2",
-  "accounting@warrenresorthotels.com": "corporate"
+  "property1@example.com": "property-1",
+  "property2@example.com": "property-2",
+  "accounting@example.com": "corporate"
 }
 ```
 
@@ -106,7 +106,7 @@ daily-files/
   "messageId": "0000014a-f4d4-4f89-b0d5-123456789abc",
   "correlationId": "eproc-1705316400000-abc123def",
   "timestamp": "2024-01-15T10:30:00.000Z",
-  "sender": "property1@warrenresorthotels.com",
+  "sender": "property1@example.com",
   "subject": "Daily Report - Property 1",
   "propertyId": "property-1",
   "attachments": [
@@ -135,7 +135,7 @@ email-metadata/
 ### Scenario 1: Successful Processing with Multiple Attachments
 
 **Input Email:**
-- **From:** property1@warrenresorthotels.com
+- **From:** property1@example.com
 - **Subject:** Daily Reports - January 15
 - **Attachments:** 
   - daily-report.pdf (156 KB)
@@ -223,7 +223,7 @@ email-metadata/
 ### Scenario 3: Invalid Attachments Filtered
 
 **Input Email:**
-- **From:** property2@warrenresorthotels.com
+- **From:** property2@example.com
 - **Subject:** Mixed Files
 - **Attachments:** 
   - report.pdf (valid)
@@ -364,7 +364,7 @@ const testEvent = {
       ses: {
         mail: {
           messageId: 'test-message-id',
-          source: 'property1@warrenresorthotels.com',
+          source: 'property1@example.com',
           commonHeaders: {
             subject: 'Test Email'
           }

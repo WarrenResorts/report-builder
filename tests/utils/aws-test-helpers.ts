@@ -252,14 +252,14 @@ export class ParameterStoreTestHelper {
       'property-mapping', 
       JSON.stringify({
         'test-sender@example.com': 'test-property-1',
-        'sender@warrenresorthotels.com': 'warren-main',
+        'sender@example.com': 'warren-main',
       })
     );
 
     // Email configuration
-    await this.createTestParameter('email/recipients', 'test-reports@example.com');
+    await this.createTestParameter('email/recipients', 'test@example.com');
     await this.createTestParameter('email/alert-notifications', 'test-alerts@example.com');
-    await this.createTestParameter('email/from-address', 'test-noreply@warrenresorthotels.com');
+    await this.createTestParameter('email/from-address', 'test-noreply@example.com');
     await this.createTestParameter('ses/configuration-set', 'test-report-builder');
   }
 

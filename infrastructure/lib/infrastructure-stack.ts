@@ -52,7 +52,7 @@ export class InfrastructureStack extends cdk.Stack {
     const config = configLoader.getConfig(environment);
     
     // Extract configuration values
-    const { domainName, emailAddress } = config.domain;
+    const { domainName } = config.domain;
 
     // ===================================================================
     // STORAGE CONSTRUCT - S3 BUCKETS AND POLICIES
@@ -95,13 +95,7 @@ export class InfrastructureStack extends cdk.Stack {
       sesPermissions: this.ses.createSESPermissions(), // Use properly scoped SES permissions
     });
 
-    // ===================================================================
-    // SES RECEIPT RULE UPDATE - ADD LAMBDA ACTION
-    // ===================================================================
-    
-    // Add the Lambda function to the SES receipt rule
-    // (SES invoke permission is already granted in the Lambda construct)
-    this.ses.addLambdaToReceiptRule(this.lambda.emailProcessorLambda);
+    // Note: SES receipt rules with Lambda actions are now created automatically in the SES construct
 
     // ===================================================================
     // EVENTS CONSTRUCT - EVENTBRIDGE SCHEDULING
@@ -131,7 +125,7 @@ export class InfrastructureStack extends cdk.Stack {
         'REPORT BUILDER INFRASTRUCTURE DEPLOYED:',
         `Environment: ${environment}`,
         `Domain: ${domainName}`,
-        `Email: ${emailAddress}`,
+        'Email addresses: Available in Parameter Store',
         '',
         'Resources Created:',
         `- S3 Buckets: ${this.storage.incomingFilesBucket.bucketName}, ${this.storage.processedFilesBucket.bucketName}, ${this.storage.mappingFilesBucket.bucketName}`,
