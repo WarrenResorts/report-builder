@@ -65,20 +65,15 @@ export class InfrastructureStack extends cdk.Stack {
     });
 
     // ===================================================================
-    // LAMBDA CONSTRUCT - FUNCTIONS AND IAM ROLES
-    // ===================================================================
-    
-    // ===================================================================
     // SES CONSTRUCT - DOMAIN AND EMAIL CONFIGURATION (PARTIAL)
     // ===================================================================
     
-    // Create SES construct first to get properly scoped permissions
-    // Lambda action will be added after Lambda function is created
+    // Create SES construct first to get domain identity and config set, but without receipt rules
     this.ses = new SESConstruct(this, 'SES', {
       environment,
       config,
       incomingFilesBucket: this.storage.incomingFilesBucket,
-      // emailProcessorLambda will be undefined initially - receipt rule will only have S3 action
+      // emailProcessorLambda will be added to receipt rules after Lambda is created
     });
 
     // ===================================================================
@@ -92,8 +87,11 @@ export class InfrastructureStack extends cdk.Stack {
       processedFilesBucket: this.storage.processedFilesBucket,
       mappingFilesBucket: this.storage.mappingFilesBucket,
       s3PolicyStatements: this.storage.createLambdaS3Permissions(),
-      sesPermissions: this.ses.createSESPermissions(), // Use properly scoped SES permissions
+      sesPermissions: this.ses.createSESPermissions(), // SES permissions are now available
     });
+
+    // Add Lambda action to SES receipt rules after Lambda is created
+    this.ses.addLambdaToReceiptRule(this.lambda.emailProcessorLambda);
 
     // Note: SES receipt rules with Lambda actions are now created automatically in the SES construct
 

@@ -42,7 +42,13 @@ export class SESConstruct extends Construct {
   
   /** SES receipt rule set for processing incoming emails */
   public readonly receiptRuleSet: ses.IReceiptRuleSet;
-
+  
+  /** Current email parameter for receipt rules */
+  private currentEmailParam: ssm.StringParameter;
+  
+  /** Receipt rule for email processing */
+  private receiptRule: ses.ReceiptRule;
+  
   /** Store configuration for later use */
   private readonly config: EnvironmentConfig;
   private readonly environment: 'development' | 'production';
@@ -52,12 +58,12 @@ export class SESConstruct extends Construct {
     super(scope, id);
 
     const { environment, config, incomingFilesBucket, emailProcessorLambda } = props;
-    const { domainName } = config.domain;
-
-    // Store for later use
+    
+    // Store properties for later use
     this.config = config;
     this.environment = environment;
     this.incomingFilesBucket = incomingFilesBucket;
+    const { domainName } = config.domain;
 
     // ===================================================================
     // SES DOMAIN AND EMAIL CONFIGURATION
@@ -112,27 +118,18 @@ export class SESConstruct extends Construct {
       receiptRuleSetName: ruleSetName,
     });
 
-    // Create email processing rule for current environment
-    const emailActions = [
-      new sesActions.S3({
-        bucket: incomingFilesBucket,
-        objectKeyPrefix: 'raw-emails/',
-      }),
-    ];
-
-    if (emailProcessorLambda) {
-      emailActions.push(
-        new sesActions.Lambda({
-          function: emailProcessorLambda,
-          invocationType: sesActions.LambdaInvocationType.EVENT,
-        }) as any
-      );
-    }
-
-    this.receiptRuleSet.addRule(`ProcessEmails${environment.charAt(0).toUpperCase() + environment.slice(1)}`, {
+    // Create initial email processing rule with S3 action only
+    // Lambda action will be added later via addLambdaToReceiptRule method
+    this.currentEmailParam = currentEmailParam;
+    this.receiptRule = this.receiptRuleSet.addRule(`ProcessEmails${environment.charAt(0).toUpperCase() + environment.slice(1)}`, {
       enabled: true,
       recipients: [currentEmailParam.stringValue],
-      actions: emailActions,
+      actions: [
+        new sesActions.S3({
+          bucket: incomingFilesBucket,
+          objectKeyPrefix: 'raw-emails/',
+        }),
+      ],
       scanEnabled: true,
     });
 
@@ -257,7 +254,19 @@ export class SESConstruct extends Construct {
     };
   }
 
-    // Note: Lambda functions are now added to receipt rules automatically in the constructor
+  /**
+   * Add Lambda action to the existing receipt rule
+   * This method is called after the Lambda function is created
+   */
+  public addLambdaToReceiptRule(emailProcessorLambda: lambda.IFunction): void {
+    // Add Lambda action to the existing receipt rule
+    this.receiptRule.addAction(
+      new sesActions.Lambda({
+        function: emailProcessorLambda,
+        invocationType: sesActions.LambdaInvocationType.EVENT,
+      })
+    );
+  }
 
   /**
    * Get the SES service principal for S3 bucket policies
