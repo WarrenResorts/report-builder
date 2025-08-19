@@ -1,7 +1,7 @@
 {
   "environment": "production",
   "domain": {
-    "domainName": "example.com"
+    "domainName": "aws.warrenresorthotels.com"
   },
   "naming": {
     "projectPrefix": "report-builder",

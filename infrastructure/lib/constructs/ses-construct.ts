@@ -89,28 +89,30 @@ export class SESConstruct extends Construct {
     // EMAIL ADDRESS PARAMETER STORE CONFIGURATION
     // ===================================================================
     
-    // Create the incoming email parameter in the SES construct to avoid dependency issues
-    const defaultFromEmail = environment === 'development' ? 'dev@example.com' : 'test@example.com';
+    // Each environment creates only its own parameter (multi-account approach)
+    const defaultFromEmail = environment === 'development' 
+      ? 'dev@dev.warrenresorthotels.com' 
+      : 'reports@aws.warrenresorthotels.com';
     
     const currentEmailParam = new ssm.StringParameter(this, 'IncomingEmailParameter', {
       parameterName: `/${config.naming.projectPrefix}/${environment}/email/incoming-address`,
       stringValue: defaultFromEmail,
-      description: 'Incoming email address for SES receipt rules',
+      description: `${environment} incoming email address for SES receipt rules`,
     });
 
     // ===================================================================
-    // SES EMAIL RECEIPT RULE CONFIGURATION
+    // SES EMAIL RECEIPT RULE CONFIGURATION  
     // ===================================================================
     
-        // Each environment has its own rule set
+    // Each environment has its own independent rule set (multi-account approach)
     const ruleSetName = `${config.naming.projectPrefix}${config.naming.separator}rules${config.naming.separator}${environment}`;
 
-    // Create rule set for current environment
+    // Create rule set for current environment only
     this.receiptRuleSet = new ses.ReceiptRuleSet(this, 'EmailReceiptRuleSet', {
       receiptRuleSetName: ruleSetName,
     });
 
-    // Create rule for the current environment
+    // Create email processing rule for current environment
     const emailActions = [
       new sesActions.S3({
         bucket: incomingFilesBucket,
@@ -134,8 +136,7 @@ export class SESConstruct extends Construct {
       scanEnabled: true,
     });
 
-    // Activate the rule set for the current environment
-    // Note: Only one rule set can be active at a time across all environments
+    // Activate the rule set for this environment
     new cr.AwsCustomResource(this, 'ActivateReceiptRuleSet', {
       onCreate: {
         service: 'SES',
@@ -146,7 +147,7 @@ export class SESConstruct extends Construct {
         physicalResourceId: cr.PhysicalResourceId.of(`activate-${ruleSetName}`),
       },
       onUpdate: {
-        service: 'SES', 
+        service: 'SES',
         action: 'setActiveReceiptRuleSet',
         parameters: {
           RuleSetName: ruleSetName,
@@ -187,7 +188,7 @@ export class SESConstruct extends Construct {
     });
 
     new cdk.CfnOutput(this, 'SESReceiptRuleSetName', {
-      value: this.receiptRuleSet.receiptRuleSetName,
+      value: ruleSetName,
       description: 'SES receipt rule set name for email processing',
     });
 

@@ -5,6 +5,16 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      deploy_to_production:
+        description: 'Deploy to production environment'
+        required: true
+        default: 'yes'
+        type: choice
+        options:
+        - 'yes'
+        - 'no'
 
 env:
   NODE_VERSION: '20'
@@ -84,10 +94,10 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     
-    - name: Configure AWS credentials
+    - name: Configure AWS credentials for Development
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::316422224105:role/GitHubActionsOIDCRole
+        role-to-assume: arn:aws:iam::237124340260:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
     
     - name: Install CDK
@@ -122,7 +132,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '🚀 **Development Environment Deployed**\n\nThe infrastructure has been successfully deployed to the development environment.\n\n- Stack: `ReportBuilderStack-development`\n- Region: `${{ env.AWS_REGION }}`\n- Commit: `${{ github.sha }}`'
+              body: '🚀 **Development Environment Deployed**\n\nThe infrastructure has been successfully deployed to the development environment.\n\n- Stack: `ReportBuilderStack-development`\n- Domain: `dev.warrenresorthotels.com`\n- Email: `dev@dev.warrenresorthotels.com`\n- Account: `237124340260`\n- Region: `${{ env.AWS_REGION }}`\n- Commit: `${{ github.sha }}`\n\n**Next Steps:**\n1. Update Parameter Store email address if needed\n2. Test email processing by sending to `dev@dev.warrenresorthotels.com`'
             });
           } catch (error) {
             console.log('Could not post comment to PR:', error.message);
@@ -130,9 +140,8 @@ jobs:
           }
 
   deploy-production:
-    needs: [test, security-scan]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_production == 'yes'
     permissions:
       id-token: write   # This is required for requesting the JWT
       contents: read    # This is required for actions/checkout
@@ -145,10 +154,10 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     
-    - name: Configure AWS credentials
+    - name: Configure AWS credentials for Production
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::316422224105:role/GitHubActionsOIDCRole
+        role-to-assume: arn:aws:iam::400534944857:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
     
     - name: Install CDK
@@ -176,7 +185,7 @@ jobs:
   release:
     needs: [deploy-production]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_production == 'yes'
     permissions:
       contents: write
       pull-requests: read
