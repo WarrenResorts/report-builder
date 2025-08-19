@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Retrigger deployment after cleanup and multi-account setup
+// Retrigger deployment after CDK bootstrap - accounts ready
 import * as cdk from 'aws-cdk-lib';
 import { InfrastructureStack } from '../lib/infrastructure-stack';
 
