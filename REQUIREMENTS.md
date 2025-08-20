@@ -26,7 +26,7 @@ This document captures the requirements for the email processing functionality o
   - How consistent are filenames across different property management systems?
 
 ### 4. Email Domain Setup
-- **Domain**: `warrenresorthotels.com`
+- **Domain**: `example.com`
 - **DNS Control**: Available
 - **SES Integration**: Will be configured for email receiving
 

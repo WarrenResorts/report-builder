@@ -142,7 +142,7 @@ else
     print_warning "⚠️  IMPORTANT: Copy these credentials now - they won't be shown again!"
     echo
     print_info "Add these to your GitHub repository:"
-    print_info "1. Go to: https://github.com/WarrenResorts/report-builder/settings/secrets/actions"
+    print_info "1. Go to: https://github.com/YOUR-ORG/report-builder/settings/secrets/actions"
     print_info "2. Click 'New repository secret'"
     print_info "3. Add AWS_ACCESS_KEY_ID with value: $ACCESS_KEY_ID"
     print_info "4. Add AWS_SECRET_ACCESS_KEY with value: $SECRET_ACCESS_KEY"

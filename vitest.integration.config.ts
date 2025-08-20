@@ -74,16 +74,13 @@ export default defineConfig({
     watch: false, // Disable watch mode by default for integration tests
     
     // Setup files for integration test environment
-    setupFiles: [],
+    setupFiles: ['./tests/integration/setup.ts'],
     
     // Global test configuration
     globals: false, // Explicit imports for better IDE support
     
     // Silent mode for less verbose output
-    silent: false,
-    
-    // Diff configuration
-    diff: './test-results/integration-diff'
+    silent: false
   },
 
   // TypeScript configuration

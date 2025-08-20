@@ -95,8 +95,8 @@ describe('Parameter Store Integration Tests', () => {
       
       // Verify specific property mappings
       expect(propertyMapping['test-sender@example.com']).toBe('test-property-1');
-      expect(propertyMapping['property1@warrenresorts.com']).toBe('warren-main');
-      expect(propertyMapping['finance@warrenresorts.com']).toBe('warren-corporate');
+      expect(propertyMapping['property1@example.com']).toBe('property-main');
+      expect(propertyMapping['finance@example.com']).toBe('property-corporate');
     });
 
     it('should retrieve email configuration', async () => {

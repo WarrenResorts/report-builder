@@ -132,7 +132,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '🚀 **Development Environment Deployed**\n\nThe infrastructure has been successfully deployed to the development environment.\n\n- Stack: `ReportBuilderStack-development`\n- Domain: `dev.warrenresorthotels.com`\n- Email: `dev@dev.warrenresorthotels.com`\n- Account: `237124340260`\n- Region: `${{ env.AWS_REGION }}`\n- Commit: `${{ github.sha }}`\n\n**Next Steps:**\n1. Update Parameter Store email address if needed\n2. Test email processing by sending to `dev@dev.warrenresorthotels.com`'
+              body: '🚀 **Development Environment Deployed**\n\nThe infrastructure has been successfully deployed to the development environment.\n\n- Stack: `ReportBuilderStack-development`\n- Account: `237124340260`\n- Region: `${{ env.AWS_REGION }}`\n- Commit: `${{ github.sha }}`\n\n**Next Steps:**\n1. Check Parameter Store for configured email addresses\n2. Test email processing by sending to the configured development email address'
             });
           } catch (error) {
             console.log('Could not post comment to PR:', error.message);

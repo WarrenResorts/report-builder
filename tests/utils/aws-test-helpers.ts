@@ -252,7 +252,7 @@ export class ParameterStoreTestHelper {
       'property-mapping', 
       JSON.stringify({
         'test-sender@example.com': 'test-property-1',
-        'sender@example.com': 'warren-main',
+        'sender@example.com': 'property-main',
       })
     );
 

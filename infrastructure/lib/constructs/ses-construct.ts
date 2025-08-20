@@ -97,8 +97,8 @@ export class SESConstruct extends Construct {
     
     // Each environment creates only its own parameter (multi-account approach)
     const defaultFromEmail = environment === 'development' 
-      ? 'dev@dev.warrenresorthotels.com' 
-      : 'reports@aws.warrenresorthotels.com';
+      ? 'dev@dev.example.com' 
+      : 'reports@example.com';
     
     const currentEmailParam = new ssm.StringParameter(this, 'IncomingEmailParameter', {
       parameterName: `/${config.naming.projectPrefix}/${environment}/email/incoming-address`,

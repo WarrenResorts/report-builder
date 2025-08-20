@@ -46,7 +46,7 @@ OPTIONS:
     -h, --help             Show this help message
 
 EXAMPLES:
-    $0 --repo warren-resort-hotels/report-builder
+    $0 --repo your-org/report-builder
     $0 --dry-run
     $0 --skip-checks
 
@@ -324,25 +324,25 @@ create_codeowners_file() {
     print_info "Creating CODEOWNERS file..."
 
     local codeowners_content='# Global owners
-* @warren-resort-hotels/backend-team
+* @your-org/backend-team
 
 # Infrastructure changes  
-/infrastructure/ @warren-resort-hotels/infrastructure-team
-/scripts/ @warren-resort-hotels/infrastructure-team
-/.github/ @warren-resort-hotels/infrastructure-team
+/infrastructure/ @your-org/infrastructure-team
+/scripts/ @your-org/infrastructure-team
+/.github/ @your-org/infrastructure-team
 
 # Security-sensitive files
-/docs/security/ @warren-resort-hotels/security-team
-package*.json @warren-resort-hotels/security-team
+/docs/security/ @your-org/security-team
+package*.json @your-org/security-team
 
 # Testing
-/tests/ @warren-resort-hotels/qa-team
-**/*.test.ts @warren-resort-hotels/qa-team
-/.github/workflows/ @warren-resort-hotels/qa-team
+/tests/ @your-org/qa-team
+**/*.test.ts @your-org/qa-team
+/.github/workflows/ @your-org/qa-team
 
 # Documentation
-/docs/ @warren-resort-hotels/backend-team
-README.md @warren-resort-hotels/backend-team'
+/docs/ @your-org/backend-team
+README.md @your-org/backend-team'
 
     if [[ "$DRY_RUN" == true ]]; then
         print_info "[DRY RUN] Would create .github/CODEOWNERS file"
@@ -378,9 +378,9 @@ updates:
       time: "09:00"
     open-pull-requests-limit: 5
     reviewers:
-      - "@warren-resort-hotels/backend-team"
+      - "@your-org/backend-team"
     assignees:
-      - "@warren-resort-hotels/infrastructure-team"
+      - "@your-org/infrastructure-team"
     commit-message:
       prefix: "build"
       include: "scope"
@@ -394,7 +394,7 @@ updates:
       time: "09:00"
     open-pull-requests-limit: 3
     reviewers:
-      - "@warren-resort-hotels/infrastructure-team"
+      - "@your-org/infrastructure-team"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
@@ -405,7 +405,7 @@ updates:
       time: "10:00"
     open-pull-requests-limit: 2
     reviewers:
-      - "@warren-resort-hotels/infrastructure-team"'
+      - "@your-org/infrastructure-team"'
 
     if [[ "$DRY_RUN" == true ]]; then
         print_info "[DRY RUN] Would create .github/dependabot.yml file"
@@ -507,10 +507,10 @@ print_next_steps() {
     echo "   - AWS_PROD_SECRET_ACCESS_KEY (production)"
     echo
     echo "3. 👥 Create GitHub teams (if not already existing):"
-    echo "   - @warren-resort-hotels/backend-team"
-    echo "   - @warren-resort-hotels/infrastructure-team"
-    echo "   - @warren-resort-hotels/security-team"
-    echo "   - @warren-resort-hotels/qa-team"
+    echo "   - @your-org/backend-team"
+    echo "   - @your-org/infrastructure-team"
+    echo "   - @your-org/security-team"
+    echo "   - @your-org/qa-team"
     echo
     echo "4. 🧪 Test the setup:"
     echo "   - Create a test branch and pull request"
