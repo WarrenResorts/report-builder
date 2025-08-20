@@ -47,7 +47,7 @@ export class StorageConstruct extends Construct {
     
     // Incoming files bucket: stores raw emails and extracted attachments
     this.incomingFilesBucket = new s3.Bucket(this, 'IncomingFilesBucket', {
-      bucketName: `${config.naming.projectPrefix}${config.naming.separator}incoming-files${config.naming.separator}${environment}`,
+      bucketName: `${config.naming.projectPrefix}${config.naming.separator}incoming-files${config.naming.separator}${environment}-v2`,
       versioned: true, // Enable versioning for data protection
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, // Security: block all public access
       removalPolicy: environment === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
@@ -72,7 +72,7 @@ export class StorageConstruct extends Construct {
 
     // Processed files bucket: stores transformed and organized files
     this.processedFilesBucket = new s3.Bucket(this, 'ProcessedFilesBucket', {
-      bucketName: `${config.naming.projectPrefix}${config.naming.separator}processed-files${config.naming.separator}${environment}`,
+      bucketName: `${config.naming.projectPrefix}${config.naming.separator}processed-files${config.naming.separator}${environment}-v2`,
       versioned: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: environment === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
@@ -96,7 +96,7 @@ export class StorageConstruct extends Construct {
 
     // Mapping files bucket: stores configuration and lookup data
     this.mappingFilesBucket = new s3.Bucket(this, 'MappingFilesBucket', {
-      bucketName: `${config.naming.projectPrefix}${config.naming.separator}mapping-files${config.naming.separator}${environment}`,
+      bucketName: `${config.naming.projectPrefix}${config.naming.separator}mapping-files${config.naming.separator}${environment}-v2`,
       versioned: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: environment === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,

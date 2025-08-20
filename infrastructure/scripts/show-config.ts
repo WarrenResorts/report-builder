@@ -28,7 +28,7 @@ function displayEnvironmentConfig(environment: Environment): void {
 
     console.log('\n🌐 **Domain Configuration:**');
     console.log(`   Domain: ${config.domain.domainName}`);
-    console.log(`   Email: ${config.domain.emailAddress}`);
+    console.log('   Email addresses: Available in Parameter Store');
 
     console.log('\n⚡ **Lambda Configuration:**');
     console.log(`   Email Processor: ${config.lambda.emailProcessor.memoryMB}MB, ${config.lambda.emailProcessor.timeoutMinutes}min`);

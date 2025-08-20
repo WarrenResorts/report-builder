@@ -29,6 +29,15 @@ const mockParameterStore = {
 (S3Client as Mock).mockImplementation(() => mockS3Client);
 (ParameterStoreConfig as Mock).mockImplementation(() => mockParameterStore);
 
+// Common SES receipt verdicts for test fixtures
+const defaultReceiptVerdicts = {
+  spamVerdict: { status: "PASS" },
+  virusVerdict: { status: "PASS" },
+  spfVerdict: { status: "PASS" },
+  dkimVerdict: { status: "PASS" },
+  dmarcVerdict: { status: "PASS" },
+} as const;
+
 // Helper function to create mock Lambda context
 const createMockLambdaContext = () => ({
   requestId: "test-request-id",
@@ -114,6 +123,7 @@ describe("EmailProcessor", () => {
                 recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
                 action: {
                   type: "S3",
                   bucketName: "test-bucket",
@@ -187,6 +197,7 @@ describe("EmailProcessor", () => {
                 recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
                 action: {
                   type: "S3",
                   bucketName: "test-bucket",
@@ -239,6 +250,7 @@ describe("EmailProcessor", () => {
                 recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
                 action: {
                   type: "S3",
                   bucketName: "test-bucket",
@@ -296,6 +308,7 @@ describe("EmailProcessor", () => {
                 recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
                 action: {
                   type: "S3",
                   bucketName: "test-bucket",
@@ -353,6 +366,7 @@ describe("EmailProcessor", () => {
                 recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
                 action: {
                   type: "S3",
                   bucketName: "test-bucket",
@@ -389,6 +403,7 @@ describe("EmailProcessor", () => {
                 recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
                 action: {
                   type: "S3",
                   bucketName: "test-bucket",
@@ -427,6 +442,7 @@ describe("EmailProcessor", () => {
                 recipients: ["test@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
                 action: {
                   type: "S3",
                   bucketName: "test-bucket",
@@ -632,18 +648,13 @@ describe("EmailProcessor", () => {
                 messageId: "test-message-id-array-recipients",
                 timestamp: "2024-01-01T12:00:00.000Z",
                 source: "sender@example.com",
-                destination: [
-                  "test@example.com",
-                  "backup@warrenresorthotels.com",
-                ],
+                destination: ["test@example.com", "backup@example.com"],
               } as SESMail,
               receipt: {
-                recipients: [
-                  "test@example.com",
-                  "backup@warrenresorthotels.com",
-                ],
+                recipients: ["test@example.com", "backup@example.com"],
                 timestamp: "2024-01-01T12:00:00.000Z",
                 processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
                 action: {
                   type: "S3",
                   bucketName: "test-bucket",
@@ -666,10 +677,7 @@ describe("EmailProcessor", () => {
       // Mock parsed email with array of recipients
       const mockParsedEmail = {
         from: { text: "sender@example.com" },
-        to: [
-          { text: "test@example.com" },
-          { text: "backup@warrenresorthotels.com" },
-        ], // This will trigger the Array.isArray branch
+        to: [{ text: "test@example.com" }, { text: "backup@example.com" }], // This will trigger the Array.isArray branch
         subject: "Daily Report",
         date: new Date("2024-01-01T12:00:00.000Z"),
         attachments: [
@@ -807,6 +815,7 @@ describe("Lambda Handler", () => {
               recipients: ["test@example.com"],
               timestamp: "2024-01-01T12:00:00.000Z",
               processingTimeMillis: 100,
+              ...defaultReceiptVerdicts,
               action: {
                 type: "S3",
                 bucketName: "test-bucket",

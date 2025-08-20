@@ -19,7 +19,7 @@ Description: Comma-separated list of emails to receive daily consolidated report
 ```
 Parameter Name: /report-builder/development/email/alert-notifications  
 Type: String
-Value: alerts@warrenresorthotels.com
+Value: alerts@example.com
 Description: Email address for system alerts and error notifications
 ```
 
@@ -27,7 +27,7 @@ Description: Email address for system alerts and error notifications
 ```
 Parameter Name: /report-builder/development/email/from-address
 Type: String
-Value: reports@aws.warrenresorthotels.com
+Value: test@example.com
 Description: Sender email address for outgoing reports
 ```
 

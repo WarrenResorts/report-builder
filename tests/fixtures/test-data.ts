@@ -67,31 +67,31 @@ Used for testing email processing without file extraction.
  * Test CSV file content
  */
 export const TEST_CSV_CONTENT = `Date,Property,Revenue,Occupancy,ADR
-2024-01-01,Warren Resort Main,12500.00,92.5,135.14
-2024-01-01,Warren Resort Spa,8750.00,87.3,125.86
-2024-01-01,Warren Resort Villas,15300.00,95.2,160.50
-2024-01-02,Warren Resort Main,11200.00,89.1,125.70
-2024-01-02,Warren Resort Spa,7980.00,82.4,118.25
-2024-01-02,Warren Resort Villas,14650.00,91.8,155.75`;
+2024-01-01,Example Resort Main,12500.00,92.5,135.14
+2024-01-01,Example Resort Spa,8750.00,87.3,125.86
+2024-01-01,Example Resort Villas,15300.00,95.2,160.50
+2024-01-02,Example Resort Main,11200.00,89.1,125.70
+2024-01-02,Example Resort Spa,7980.00,82.4,118.25
+2024-01-02,Example Resort Villas,14650.00,91.8,155.75`;
 
 /**
  * Test property mapping configuration
  */
 export const TEST_PROPERTY_MAPPING = {
   'test-sender@example.com': 'test-property-1',
-  'property1@warrenresorts.com': 'warren-main',
-  'property2@warrenresorts.com': 'warren-spa',
-  'property3@warrenresorts.com': 'warren-villas',
-  'finance@warrenresorts.com': 'warren-corporate',
+  'property1@example.com': 'property-main',
+  'property2@example.com': 'property-spa',
+  'property3@example.com': 'property-villas',
+  'finance@example.com': 'property-corporate',
 };
 
 /**
  * Test email configuration
  */
 export const TEST_EMAIL_CONFIG = {
-  recipients: 'test-reports@warrenresorts.com',
-  alertEmail: 'test-alerts@warrenresorts.com',
-  fromEmail: 'test-noreply@warrenresorts.com',
+  recipients: 'test@example.com',
+  alertEmail: 'alerts@example.com',
+  fromEmail: 'test-noreply@example.com',
   configurationSet: 'test-report-builder-config',
 };
 
