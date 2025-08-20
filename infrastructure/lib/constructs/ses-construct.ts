@@ -63,7 +63,10 @@ export class SESConstruct extends Construct {
     this.config = config;
     this.environment = environment;
     this.incomingFilesBucket = incomingFilesBucket;
-    const { domainName } = config.domain;
+    
+    // Allow domain override via environment variable to keep sensitive domains out of code
+    const { domainName: configDomain } = config.domain;
+    const domainName = process.env.SES_DOMAIN_NAME || configDomain;
 
     // ===================================================================
     // SES DOMAIN AND EMAIL CONFIGURATION
@@ -96,9 +99,10 @@ export class SESConstruct extends Construct {
     // ===================================================================
     
     // Each environment creates only its own parameter (multi-account approach)
+    // Use the actual domain (either from config or environment variable override)
     const defaultFromEmail = environment === 'development' 
-      ? 'dev@dev.example.com' 
-      : 'reports@example.com';
+      ? `dev@${domainName}` 
+      : `reports@${domainName.replace('dev.', '')}`;
     
     const currentEmailParam = new ssm.StringParameter(this, 'IncomingEmailParameter', {
       parameterName: `/${config.naming.projectPrefix}/${environment}/email/incoming-address`,

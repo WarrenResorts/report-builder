@@ -63,6 +63,7 @@ ENVIRONMENT VARIABLES:
     AWS_PROFILE                    AWS profile to use for deployment
     AWS_ACCESS_KEY_ID             AWS access key (if not using profile)
     AWS_SECRET_ACCESS_KEY         AWS secret key (if not using profile)
+    SES_DOMAIN_NAME               Override SES domain (auto-set by script)
 
 PREREQUISITES:
     - AWS CLI configured with appropriate permissions
@@ -272,8 +273,18 @@ deploy_infrastructure() {
     
     cd infrastructure
     
+    # Check if SES_DOMAIN_NAME is set externally
+    if [[ -z "$SES_DOMAIN_NAME" ]]; then
+        print_error "SES_DOMAIN_NAME environment variable must be set for deployment"
+        print_info "Example: SES_DOMAIN_NAME=your-domain.com ./scripts/deploy.sh -e development"
+        cd ..
+        exit 1
+    fi
+    
+    print_info "Using SES domain: $SES_DOMAIN_NAME"
+    
     if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY RUN] Would deploy with: cdk deploy --context environment=$ENVIRONMENT"
+        print_info "[DRY RUN] Would deploy with: SES_DOMAIN_NAME=$SES_DOMAIN_NAME cdk deploy --context environment=$ENVIRONMENT"
         cdk diff --context environment="$ENVIRONMENT" || true
         cd ..
         return

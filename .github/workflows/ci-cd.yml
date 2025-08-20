@@ -118,6 +118,8 @@ jobs:
         npx cdk bootstrap --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=development
     
     - name: Deploy infrastructure to development
+      env:
+        SES_DOMAIN_NAME: ${{ secrets.DEV_SES_DOMAIN }}
       run: |
         npx cdk deploy --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=development --require-approval never
     
@@ -179,6 +181,8 @@ jobs:
         npx cdk bootstrap --context environment=production
     
     - name: Deploy infrastructure to production
+      env:
+        SES_DOMAIN_NAME: ${{ secrets.PROD_SES_DOMAIN }}
       run: |
         npx cdk deploy --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=production --require-approval never
 
