@@ -57,7 +57,7 @@ export class SESConstruct extends Construct {
   constructor(scope: Construct, id: string, props: SESConstructProps) {
     super(scope, id);
 
-    const { environment, config, incomingFilesBucket, emailProcessorLambda } = props;
+    const { environment, config, incomingFilesBucket } = props;
     
     // Store properties for later use
     this.config = config;

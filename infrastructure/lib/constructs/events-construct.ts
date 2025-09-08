@@ -253,7 +253,7 @@ export class EventsConstruct extends Construct {
    * 
    * @param enabled - Whether to enable the rules
    */
-  public setRulesEnabled(enabled: boolean) {
+  public setRulesEnabled(_enabled: boolean) {
     // Note: This would require a custom resource to implement
     // For now, rules are enabled by default and can be managed through AWS Console
     

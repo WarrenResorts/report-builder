@@ -85,7 +85,7 @@ export default defineConfig({
 
   // TypeScript configuration
   esbuild: {
-    target: 'node20'
+    target: 'node22'
   },
 
   // Resolve configuration

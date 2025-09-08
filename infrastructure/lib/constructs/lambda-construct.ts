@@ -171,12 +171,14 @@ export class LambdaConstruct extends Construct {
     this.emailProcessorLambda = new lambdaNodejs.NodejsFunction(this, 'EmailProcessorLambda', {
       functionName: `${config.naming.projectPrefix}${config.naming.separator}email-processor${config.naming.separator}${environment}`,
       description: 'Processes incoming emails and extracts attachments for the Report Builder',
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       entry: path.join(__dirname, '..', '..', '..', 'src', 'lambda', 'email-processor.ts'),
       handler: 'handler',
       role: this.emailProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.emailProcessor.timeoutMinutes),
       memorySize: config.lambda.emailProcessor.memoryMB,
+      projectRoot: path.join(__dirname, '..', '..', '..'),
+      depsLockFilePath: path.join(__dirname, '..', '..', '..', 'package-lock.json'),
       bundling: {
         nodeModules: ['mailparser'],
         externalModules: ['@aws-sdk/*'],
@@ -203,7 +205,7 @@ export class LambdaConstruct extends Construct {
     this.fileProcessorLambda = new lambdaNodejs.NodejsFunction(this, 'FileProcessorLambda', {
       functionName: `${config.naming.projectPrefix}${config.naming.separator}file-processor${config.naming.separator}${environment}`,
       description: 'Processes and transforms files for the Report Builder application',
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       entry: path.join(__dirname, '..', '..', '..', 'src', 'lambda', 'file-processor.ts'),
       handler: 'handler',
       role: this.fileProcessorRole,
