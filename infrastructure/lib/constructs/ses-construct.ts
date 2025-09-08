@@ -57,7 +57,7 @@ export class SESConstruct extends Construct {
   constructor(scope: Construct, id: string, props: SESConstructProps) {
     super(scope, id);
 
-    const { environment, config, incomingFilesBucket, emailProcessorLambda } = props;
+    const { environment, config, incomingFilesBucket } = props;
     
     // Store properties for later use
     this.config = config;
@@ -73,19 +73,10 @@ export class SESConstruct extends Construct {
     // ===================================================================
     
     // SES Domain Identity - verify domain ownership for sending/receiving emails
-    // Only create the domain identity in development; production will reference the existing one
-    if (environment === 'development') {
-      this.domainIdentity = new ses.EmailIdentity(this, 'DomainIdentity', {
-        identity: ses.Identity.domain(domainName),
-      });
-    } else {
-      // For production, reference the existing domain identity created by development
-      this.domainIdentity = ses.EmailIdentity.fromEmailIdentityName(
-        this, 
-        'DomainIdentity', 
-        domainName
-      );
-    }
+    // Create domain identity in both environments since they use different domains
+    this.domainIdentity = new ses.EmailIdentity(this, 'DomainIdentity', {
+      identity: ses.Identity.domain(domainName),
+    });
 
     // SES Configuration Set - for email sending configuration and tracking
     this.configurationSet = new ses.ConfigurationSet(this, 'SESConfigurationSet', {

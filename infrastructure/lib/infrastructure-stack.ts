@@ -4,7 +4,7 @@ import { StorageConstruct } from './constructs/storage-construct';
 import { SESConstruct } from './constructs/ses-construct';
 import { LambdaConstruct } from './constructs/lambda-construct';
 import { EventsConstruct } from './constructs/events-construct';
-import { ConfigLoader, EnvironmentConfig } from '../config';
+import { ConfigLoader } from '../config';
 
 /**
  * Props interface for the InfrastructureStack
