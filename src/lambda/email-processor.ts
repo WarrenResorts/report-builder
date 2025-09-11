@@ -299,7 +299,7 @@ export class EmailProcessor {
 
       logger.debug("Email parsed successfully", {
         subject: parsedEmail.subject,
-        from: parsedEmail.from?.text,
+        from: parsedEmail.from?.value?.[0]?.address || parsedEmail.from?.text,
         to: Array.isArray(parsedEmail.to)
           ? parsedEmail.to.map((addr) => addr.text)
           : parsedEmail.to?.text,
@@ -448,8 +448,10 @@ export class EmailProcessor {
     });
 
     // Determine property ID from sender email (will use mapping later)
+    // Extract just the email address without display name
+    const senderEmail = parsedEmail.from?.value?.[0]?.address || parsedEmail.from?.text || "unknown-sender";
     const propertyId = await this.getPropertyIdFromSender(
-      parsedEmail.from?.text || "unknown-sender",
+      senderEmail,
       correlationId,
     );
 
@@ -473,7 +475,7 @@ export class EmailProcessor {
         ContentType: attachment.contentType || "application/octet-stream",
         Metadata: {
           originalFilename: attachment.filename || "unknown",
-          senderEmail: parsedEmail.from?.text || "unknown-sender",
+          senderEmail: senderEmail,
           messageId: sesMessage.messageId,
           receivedDate: new Date().toISOString(),
           propertyId: propertyId,
@@ -607,7 +609,7 @@ export class EmailProcessor {
 
     const metadata = {
       messageId: sesMessage.messageId,
-      from: parsedEmail.from?.text,
+      from: parsedEmail.from?.value?.[0]?.address || parsedEmail.from?.text,
       to: Array.isArray(parsedEmail.to)
         ? parsedEmail.to.map((addr) => addr.text).join(", ")
         : parsedEmail.to?.text,
