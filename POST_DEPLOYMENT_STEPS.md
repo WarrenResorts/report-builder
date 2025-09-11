@@ -41,16 +41,13 @@ Value: 10 inbound-smtp.us-east-1.amazonaws.com
 **CNAME Records for DKIM Verification:**
 Check AWS SES Console → Domains → `dev.example.com` → DKIM for the 3 CNAME records to add.
 
-#### Parameter Store Update
-```bash
-# Switch to Development account
-aws sts assume-role --role-arn arn:aws:iam::237124340260:role/OrganizationAccountAccessRole --role-session-name DevSetup
+#### Parameter Store Configuration
+**NOTE**: Parameter Store parameters are now managed manually and must be created BEFORE deployment. See [PARAMETER_STORE_SETUP.md](./PARAMETER_STORE_SETUP.md) for complete setup instructions.
 
-# Update email parameter
-aws ssm put-parameter \
-  --name "/report-builder/development/email/incoming-address" \
-  --value "dev@dev.example.com" \
-  --overwrite
+The SES domain identity will automatically use the domain from your Parameter Store email address:
+```bash
+# Example: If your parameter contains "reports@yourdomain.com"
+# SES will automatically verify "yourdomain.com"
 ```
 
 ### Production Environment (`example.com`)
@@ -58,17 +55,10 @@ aws ssm put-parameter \
 #### DNS Setup (Existing)
 The production subdomain should already be configured from previous setup.
 
-#### Parameter Store Update
-```bash
-# Switch to Production account  
-aws sts assume-role --role-arn arn:aws:iam::400534944857:role/OrganizationAccountAccessRole --role-session-name ProdSetup
+#### Parameter Store Configuration  
+**NOTE**: Parameter Store parameters are now managed manually and must be created BEFORE deployment. See [PARAMETER_STORE_SETUP.md](./PARAMETER_STORE_SETUP.md) for complete setup instructions.
 
-# Update email parameter
-aws ssm put-parameter \
-  --name "/report-builder/production/email/incoming-address" \
-  --value "reports@example.com" \
-  --overwrite
-```
+The SES domain identity will automatically use the domain from your Parameter Store email address.
 
 ## 🔐 Security Configuration
 

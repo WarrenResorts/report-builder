@@ -89,8 +89,8 @@ npm run test:integration # Integration tests only
 ### Development Environment
 Automatic deployment on PR creation/updates:
 - **Account**: Development (237124340260)
-- **Domain**: `dev.example.com`
-- **Email**: `dev@dev.example.com`
+- **Domain**: Configured via Parameter Store
+- **Email**: Configured via Parameter Store
 
 ### Production Environment
 Manual deployment via GitHub Actions:
@@ -99,8 +99,10 @@ Manual deployment via GitHub Actions:
 3. Click "Run workflow" and confirm deployment
 
 - **Account**: Production (400534944857)  
-- **Domain**: `example.com`
-- **Email**: `reports@example.com`
+- **Domain**: Configured via Parameter Store
+- **Email**: Configured via Parameter Store
+
+**⚠️ IMPORTANT**: Parameter Store parameters must be created manually BEFORE deployment. See [PARAMETER_STORE_SETUP.md](./PARAMETER_STORE_SETUP.md) for required setup.
 
 ## 📋 Post-Deployment Setup
 After infrastructure deployment, see [POST_DEPLOYMENT_STEPS.md](./POST_DEPLOYMENT_STEPS.md) for required manual configuration steps.

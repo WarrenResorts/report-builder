@@ -60,47 +60,12 @@ export class EventsConstruct extends Construct {
     });
 
     // ===================================================================
-    // PARAMETER STORE CONFIGURATION (TEMPORARILY AS STRING)
+    // PARAMETER STORE CONFIGURATION - REMOVED
     // ===================================================================
     
-    // Create configuration parameters as regular strings for initial deployment
-    // These will be manually converted to SecureString parameters after deployment
-    // This approach avoids CloudFormation validation issues with SecureString during stack creation
-    
-    // Email recipients configuration (will be encrypted post-deployment)
-    const emailRecipientsParam = new ssm.StringParameter(this, 'EmailRecipientsParameter', {
-      parameterName: `/${config.naming.projectPrefix}/${environment}/email/recipients`,
-      stringValue: 'example@domain.com', // Default placeholder - to be updated and encrypted manually
-      description: 'Comma-separated list of email recipients for reports (convert to SecureString post-deployment)',
-    });
-
-    // Alert notification email (will be encrypted post-deployment)
-    const alertEmailParam = new ssm.StringParameter(this, 'AlertEmailParameter', {
-      parameterName: `/${config.naming.projectPrefix}/${environment}/email/alert-notifications`,
-      stringValue: `alerts@${config.domain.domainName}`, // Default based on domain
-      description: 'Email address for system alerts and notifications (convert to SecureString post-deployment)',
-    });
-
-    // From email address (will be encrypted post-deployment)
-    // Determine the default from email address based on environment
-    const defaultFromEmail = environment === 'development' 
-      ? 'dev@example.com'
-      : 'test@example.com';
-      
-    const fromEmailParam = new ssm.StringParameter(this, 'FromEmailParameter', {
-      parameterName: `/${config.naming.projectPrefix}/${environment}/email/from-address`,
-      stringValue: defaultFromEmail,
-      description: 'From email address for outbound reports (convert to SecureString post-deployment)',
-    });
-
-    // Note: Incoming email parameter is now created in SES construct to avoid dependency issues
-
-    // Property mapping configuration (will be encrypted post-deployment)
-    const propertyMappingParam = new ssm.StringParameter(this, 'PropertyMappingParameter', {
-      parameterName: `/${config.naming.projectPrefix}/${environment}/config/property-mapping`,
-      stringValue: '{}', // Default empty JSON object - to be populated and encrypted manually
-      description: 'JSON configuration mapping sender emails to property IDs (convert to SecureString post-deployment)',
-    });
+    // Parameter Store parameters are now managed manually to avoid overwriting
+    // user-configured values. Parameters must be created manually in AWS Console
+    // or via AWS CLI before deployment.
 
     // ===================================================================
     // EVENTBRIDGE SCHEDULED RULE
@@ -206,21 +171,18 @@ export class EventsConstruct extends Construct {
 
     new cdk.CfnOutput(this, 'ConfigurationParametersInfo', {
       value: [
-        'CONFIGURATION PARAMETERS (Created as String, convert to SecureString for production):',
-        `Email Recipients: ${emailRecipientsParam.parameterName}`,
-        `Alert Email: ${alertEmailParam.parameterName}`,
-        `From Email: ${fromEmailParam.parameterName}`,
-        `Property Mapping: ${propertyMappingParam.parameterName}`,
+        'CONFIGURATION PARAMETERS - MANUAL SETUP REQUIRED:',
+        'Parameters must be created manually before deployment to avoid overwriting existing values.',
         '',
-        'IMPORTANT - For production security, convert to SecureString and update values:',
-        `aws ssm put-parameter --name "${emailRecipientsParam.parameterName}" --value "user1@domain.com,user2@domain.com" --type "SecureString" --overwrite`,
-        `aws ssm put-parameter --name "${alertEmailParam.parameterName}" --value "alerts@yourdomain.com" --type "SecureString" --overwrite`,
-        `aws ssm put-parameter --name "${fromEmailParam.parameterName}" --value "test@yourdomain.com" --type "SecureString" --overwrite`,
-        `aws ssm put-parameter --name "${propertyMappingParam.parameterName}" --value "{\\"sender@property1.com\\":\\"PROP001\\"}" --type "SecureString" --overwrite`,
+        'Required parameters:',
+        `/${config.naming.projectPrefix}/${environment}/email/recipients`,
+        `/${config.naming.projectPrefix}/${environment}/email/alert-notifications`,
+        `/${config.naming.projectPrefix}/${environment}/email/from-address`,
+        `/${config.naming.projectPrefix}/${environment}/config/property-mapping`,
         '',
-        'NOTE: After converting to SecureString, update Lambda IAM roles to include KMS permissions for decryption.',
+        'See PARAMETER_STORE_SETUP.md for detailed setup instructions.',
       ].join('\\n'),
-      description: 'Information about configuration parameters and how to secure them for production',
+      description: 'Information about required manual parameter configuration',
     });
   }
 

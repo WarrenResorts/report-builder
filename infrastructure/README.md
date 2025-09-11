@@ -55,6 +55,9 @@ The infrastructure is deployed automatically via GitHub Actions:
 # **IMPORTANT**: Run from project root, not infrastructure/ directory
 cd /path/to/report-builder-1
 
+# **CRITICAL**: Create Parameter Store parameters FIRST!
+# See PARAMETER_STORE_SETUP.md for required parameters
+
 # Assume role to Development account
 aws sts assume-role --role-arn arn:aws:iam::237124340260:role/OrganizationAccountAccessRole --role-session-name DevDeploy
 
@@ -63,7 +66,7 @@ export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 export AWS_SESSION_TOKEN="..."
 
-# Deploy to development
+# Deploy to development (will fail if parameters don't exist)
 npx cdk deploy --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastructure.ts" --context environment=development
 
 # Destroy development resources
@@ -74,6 +77,9 @@ npx cdk destroy --app "npx ts-node --prefer-ts-exts infrastructure/bin/infrastru
 ```bash
 # **IMPORTANT**: Run from project root, not infrastructure/ directory
 cd /path/to/report-builder-1
+
+# **CRITICAL**: Create Parameter Store parameters FIRST!
+# See PARAMETER_STORE_SETUP.md for required parameters
 
 # Assume role to Production account
 aws sts assume-role --role-arn arn:aws:iam::400534944857:role/OrganizationAccountAccessRole --role-session-name ProdDeploy

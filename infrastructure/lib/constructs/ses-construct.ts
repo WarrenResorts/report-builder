@@ -44,7 +44,7 @@ export class SESConstruct extends Construct {
   public readonly receiptRuleSet: ses.IReceiptRuleSet;
   
   /** Current email parameter for receipt rules */
-  private currentEmailParam: ssm.StringParameter;
+  private currentEmailParam: ssm.IStringParameter;
   
   /** Receipt rule for email processing */
   private receiptRule: ses.ReceiptRule;
@@ -64,18 +64,34 @@ export class SESConstruct extends Construct {
     this.environment = environment;
     this.incomingFilesBucket = incomingFilesBucket;
     
-    // Allow domain override via environment variable to keep sensitive domains out of code
-    const { domainName: configDomain } = config.domain;
-    const domainName = process.env.SES_DOMAIN_NAME || configDomain;
+    // ===================================================================
+    // PARAMETER STORE EMAIL CONFIGURATION
+    // ===================================================================
+    
+    // Get the expected parameter name for the incoming email address
+    const expectedParamName = `/${config.naming.projectPrefix}/${environment}/email/incoming-address`;
+    
+    // Reference the manually created parameter (must exist before deployment)
+    const incomingEmailParam = ssm.StringParameter.fromStringParameterName(
+      this, 
+      'IncomingEmailParameter', 
+      expectedParamName
+    );
+    
+    this.currentEmailParam = incomingEmailParam;
+    
+    // Extract domain from the parameter store email address for SES domain identity
+    // This ensures consistency between the email address and domain verification
+    const emailDomain = cdk.Fn.select(1, cdk.Fn.split('@', incomingEmailParam.stringValue));
 
     // ===================================================================
     // SES DOMAIN AND EMAIL CONFIGURATION
     // ===================================================================
     
     // SES Domain Identity - verify domain ownership for sending/receiving emails
-    // Create domain identity in both environments since they use different domains
+    // Use the domain from Parameter Store email address to ensure consistency
     this.domainIdentity = new ses.EmailIdentity(this, 'DomainIdentity', {
-      identity: ses.Identity.domain(domainName),
+      identity: ses.Identity.domain(emailDomain),
     });
 
     // SES Configuration Set - for email sending configuration and tracking
@@ -83,22 +99,6 @@ export class SESConstruct extends Construct {
       configurationSetName: `${config.naming.projectPrefix}${config.naming.separator}${environment}`,
       // Add reputation tracking for production
       reputationMetrics: environment === 'production',
-    });
-
-    // ===================================================================
-    // EMAIL ADDRESS PARAMETER STORE CONFIGURATION
-    // ===================================================================
-    
-    // Each environment creates only its own parameter (multi-account approach)
-    // Use the actual domain (either from config or environment variable override)
-    const defaultFromEmail = environment === 'development' 
-      ? `dev@${domainName}` 
-      : `reports@${domainName.replace('dev.', '')}`;
-    
-    const currentEmailParam = new ssm.StringParameter(this, 'IncomingEmailParameter', {
-      parameterName: `/${config.naming.projectPrefix}/${environment}/email/incoming-address`,
-      stringValue: defaultFromEmail,
-      description: `${environment} incoming email address for SES receipt rules`,
     });
 
     // ===================================================================
@@ -115,10 +115,10 @@ export class SESConstruct extends Construct {
 
     // Create initial email processing rule with S3 action only
     // Lambda action will be added later via addLambdaToReceiptRule method
-    this.currentEmailParam = currentEmailParam;
+    // Recipients are configured from Parameter Store for consistency
     this.receiptRule = this.receiptRuleSet.addRule(`ProcessEmails${environment.charAt(0).toUpperCase() + environment.slice(1)}`, {
       enabled: true,
-      recipients: [currentEmailParam.stringValue],
+      recipients: [incomingEmailParam.stringValue],
       actions: [
         new sesActions.S3({
           bucket: incomingFilesBucket,
@@ -185,7 +185,7 @@ export class SESConstruct extends Construct {
     });
 
     new cdk.CfnOutput(this, 'EmailAddressParameters', {
-      value: `${environment}: ${currentEmailParam.parameterName}`,
+      value: `${environment}: ${this.currentEmailParam.parameterName}`,
       description: 'Parameter Store path for incoming email address',
     });
 
@@ -195,19 +195,23 @@ export class SESConstruct extends Construct {
     
     const setupInstructions = [
       'MANUAL SETUP REQUIRED:',
-      '1. Add DNS TXT record for domain verification:',
-      `   Name: _amazonses.${domainName}`,
-    ];
-
-    setupInstructions.push('   Value: <Check AWS SES Console for DKIM verification tokens>');
-
-    setupInstructions.push(
-      '2. Configure MX record to receive emails:',
-      `   Name: ${domainName}`,
+      '1. Create required Parameter Store parameter FIRST:',
+      `   Parameter: ${expectedParamName}`,
+      '   Value: Your incoming email address (e.g., reports@yourdomain.com)',
+      '',
+      '2. Add DNS TXT record for domain verification:',
+      '   Name: _amazonses.<YOUR_EMAIL_DOMAIN>',
+      '   Value: <Check AWS SES Console for DKIM verification tokens>',
+      '',
+      '3. Configure MX record to receive emails:',
+      '   Name: <YOUR_EMAIL_DOMAIN>',
       '   Value: 10 inbound-smtp.<region>.amazonaws.com',
-      '3. Activate the SES receipt rule set in the AWS Console',
-      '4. Verify domain identity status in SES console'
-    );
+      '',
+      '4. Activate the SES receipt rule set in the AWS Console',
+      '5. Verify domain identity status in SES console',
+      '',
+      'NOTE: The domain for DNS records will be extracted from your Parameter Store email address.'
+    ];
 
     new cdk.CfnOutput(this, 'ManualSetupInstructions', {
       value: setupInstructions.join('\\n'),
