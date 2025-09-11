@@ -449,7 +449,10 @@ export class EmailProcessor {
 
     // Determine property ID from sender email (will use mapping later)
     // Extract just the email address without display name
-    const senderEmail = parsedEmail.from?.value?.[0]?.address || parsedEmail.from?.text || "unknown-sender";
+    const senderEmail =
+      parsedEmail.from?.value?.[0]?.address ||
+      parsedEmail.from?.text ||
+      "unknown-sender";
     const propertyId = await this.getPropertyIdFromSender(
       senderEmail,
       correlationId,
