@@ -849,4 +849,172 @@ describe("Lambda Handler", () => {
     expect(result.statusCode).toBe(200);
     expect(result.processedAttachments).toHaveLength(0);
   });
+
+  describe("DLQ scenarios", () => {
+    it("should handle Lambda function timeout that would trigger DLQ", async () => {
+      const sesEvent: SESEvent = {
+        Records: [
+          {
+            eventSource: "aws:ses",
+            eventVersion: "1.0",
+            ses: {
+              mail: {
+                messageId: "timeout-test",
+                timestamp: "2024-01-01T12:00:00.000Z",
+                source: "sender@example.com",
+                destination: ["test@example.com"],
+              } as SESMail,
+              receipt: {
+                recipients: ["test@example.com"],
+                timestamp: "2024-01-01T12:00:00.000Z",
+                processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
+                action: {
+                  type: "S3",
+                  bucketName: "test-bucket",
+                  objectKey: "raw-emails/timeout-test",
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      const context = createMockLambdaContext() as unknown as Context;
+
+      // Mock S3 to throw a timeout-like error that would occur in real Lambda timeout scenarios
+      mockS3Client.send.mockRejectedValue(new Error("Task timed out after 3.00 seconds"));
+
+      // This should throw a timeout error that would send to DLQ after Lambda retries
+      await expect(handler(sesEvent, context))
+        .rejects.toThrow("Task timed out");
+    });
+
+    it("should handle unrecoverable parsing errors that would trigger DLQ", async () => {
+      const sesEvent: SESEvent = {
+        Records: [
+          {
+            eventSource: "aws:ses",
+            eventVersion: "1.0",
+            ses: {
+              mail: {
+                messageId: "parse-error-test",
+                timestamp: "2024-01-01T12:00:00.000Z",
+                source: "sender@example.com",
+                destination: ["test@example.com"],
+              } as SESMail,
+              receipt: {
+                recipients: ["test@example.com"],
+                timestamp: "2024-01-01T12:00:00.000Z",
+                processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
+                action: {
+                  type: "S3",
+                  bucketName: "test-bucket",
+                  objectKey: "raw-emails/parse-error-test",
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      const context = createMockLambdaContext() as unknown as Context;
+
+      // Mock S3 to return corrupted email data
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () =>
+            Promise.resolve(Buffer.from("corrupted-email-data-that-cannot-be-parsed")),
+        },
+      });
+
+      // Mock parser to throw unrecoverable error
+      (simpleParser as Mock).mockRejectedValue(
+        new Error("Email parsing failed: corrupted data structure")
+      );
+
+      // This should throw an unrecoverable error that would send to DLQ after retries
+      await expect(handler(sesEvent, context))
+        .rejects.toThrow("Email parsing failed");
+    });
+
+    it("should handle Lambda runtime errors that would trigger DLQ", async () => {
+      const sesEvent: SESEvent = {
+        Records: [
+          {
+            eventSource: "aws:ses",
+            eventVersion: "1.0",
+            ses: {
+              mail: {
+                messageId: "runtime-error-test",
+                timestamp: "2024-01-01T12:00:00.000Z",
+                source: "sender@example.com",
+                destination: ["test@example.com"],
+              } as SESMail,
+              receipt: {
+                recipients: ["test@example.com"],
+                timestamp: "2024-01-01T12:00:00.000Z",
+                processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
+                action: {
+                  type: "S3",
+                  bucketName: "test-bucket",
+                  objectKey: "raw-emails/runtime-error-test",
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      const context = createMockLambdaContext() as unknown as Context;
+
+      // Mock S3 to return valid email first, then fail on metadata storage
+      mockS3Client.send
+        .mockResolvedValueOnce({
+          Body: {
+            transformToByteArray: () =>
+              Promise.resolve(Buffer.from("Valid email content")),
+          },
+        })
+        .mockRejectedValue(new Error("Lambda runtime out of memory"));
+
+      // Mock parser to return valid email
+      (simpleParser as Mock).mockResolvedValue({
+        from: { text: "sender@example.com" },
+        to: { text: "test@example.com" },
+        subject: "Test Email",
+        attachments: [],
+      });
+
+      // This should throw a runtime error that would send to DLQ after retries
+      await expect(handler(sesEvent, context))
+        .rejects.toThrow("Lambda runtime out of memory");
+    });
+
+    it("should handle malformed SES events that would trigger DLQ", async () => {
+      // Malformed SES event missing required fields
+      const malformedEvent = {
+        Records: [
+          {
+            eventSource: "aws:ses",
+            eventVersion: "1.0",
+            ses: {
+              // Missing mail object
+              receipt: {
+                recipients: ["test@example.com"],
+              },
+            },
+          },
+        ],
+      } as unknown as SESEvent;
+
+      const context = createMockLambdaContext() as unknown as Context;
+
+      // This should throw an error due to malformed event structure
+      await expect(handler(malformedEvent, context))
+        .rejects.toThrow();
+    });
+  });
 });
