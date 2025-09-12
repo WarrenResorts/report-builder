@@ -883,11 +883,14 @@ describe("Lambda Handler", () => {
       const context = createMockLambdaContext() as unknown as Context;
 
       // Mock S3 to throw a timeout-like error that would occur in real Lambda timeout scenarios
-      mockS3Client.send.mockRejectedValue(new Error("Task timed out after 3.00 seconds"));
+      mockS3Client.send.mockRejectedValue(
+        new Error("Task timed out after 3.00 seconds"),
+      );
 
       // This should throw a timeout error that would send to DLQ after Lambda retries
-      await expect(handler(sesEvent, context))
-        .rejects.toThrow("Task timed out");
+      await expect(handler(sesEvent, context)).rejects.toThrow(
+        "Task timed out",
+      );
     });
 
     it("should handle unrecoverable parsing errors that would trigger DLQ", async () => {
@@ -925,18 +928,21 @@ describe("Lambda Handler", () => {
       mockS3Client.send.mockResolvedValueOnce({
         Body: {
           transformToByteArray: () =>
-            Promise.resolve(Buffer.from("corrupted-email-data-that-cannot-be-parsed")),
+            Promise.resolve(
+              Buffer.from("corrupted-email-data-that-cannot-be-parsed"),
+            ),
         },
       });
 
       // Mock parser to throw unrecoverable error
       (simpleParser as Mock).mockRejectedValue(
-        new Error("Email parsing failed: corrupted data structure")
+        new Error("Email parsing failed: corrupted data structure"),
       );
 
       // This should throw an unrecoverable error that would send to DLQ after retries
-      await expect(handler(sesEvent, context))
-        .rejects.toThrow("Email parsing failed");
+      await expect(handler(sesEvent, context)).rejects.toThrow(
+        "Email parsing failed",
+      );
     });
 
     it("should handle Lambda runtime errors that would trigger DLQ", async () => {
@@ -989,8 +995,9 @@ describe("Lambda Handler", () => {
       });
 
       // This should throw a runtime error that would send to DLQ after retries
-      await expect(handler(sesEvent, context))
-        .rejects.toThrow("Lambda runtime out of memory");
+      await expect(handler(sesEvent, context)).rejects.toThrow(
+        "Lambda runtime out of memory",
+      );
     });
 
     it("should handle malformed SES events that would trigger DLQ", async () => {
@@ -1013,8 +1020,7 @@ describe("Lambda Handler", () => {
       const context = createMockLambdaContext() as unknown as Context;
 
       // This should throw an error due to malformed event structure
-      await expect(handler(malformedEvent, context))
-        .rejects.toThrow();
+      await expect(handler(malformedEvent, context)).rejects.toThrow();
     });
   });
 });
