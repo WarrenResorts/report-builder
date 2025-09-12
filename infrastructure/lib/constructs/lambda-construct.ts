@@ -5,7 +5,10 @@ import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as path from 'path';
 import { EnvironmentConfig } from '../../config';
 
@@ -50,6 +53,9 @@ export class LambdaConstruct extends Construct {
   
   /** Dead Letter Queue for failed email processing */
   public readonly emailProcessorDLQ: sqs.Queue;
+  
+  /** SNS topic for DLQ alerts */
+  public readonly dlqAlertTopic: sns.Topic;
   
   /** CloudWatch alarm for DLQ messages */
   public readonly dlqAlarm: cloudwatch.Alarm;
@@ -187,6 +193,14 @@ export class LambdaConstruct extends Construct {
       encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
 
+    // SNS Topic for DLQ alerts - enables email and Slack notifications
+    this.dlqAlertTopic = new sns.Topic(this, 'EmailProcessorDLQAlertTopic', {
+      topicName: `${config.naming.projectPrefix}${config.naming.separator}email-processor-dlq-alerts${config.naming.separator}${environment}`,
+      displayName: `Report Builder Email Processing Alerts (${environment})`,
+      // Add encryption for sensitive notification content
+      masterKey: undefined, // Use default AWS managed key
+    });
+
     // CloudWatch alarm for DLQ messages - alerts when emails fail processing
     this.dlqAlarm = new cloudwatch.Alarm(this, 'EmailProcessorDLQAlarm', {
       alarmName: `${config.naming.projectPrefix}${config.naming.separator}email-processor-dlq-alarm${config.naming.separator}${environment}`,
@@ -205,6 +219,10 @@ export class LambdaConstruct extends Construct {
       evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
+
+    // Connect the alarm to SNS topic for notifications
+    this.dlqAlarm.addAlarmAction(new cloudwatchActions.SnsAction(this.dlqAlertTopic));
+    this.dlqAlarm.addOkAction(new cloudwatchActions.SnsAction(this.dlqAlertTopic));
 
     // ===================================================================
     // LAMBDA FUNCTION CONFIGURATION
@@ -313,6 +331,17 @@ export class LambdaConstruct extends Construct {
     new cdk.CfnOutput(this, 'EmailProcessorDLQAlarmArn', {
       value: this.dlqAlarm.alarmArn,
       description: 'ARN of the CloudWatch alarm for DLQ messages',
+    });
+
+    new cdk.CfnOutput(this, 'EmailProcessorDLQAlertTopicArn', {
+      value: this.dlqAlertTopic.topicArn,
+      description: 'ARN of the SNS topic for DLQ alert notifications',
+      exportName: `${cdk.Stack.of(this).stackName}-EmailProcessorDLQAlertTopicArn`,
+    });
+
+    new cdk.CfnOutput(this, 'EmailProcessorDLQAlertTopicName', {
+      value: this.dlqAlertTopic.topicName,
+      description: 'Name of the SNS topic for DLQ alert notifications',
     });
 
     new cdk.CfnOutput(this, 'EmailProcessorRoleArn', {

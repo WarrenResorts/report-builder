@@ -25,11 +25,18 @@ SES Email → Lambda (3 attempts) → Success ✓
 - **DLQ Integration**: Automatic message routing on failure
 - **Asynchronous Invocation**: SES invokes Lambda asynchronously
 
-### 3. CloudWatch Alarm
+### 3. SNS Alert Topic
+- **Name**: `report-builder-email-processor-dlq-alerts-{environment}`
+- **Purpose**: Sends notifications when emails fail processing
+- **Subscriptions**: Email and Slack notifications (configured post-deployment)
+- **Encryption**: AWS managed encryption
+
+### 4. CloudWatch Alarm
 - **Name**: `report-builder-email-processor-dlq-alarm-{environment}`
 - **Metric**: `ApproximateNumberOfVisibleMessages`
 - **Threshold**: ≥ 1 message
 - **Evaluation**: Immediate (1 period)
+- **Actions**: Sends notifications to SNS topic
 
 ## Error Flow
 
@@ -37,7 +44,8 @@ SES Email → Lambda (3 attempts) → Success ✓
 2. **Lambda fails** → AWS runtime retries (2 additional attempts)
 3. **All retries fail** → Message sent to DLQ
 4. **DLQ receives message** → CloudWatch alarm triggers
-5. **Operations team alerted** → Manual investigation begins
+5. **SNS topic activated** → Email and Slack notifications sent
+6. **Operations team alerted** → Manual investigation begins
 
 ## Message Format in DLQ
 
@@ -213,6 +221,7 @@ export const handler = async (event: SESEvent) => {
 
 ## Related Documentation
 
+- [SNS Alert Setup Guide](../operations/sns-alert-setup.md)
 - [Error Handling Strategy](./error-handling.md)
 - [Lambda Function Configuration](./lambda-functions.md)
 - [Monitoring and Alerting](./monitoring.md)
