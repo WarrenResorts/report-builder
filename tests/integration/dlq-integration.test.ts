@@ -18,7 +18,8 @@ import {
 import { 
   SNSClient, 
   GetTopicAttributesCommand,
-  ListTopicsCommand 
+  ListTopicsCommand,
+  ListSubscriptionsByTopicCommand 
 } from '@aws-sdk/client-sns';
 import { shouldUseRealAWS, getTestMode } from './setup';
 import { environmentConfig } from '../../src/config/environment';
@@ -228,6 +229,42 @@ describe('Dead Letter Queue Integration Tests', () => {
       // Verify encryption is enabled (KmsMasterKeyId should be set)
       expect(attributes.KmsMasterKeyId).toBeDefined();
       expect(attributes.KmsMasterKeyId).not.toBe('');
+    });
+
+    it('should have email subscription configured', async () => {
+      if (testMode === 'mocked') {
+        // Mock test - just verify command creation
+        expect(() => new ListTopicsCommand({})).not.toThrow();
+        return;
+      }
+
+      // First get the topic ARN
+      const listCommand = new ListTopicsCommand({});
+      const listResponse = await snsClient.send(listCommand);
+      
+      const dlqTopic = listResponse.Topics!.find(topic => 
+        topic.TopicArn?.includes(`report-builder-dlq-alerts-${environment}`)
+      );
+      
+      expect(dlqTopic).toBeDefined();
+
+      // Get subscriptions for the topic
+      const subscriptionsCommand = new ListSubscriptionsByTopicCommand({
+        TopicArn: dlqTopic!.TopicArn!
+      });
+
+      const subscriptionsResponse = await snsClient.send(subscriptionsCommand);
+      expect(subscriptionsResponse.Subscriptions).toBeDefined();
+      expect(subscriptionsResponse.Subscriptions!.length).toBeGreaterThan(0);
+
+      // Should have at least one email subscription
+      const emailSubscription = subscriptionsResponse.Subscriptions!.find(sub => 
+        sub.Protocol === 'email'
+      );
+      
+      expect(emailSubscription).toBeDefined();
+      expect(emailSubscription!.Endpoint).toMatch(/@/); // Should be an email address
+      expect(emailSubscription!.TopicArn).toBe(dlqTopic!.TopicArn);
     });
   });
 

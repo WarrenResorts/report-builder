@@ -9,6 +9,7 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as path from 'path';
 import { EnvironmentConfig } from '../../config';
 
@@ -200,6 +201,20 @@ export class LambdaConstruct extends Construct {
       // Add encryption for sensitive notification content
       masterKey: undefined, // Use default AWS managed key
     });
+
+    // Get alert notification email address from Parameter Store
+    const alertEmailParam = ssm.StringParameter.fromStringParameterName(
+      this,
+      'AlertEmailParameter',
+      `/${config.naming.projectPrefix}/${environment}/email/alert-notifications`
+    );
+
+    // Add email subscription to SNS topic for DLQ alerts
+    this.dlqAlertTopic.addSubscription(
+      new snsSubscriptions.EmailSubscription(alertEmailParam.stringValue, {
+        json: false, // Send plain text notifications for better readability
+      })
+    );
 
     // CloudWatch alarm for DLQ messages - alerts when emails fail processing
     this.dlqAlarm = new cloudwatch.Alarm(this, 'EmailProcessorDLQAlarm', {
