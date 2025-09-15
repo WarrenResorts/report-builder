@@ -4,6 +4,12 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as path from 'path';
 import { EnvironmentConfig } from '../../config';
 
@@ -45,6 +51,15 @@ export class LambdaConstruct extends Construct {
   
   /** Lambda function for processing files */
   public readonly fileProcessorLambda: lambdaNodejs.NodejsFunction;
+  
+  /** Dead Letter Queue for failed email processing */
+  public readonly emailProcessorDLQ: sqs.Queue;
+  
+  /** SNS topic for DLQ alerts */
+  public readonly dlqAlertTopic: sns.Topic;
+  
+  /** CloudWatch alarm for DLQ messages */
+  public readonly dlqAlarm: cloudwatch.Alarm;
   
   /** IAM execution role for email processor */
   public readonly emailProcessorRole: iam.Role;
@@ -164,6 +179,67 @@ export class LambdaConstruct extends Construct {
     });
 
     // ===================================================================
+    // DEAD LETTER QUEUE CONFIGURATION
+    // ===================================================================
+    
+    // Dead Letter Queue for failed email processing attempts
+    // This captures Lambda invocations that fail after automatic retries
+    this.emailProcessorDLQ = new sqs.Queue(this, 'EmailProcessorDLQ', {
+      queueName: `${config.naming.projectPrefix}${config.naming.separator}email-processor-dlq${config.naming.separator}${environment}`,
+      // Retain messages for 14 days for debugging and recovery
+      retentionPeriod: cdk.Duration.days(14),
+      // Set visibility timeout for message processing
+      visibilityTimeout: cdk.Duration.minutes(5),
+      // Add encryption for sensitive email content
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+    });
+
+    // SNS Topic for DLQ alerts - enables email and Slack notifications
+    this.dlqAlertTopic = new sns.Topic(this, 'EmailProcessorDLQAlertTopic', {
+      topicName: `${config.naming.projectPrefix}${config.naming.separator}email-processor-dlq-alerts${config.naming.separator}${environment}`,
+      displayName: `Report Builder Email Processing Alerts (${environment})`,
+      // Add encryption for sensitive notification content
+      masterKey: undefined, // Use default AWS managed key
+    });
+
+    // Get alert notification email address from Parameter Store
+    const alertEmailParam = ssm.StringParameter.fromStringParameterName(
+      this,
+      'AlertEmailParameter',
+      `/${config.naming.projectPrefix}/${environment}/email/alert-notifications`
+    );
+
+    // Add email subscription to SNS topic for DLQ alerts
+    this.dlqAlertTopic.addSubscription(
+      new snsSubscriptions.EmailSubscription(alertEmailParam.stringValue, {
+        json: false, // Send plain text notifications for better readability
+      })
+    );
+
+    // CloudWatch alarm for DLQ messages - alerts when emails fail processing
+    this.dlqAlarm = new cloudwatch.Alarm(this, 'EmailProcessorDLQAlarm', {
+      alarmName: `${config.naming.projectPrefix}${config.naming.separator}email-processor-dlq-alarm${config.naming.separator}${environment}`,
+      alarmDescription: 'Alert when emails fail processing and are sent to DLQ',
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/SQS',
+        metricName: 'ApproximateNumberOfVisibleMessages',
+        dimensionsMap: {
+          QueueName: this.emailProcessorDLQ.queueName,
+        },
+        period: cdk.Duration.minutes(5),
+      }),
+      // Alert immediately when any message appears in DLQ
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Connect the alarm to SNS topic for notifications
+    this.dlqAlarm.addAlarmAction(new cloudwatchActions.SnsAction(this.dlqAlertTopic));
+    this.dlqAlarm.addOkAction(new cloudwatchActions.SnsAction(this.dlqAlertTopic));
+
+    // ===================================================================
     // LAMBDA FUNCTION CONFIGURATION
     // ===================================================================
     
@@ -195,6 +271,10 @@ export class LambdaConstruct extends Construct {
       },
       // Enable Lambda insights based on monitoring configuration
       insightsVersion: config.monitoring.lambdaInsights ? lambda.LambdaInsightsVersion.VERSION_1_0_229_0 : undefined,
+      // Configure Dead Letter Queue for failed asynchronous invocations
+      deadLetterQueue: this.emailProcessorDLQ,
+      // Configure retry behavior for failed invocations
+      retryAttempts: 2, // AWS Lambda default (total of 3 attempts: initial + 2 retries)
     });
 
     // ===================================================================
@@ -249,6 +329,34 @@ export class LambdaConstruct extends Construct {
       value: this.fileProcessorLambda.functionArn,
       description: 'ARN of the file processor Lambda function',
       exportName: `${cdk.Stack.of(this).stackName}-FileProcessorLambdaArn`,
+    });
+
+    new cdk.CfnOutput(this, 'EmailProcessorDLQArn', {
+      value: this.emailProcessorDLQ.queueArn,
+      description: 'ARN of the email processor Dead Letter Queue',
+      exportName: `${cdk.Stack.of(this).stackName}-EmailProcessorDLQArn`,
+    });
+
+    new cdk.CfnOutput(this, 'EmailProcessorDLQUrl', {
+      value: this.emailProcessorDLQ.queueUrl,
+      description: 'URL of the email processor Dead Letter Queue',
+      exportName: `${cdk.Stack.of(this).stackName}-EmailProcessorDLQUrl`,
+    });
+
+    new cdk.CfnOutput(this, 'EmailProcessorDLQAlarmArn', {
+      value: this.dlqAlarm.alarmArn,
+      description: 'ARN of the CloudWatch alarm for DLQ messages',
+    });
+
+    new cdk.CfnOutput(this, 'EmailProcessorDLQAlertTopicArn', {
+      value: this.dlqAlertTopic.topicArn,
+      description: 'ARN of the SNS topic for DLQ alert notifications',
+      exportName: `${cdk.Stack.of(this).stackName}-EmailProcessorDLQAlertTopicArn`,
+    });
+
+    new cdk.CfnOutput(this, 'EmailProcessorDLQAlertTopicName', {
+      value: this.dlqAlertTopic.topicName,
+      description: 'Name of the SNS topic for DLQ alert notifications',
     });
 
     new cdk.CfnOutput(this, 'EmailProcessorRoleArn', {
