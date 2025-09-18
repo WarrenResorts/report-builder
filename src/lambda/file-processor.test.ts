@@ -41,7 +41,8 @@ const createMockLambdaContext = (): Context => ({
   callbackWaitsForEmptyEventLoop: false,
   functionName: "file-processor",
   functionVersion: "1",
-  invokedFunctionArn: "arn:aws:lambda:us-east-1:123456789012:function:file-processor",
+  invokedFunctionArn:
+    "arn:aws:lambda:us-east-1:123456789012:function:file-processor",
   memoryLimitInMB: "512",
   awsRequestId: "test-request-id",
   logGroupName: "/aws/lambda/file-processor",
@@ -54,7 +55,7 @@ const createMockLambdaContext = (): Context => ({
 
 // Helper function to create mock EventBridge event
 const createMockEventBridgeEvent = (
-  processingType: "daily-batch" | "weekly-report" = "daily-batch"
+  processingType: "daily-batch" | "weekly-report" = "daily-batch",
 ): EventBridgeEvent<string, any> => ({
   version: "0",
   id: "test-event-id",
@@ -107,7 +108,7 @@ const createMockS3Objects = () => {
 describe("File Processor Lambda", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Set up environment variables
     process.env.INCOMING_FILES_BUCKET = "test-incoming-bucket";
     process.env.PROCESSED_FILES_BUCKET = "test-processed-bucket";
@@ -117,7 +118,7 @@ describe("File Processor Lambda", () => {
   describe("Handler Function", () => {
     it("should process daily-batch event successfully", async () => {
       const mockObjects = createMockS3Objects();
-      
+
       // Mock S3 response with recent files
       mockRetryS3Operation.mockResolvedValue({
         Contents: mockObjects,
@@ -132,7 +133,10 @@ describe("File Processor Lambda", () => {
       expect(result.message).toContain("daily-batch");
       expect(result.processedFiles).toBe(3); // 3 recent files (1 filtered out by 24h window)
       expect(result.summary.filesFound).toBe(3);
-      expect(result.summary.propertiesProcessed).toEqual(["PROP123", "PROP456"]);
+      expect(result.summary.propertiesProcessed).toEqual([
+        "PROP123",
+        "PROP456",
+      ]);
       expect(result.summary.processingTimeMs).toBeGreaterThan(0);
     });
 
@@ -196,7 +200,7 @@ describe("File Processor Lambda", () => {
       expect(mockRetryS3Operation).toHaveBeenCalledWith(
         expect.any(Function),
         expect.any(String), // correlationId
-        "list_daily_files"
+        "list_daily_files",
       );
 
       // Verify the S3 command would be created correctly
@@ -217,7 +221,7 @@ describe("File Processor Lambda", () => {
           Size: 1024,
         },
         {
-          Key: "daily-files/PROP123/2024-01-14/old.pdf", 
+          Key: "daily-files/PROP123/2024-01-14/old.pdf",
           LastModified: new Date("2024-01-14T10:00:00Z"), // 26 hours ago - should be excluded
           Size: 1024,
         },
@@ -239,7 +243,10 @@ describe("File Processor Lambda", () => {
 
       expect(result.statusCode).toBe(200);
       expect(result.processedFiles).toBe(2); // Only recent and borderline files
-      expect(result.summary.propertiesProcessed).toEqual(["PROP123", "PROP456"]);
+      expect(result.summary.propertiesProcessed).toEqual([
+        "PROP123",
+        "PROP456",
+      ]);
 
       vi.useRealTimers();
     });
@@ -280,7 +287,7 @@ describe("File Processor Lambda", () => {
 
       expect(result.statusCode).toBe(200);
       expect(result.processedFiles).toBe(4); // All files are recent
-      
+
       // Should have both properties
       expect(result.summary.propertiesProcessed).toContain("PROP123");
       expect(result.summary.propertiesProcessed).toContain("PROP456");
@@ -323,7 +330,10 @@ describe("File Processor Lambda", () => {
 
       expect(result.statusCode).toBe(200);
       expect(result.processedFiles).toBe(2); // Only valid files counted
-      expect(result.summary.propertiesProcessed).toEqual(["PROP123", "PROP456"]);
+      expect(result.summary.propertiesProcessed).toEqual([
+        "PROP123",
+        "PROP456",
+      ]);
     });
 
     it("should handle filenames with special characters and slashes", async () => {
@@ -357,7 +367,10 @@ describe("File Processor Lambda", () => {
 
       expect(result.statusCode).toBe(200);
       expect(result.processedFiles).toBe(3);
-      expect(result.summary.propertiesProcessed).toEqual(["PROP123", "PROP456"]);
+      expect(result.summary.propertiesProcessed).toEqual([
+        "PROP123",
+        "PROP456",
+      ]);
     });
   });
 
@@ -368,7 +381,9 @@ describe("File Processor Lambda", () => {
       delete process.env.INCOMING_FILES_BUCKET;
 
       // Mock S3 operation to throw an error due to undefined bucket
-      mockRetryS3Operation.mockRejectedValue(new Error("Cannot read properties of undefined"));
+      mockRetryS3Operation.mockRejectedValue(
+        new Error("Cannot read properties of undefined"),
+      );
 
       const event = createMockEventBridgeEvent();
       const context = createMockLambdaContext();
@@ -414,10 +429,11 @@ describe("File Processor Lambda", () => {
   describe("Performance and Monitoring", () => {
     it("should track processing time accurately", async () => {
       // Mock a delay in S3 operation
-      mockRetryS3Operation.mockImplementation(() => 
-        new Promise(resolve => 
-          setTimeout(() => resolve({ Contents: [] }), 100)
-        )
+      mockRetryS3Operation.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ Contents: [] }), 100),
+          ),
       );
 
       const event = createMockEventBridgeEvent();
@@ -445,11 +461,11 @@ describe("File Processor Lambda", () => {
       expect(result).toHaveProperty("processedFiles");
       expect(result).toHaveProperty("timestamp");
       expect(result).toHaveProperty("summary");
-      
+
       expect(result.summary).toHaveProperty("filesFound");
       expect(result.summary).toHaveProperty("propertiesProcessed");
       expect(result.summary).toHaveProperty("processingTimeMs");
-      
+
       expect(Array.isArray(result.summary.propertiesProcessed)).toBe(true);
       expect(typeof result.summary.processingTimeMs).toBe("number");
     });

@@ -1,13 +1,16 @@
 /**
  * @fileoverview CSV Output Generator
- * 
+ *
  * Generates standardized CSV files from transformed data with proper formatting,
  * validation, and error handling. Supports custom field ordering, data sanitization,
  * and multiple output formats.
  */
 
-import { Logger } from '../utils/logger';
-import type { TransformedData, TransformedRecord } from '../transformation/transformation-engine';
+import { Logger } from "../utils/logger";
+import type {
+  TransformedData,
+  TransformedRecord,
+} from "../transformation/transformation-engine";
 
 /**
  * Configuration options for CSV generation
@@ -18,7 +21,7 @@ export interface CSVGeneratorConfig {
   /** Quote character for fields containing special characters (default: '"') */
   quote?: string;
   /** Line ending style (default: '\n') */
-  lineEnding?: '\n' | '\r\n' | '\r';
+  lineEnding?: "\n" | "\r\n" | "\r";
   /** Whether to include headers in output (default: true) */
   includeHeaders?: boolean;
   /** Custom field order - if not provided, uses alphabetical order */
@@ -81,17 +84,17 @@ export class CSVGenerator {
   private config: Required<CSVGeneratorConfig>;
 
   constructor(config: CSVGeneratorConfig = {}, logger?: Logger) {
-    this.logger = logger || new Logger('CSVGenerator');
+    this.logger = logger || new Logger("CSVGenerator");
     this.config = {
-      delimiter: ',',
+      delimiter: ",",
       quote: '"',
-      lineEnding: '\n',
+      lineEnding: "\n",
       includeHeaders: true,
       fieldOrder: [],
       sanitizeValues: true,
       maxFieldLength: 32767, // Excel cell limit
       includeMetadata: false,
-      dateFormat: 'YYYY-MM-DD',
+      dateFormat: "YYYY-MM-DD",
       quoteAll: false,
       ...config,
     };
@@ -102,12 +105,12 @@ export class CSVGenerator {
    */
   async generateCSV(
     transformedData: TransformedData,
-    correlationId: string
+    correlationId: string,
   ): Promise<CSVGenerationResult> {
     const startTime = Date.now();
 
     try {
-      this.logger.info('Starting CSV generation', {
+      this.logger.info("Starting CSV generation", {
         correlationId,
         propertyId: transformedData.propertyId,
         recordCount: transformedData.records.length,
@@ -116,7 +119,9 @@ export class CSVGenerator {
       if (!transformedData.records || transformedData.records.length === 0) {
         return {
           success: true,
-          csvContent: this.config.includeHeaders ? this.generateHeaders([]) : '',
+          csvContent: this.config.includeHeaders
+            ? this.generateHeaders([])
+            : "",
           stats: {
             totalRecords: 0,
             fieldCount: 0,
@@ -148,7 +153,7 @@ export class CSVGenerator {
         const { csvLine, sanitized, truncated } = this.generateRecordLine(
           record,
           orderedFields,
-          correlationId
+          correlationId,
         );
         csvLines.push(csvLine);
         sanitizedCount += sanitized;
@@ -158,7 +163,7 @@ export class CSVGenerator {
       const csvContent = csvLines.join(this.config.lineEnding);
       const processingTime = Math.max(1, Date.now() - startTime); // Ensure at least 1ms
 
-      this.logger.info('CSV generation completed', {
+      this.logger.info("CSV generation completed", {
         correlationId,
         propertyId: transformedData.propertyId,
         recordCount: transformedData.records.length,
@@ -177,12 +182,11 @@ export class CSVGenerator {
           sanitizedValues: sanitizedCount,
           truncatedValues: truncatedCount,
           processingTimeMs: processingTime,
-          outputSizeBytes: Buffer.byteLength(csvContent, 'utf8'),
+          outputSizeBytes: Buffer.byteLength(csvContent, "utf8"),
         },
       };
-
     } catch (error) {
-      this.logger.error('CSV generation failed', error as Error, {
+      this.logger.error("CSV generation failed", error as Error, {
         correlationId,
         propertyId: transformedData.propertyId,
       });
@@ -190,7 +194,7 @@ export class CSVGenerator {
       return {
         success: false,
         error: {
-          code: 'CSV_GENERATION_ERROR',
+          code: "CSV_GENERATION_ERROR",
           message: `CSV generation failed: ${(error as Error).message}`,
           details: {
             propertyId: transformedData.propertyId,
@@ -206,7 +210,7 @@ export class CSVGenerator {
    */
   async generateMultipleCSVs(
     transformedDataFiles: TransformedData[],
-    correlationId: string
+    correlationId: string,
   ): Promise<Map<string, CSVGenerationResult>> {
     const results = new Map<string, CSVGenerationResult>();
 
@@ -227,15 +231,15 @@ export class CSVGenerator {
 
     for (const record of records) {
       // Add main fields
-      Object.keys(record.fields).forEach(field => fieldSet.add(field));
+      Object.keys(record.fields).forEach((field) => fieldSet.add(field));
 
       // Add metadata fields if requested
       if (this.config.includeMetadata) {
-        fieldSet.add('_recordId');
-        fieldSet.add('_sourceFile');
-        fieldSet.add('_processingDate');
+        fieldSet.add("_recordId");
+        fieldSet.add("_sourceFile");
+        fieldSet.add("_processingDate");
         if (record.metadata.transformationWarnings.length > 0) {
-          fieldSet.add('_warnings');
+          fieldSet.add("_warnings");
         }
       }
     }
@@ -249,8 +253,8 @@ export class CSVGenerator {
   private orderFields(fields: string[]): string[] {
     if (this.config.fieldOrder.length === 0) {
       // Default alphabetical ordering, but put metadata fields at the end
-      const mainFields = fields.filter(f => !f.startsWith('_')).sort();
-      const metadataFields = fields.filter(f => f.startsWith('_')).sort();
+      const mainFields = fields.filter((f) => !f.startsWith("_")).sort();
+      const metadataFields = fields.filter((f) => f.startsWith("_")).sort();
       return [...mainFields, ...metadataFields];
     }
 
@@ -276,7 +280,9 @@ export class CSVGenerator {
    * Generate CSV headers
    */
   private generateHeaders(fields: string[]): string {
-    return fields.map(field => this.escapeField(field)).join(this.config.delimiter);
+    return fields
+      .map((field) => this.escapeField(field))
+      .join(this.config.delimiter);
   }
 
   /**
@@ -285,29 +291,29 @@ export class CSVGenerator {
   private generateRecordLine(
     record: TransformedRecord,
     fields: string[],
-    correlationId: string
+    correlationId: string,
   ): { csvLine: string; sanitized: number; truncated: number } {
     const values: string[] = [];
     let sanitizedCount = 0;
     let truncatedCount = 0;
 
     for (const field of fields) {
-      let value = '';
+      let value = "";
 
-      if (field.startsWith('_')) {
+      if (field.startsWith("_")) {
         // Handle metadata fields
         switch (field) {
-          case '_recordId':
+          case "_recordId":
             value = record.recordId;
             break;
-          case '_sourceFile':
+          case "_sourceFile":
             value = record.sourceFile;
             break;
-          case '_processingDate':
+          case "_processingDate":
             value = record.processingDate;
             break;
-          case '_warnings':
-            value = record.metadata.transformationWarnings.join('; ');
+          case "_warnings":
+            value = record.metadata.transformationWarnings.join("; ");
             break;
         }
       } else {
@@ -328,9 +334,9 @@ export class CSVGenerator {
       }
 
       if (value.length > this.config.maxFieldLength) {
-        value = value.substring(0, this.config.maxFieldLength - 3) + '...';
+        value = value.substring(0, this.config.maxFieldLength - 3) + "...";
         truncatedCount++;
-        this.logger.debug('Field value truncated', {
+        this.logger.debug("Field value truncated", {
           correlationId,
           field,
           originalLength: value.length + 3,
@@ -353,26 +359,26 @@ export class CSVGenerator {
    */
   private formatValue(value: unknown): string {
     if (value === null || value === undefined) {
-      return '';
+      return "";
     }
 
     if (value instanceof Date) {
       return this.formatDate(value);
     }
 
-    if (typeof value === 'boolean') {
-      return value ? 'true' : 'false';
+    if (typeof value === "boolean") {
+      return value ? "true" : "false";
     }
 
-    if (typeof value === 'number') {
+    if (typeof value === "number") {
       return value.toString();
     }
 
-    if (typeof value === 'object') {
+    if (typeof value === "object") {
       try {
         return JSON.stringify(value);
       } catch {
-        return '[Object]';
+        return "[Object]";
       }
     }
 
@@ -385,50 +391,56 @@ export class CSVGenerator {
   private formatDate(date: Date): string {
     // Use local date components to avoid timezone issues
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
 
     return this.config.dateFormat
-      .replace('YYYY', String(year))
-      .replace('MM', month)
-      .replace('DD', day);
+      .replace("YYYY", String(year))
+      .replace("MM", month)
+      .replace("DD", day);
   }
 
   /**
    * Sanitize a field value by removing/replacing problematic characters
    */
   private sanitizeValue(value: string): string {
-    return value
-      // Remove null bytes and other control characters except tabs and newlines
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-      // Replace multiple whitespace with single space
-      .replace(/\s+/g, ' ')
-      // Trim whitespace
-      .trim();
+    return (
+      value
+        // Remove null bytes and other control characters except tabs and newlines
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+        // Replace multiple whitespace with single space
+        .replace(/\s+/g, " ")
+        // Trim whitespace
+        .trim()
+    );
   }
 
   /**
    * Escape a field value for CSV output
    */
   private escapeField(value: string): string {
-    const needsQuoting = this.config.quoteAll || 
+    const needsQuoting =
+      this.config.quoteAll ||
       value.includes(this.config.delimiter) ||
       value.includes(this.config.quote) ||
-      value.includes('\n') ||
-      value.includes('\r') ||
-      value.startsWith(' ') ||
-      value.endsWith(' ') ||
+      value.includes("\n") ||
+      value.includes("\r") ||
+      value.startsWith(" ") ||
+      value.endsWith(" ") ||
       // Also quote fields that contain spaces (like "John Doe")
-      value.includes(' ');
+      value.includes(" ");
 
     if (!needsQuoting) {
       return value;
     }
 
     // Escape quotes by doubling them
-    const escapedValue = value.replace(new RegExp(this.config.quote, 'g'), this.config.quote + this.config.quote);
-    
+    const escapedValue = value.replace(
+      new RegExp(this.config.quote, "g"),
+      this.config.quote + this.config.quote,
+    );
+
     return `${this.config.quote}${escapedValue}${this.config.quote}`;
   }
 
@@ -437,15 +449,15 @@ export class CSVGenerator {
    */
   static getDefaultConfig(): CSVGeneratorConfig {
     return {
-      delimiter: ',',
+      delimiter: ",",
       quote: '"',
-      lineEnding: '\n',
+      lineEnding: "\n",
       includeHeaders: true,
       fieldOrder: [],
       sanitizeValues: true,
       maxFieldLength: 32767,
       includeMetadata: false,
-      dateFormat: 'YYYY-MM-DD',
+      dateFormat: "YYYY-MM-DD",
       quoteAll: false,
     };
   }
@@ -457,7 +469,7 @@ export class CSVGenerator {
 export async function generateCSV(
   transformedData: TransformedData,
   correlationId: string,
-  config?: CSVGeneratorConfig
+  config?: CSVGeneratorConfig,
 ): Promise<CSVGenerationResult> {
   const generator = new CSVGenerator(config);
   return generator.generateCSV(transformedData, correlationId);
@@ -469,7 +481,7 @@ export async function generateCSV(
 export async function generateMultipleCSVs(
   transformedDataFiles: TransformedData[],
   correlationId: string,
-  config?: CSVGeneratorConfig
+  config?: CSVGeneratorConfig,
 ): Promise<Map<string, CSVGenerationResult>> {
   const generator = new CSVGenerator(config);
   return generator.generateMultipleCSVs(transformedDataFiles, correlationId);

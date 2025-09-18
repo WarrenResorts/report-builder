@@ -1,16 +1,16 @@
 /**
  * @fileoverview Data Transformation Engine
- * 
+ *
  * This module provides a comprehensive transformation engine that applies
  * mapping rules to convert parsed file data into standardized output format.
  */
 
-import { Logger } from '../utils/logger';
-import type { 
-  ExcelMappingData, 
-  PropertyMapping, 
-  TransformationRule 
-} from '../parsers/excel-mapping-parser';
+import { Logger } from "../utils/logger";
+import type {
+  ExcelMappingData,
+  PropertyMapping,
+  TransformationRule,
+} from "../parsers/excel-mapping-parser";
 
 /**
  * Raw data from parsed files that needs to be transformed
@@ -20,7 +20,7 @@ export interface RawFileData {
   source: {
     filename: string;
     propertyId: string;
-    fileType: 'pdf' | 'csv' | 'txt';
+    fileType: "pdf" | "csv" | "txt";
     parsedAt: Date;
   };
   /** Parsed content from the file */
@@ -75,7 +75,11 @@ export interface TransformedRecord {
  */
 export interface TransformationError {
   /** Error type */
-  type: 'VALIDATION_ERROR' | 'TRANSFORMATION_ERROR' | 'MISSING_REQUIRED_FIELD' | 'TYPE_CONVERSION_ERROR';
+  type:
+    | "VALIDATION_ERROR"
+    | "TRANSFORMATION_ERROR"
+    | "MISSING_REQUIRED_FIELD"
+    | "TYPE_CONVERSION_ERROR";
   /** Error message */
   message: string;
   /** Field that caused the error */
@@ -99,12 +103,12 @@ export interface TransformationConfig {
   /** Custom transformation functions */
   customTransformations?: Record<string, (value: any, params?: any) => any>;
   /** Validation mode */
-  validationMode: 'strict' | 'lenient' | 'skip';
+  validationMode: "strict" | "lenient" | "skip";
 }
 
 /**
  * Data Transformation Engine
- * 
+ *
  * Applies mapping rules to transform raw parsed file data into standardized format.
  */
 export class TransformationEngine {
@@ -116,10 +120,10 @@ export class TransformationEngine {
       continueOnError: true,
       maxErrors: 100,
       includeDebugInfo: false,
-      validationMode: 'lenient',
+      validationMode: "lenient",
       ...config,
     };
-    this.logger = new Logger('TransformationEngine');
+    this.logger = new Logger("TransformationEngine");
   }
 
   /**
@@ -128,13 +132,13 @@ export class TransformationEngine {
   async transformData(
     rawData: RawFileData,
     mappingData: ExcelMappingData,
-    correlationId: string
+    correlationId: string,
   ): Promise<TransformedData> {
     const startTime = Date.now();
     const errors: TransformationError[] = [];
     const warnings: string[] = [];
 
-    this.logger.info('Starting data transformation', {
+    this.logger.info("Starting data transformation", {
       correlationId,
       propertyId: rawData.source.propertyId,
       sourceFile: rawData.source.filename,
@@ -145,11 +149,16 @@ export class TransformationEngine {
       // Find matching property mapping
       const propertyMapping = this.findPropertyMapping(rawData, mappingData);
       if (!propertyMapping) {
-        throw new Error(`No mapping found for property ${rawData.source.propertyId} and file type ${rawData.source.fileType}`);
+        throw new Error(
+          `No mapping found for property ${rawData.source.propertyId} and file type ${rawData.source.fileType}`,
+        );
       }
 
       // Extract records from raw content
-      const sourceRecords = this.extractSourceRecords(rawData.content, rawData.source.fileType);
+      const sourceRecords = this.extractSourceRecords(
+        rawData.content,
+        rawData.source.fileType,
+      );
 
       // Transform each record
       const transformedRecords: TransformedRecord[] = [];
@@ -157,7 +166,9 @@ export class TransformationEngine {
 
       for (let i = 0; i < sourceRecords.length; i++) {
         if (errors.length >= this.config.maxErrors) {
-          warnings.push(`Stopped processing after ${this.config.maxErrors} errors`);
+          warnings.push(
+            `Stopped processing after ${this.config.maxErrors} errors`,
+          );
           break;
         }
 
@@ -167,15 +178,14 @@ export class TransformationEngine {
             i,
             propertyMapping.rules,
             mappingData.customTransformations,
-            correlationId
+            correlationId,
           );
 
           transformedRecords.push(transformedRecord);
           appliedRulesCount += propertyMapping.rules.length;
-
         } catch (error) {
           const transformationError: TransformationError = {
-            type: 'TRANSFORMATION_ERROR',
+            type: "TRANSFORMATION_ERROR",
             message: `Failed to transform record ${i}: ${(error as Error).message}`,
             recordIndex: i,
           };
@@ -190,7 +200,7 @@ export class TransformationEngine {
 
       const processingTime = Date.now() - startTime;
 
-      this.logger.info('Data transformation completed', {
+      this.logger.info("Data transformation completed", {
         correlationId,
         recordsProcessed: sourceRecords.length,
         recordsTransformed: transformedRecords.length,
@@ -214,13 +224,14 @@ export class TransformationEngine {
           errors,
         },
       };
-
     } catch (error) {
-      this.logger.error('Data transformation failed', error as Error, {
+      this.logger.error("Data transformation failed", error as Error, {
         correlationId,
       });
 
-      throw new Error(`Data transformation failed: ${(error as Error).message}`);
+      throw new Error(
+        `Data transformation failed: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -229,46 +240,58 @@ export class TransformationEngine {
    */
   private findPropertyMapping(
     rawData: RawFileData,
-    mappingData: ExcelMappingData
+    mappingData: ExcelMappingData,
   ): PropertyMapping | null {
-    return mappingData.propertyMappings.find(mapping => {
-      // Match by property ID
-      if (mapping.propertyId !== rawData.source.propertyId) {
-        return false;
-      }
+    return (
+      mappingData.propertyMappings.find((mapping) => {
+        // Match by property ID
+        if (mapping.propertyId !== rawData.source.propertyId) {
+          return false;
+        }
 
-      // Match by file format
-      return mapping.fileFormat === 'all' || mapping.fileFormat === rawData.source.fileType;
-    }) || null;
+        // Match by file format
+        return (
+          mapping.fileFormat === "all" ||
+          mapping.fileFormat === rawData.source.fileType
+        );
+      }) || null
+    );
   }
 
   /**
    * Extract individual records from raw content based on file type
    */
-  private extractSourceRecords(content: Record<string, any>, fileType: string): Record<string, any>[] {
+  private extractSourceRecords(
+    content: Record<string, any>,
+    fileType: string,
+  ): Record<string, any>[] {
     switch (fileType) {
-      case 'csv':
+      case "csv":
         // CSV content should have a 'rows' property with array of objects
         return Array.isArray(content.rows) ? content.rows : [];
 
-      case 'pdf':
+      case "pdf":
         // PDF content might be structured text - create single record
-        return [{
-          text: content.text || content,
-          pageCount: content.pageCount,
-          pages: content.pages,
-        }];
+        return [
+          {
+            text: content.text || content,
+            pageCount: content.pageCount,
+            pages: content.pages,
+          },
+        ];
 
-      case 'txt':
+      case "txt":
         // TXT content might have structured data or be a single text block
         if (content.structuredData && Array.isArray(content.structuredData)) {
           return content.structuredData;
         }
-        return [{
-          text: content.text || content,
-          lines: content.lines,
-          structure: content.detectedStructure,
-        }];
+        return [
+          {
+            text: content.text || content,
+            lines: content.lines,
+            structure: content.detectedStructure,
+          },
+        ];
 
       default:
         // Fallback: treat as single record
@@ -284,7 +307,7 @@ export class TransformationEngine {
     recordIndex: number,
     rules: TransformationRule[],
     customTransformations: Record<string, any> = {},
-    correlationId: string
+    correlationId: string,
   ): Promise<TransformedRecord> {
     const transformedFields: Record<string, any> = {};
     const recordWarnings: string[] = [];
@@ -292,34 +315,47 @@ export class TransformationEngine {
     for (const rule of rules) {
       try {
         // Extract source value
-        const sourceValue = this.extractSourceValue(sourceRecord, rule.sourceField);
+        const sourceValue = this.extractSourceValue(
+          sourceRecord,
+          rule.sourceField,
+        );
 
         // Apply transformation
         const transformedValue = await this.applyTransformationRule(
           sourceValue,
           rule,
           customTransformations,
-          correlationId
+          correlationId,
         );
 
         // Validate result
-        const validationResult = this.validateTransformedValue(transformedValue, rule);
+        const validationResult = this.validateTransformedValue(
+          transformedValue,
+          rule,
+        );
         if (!validationResult.isValid) {
-          if (this.config.validationMode === 'strict') {
-            throw new Error(`Validation failed for field ${rule.targetField}: ${validationResult.error}`);
-          } else if (this.config.validationMode === 'lenient') {
-            recordWarnings.push(`Validation warning for field ${rule.targetField}: ${validationResult.error}`);
+          if (this.config.validationMode === "strict") {
+            throw new Error(
+              `Validation failed for field ${rule.targetField}: ${validationResult.error}`,
+            );
+          } else if (this.config.validationMode === "lenient") {
+            recordWarnings.push(
+              `Validation warning for field ${rule.targetField}: ${validationResult.error}`,
+            );
           }
         }
 
         // Set transformed value
         transformedFields[rule.targetField] = transformedValue;
-
       } catch (error) {
         if (rule.required) {
-          throw new Error(`Required field transformation failed: ${rule.targetField} - ${(error as Error).message}`);
+          throw new Error(
+            `Required field transformation failed: ${rule.targetField} - ${(error as Error).message}`,
+          );
         } else {
-          recordWarnings.push(`Optional field transformation failed: ${rule.targetField} - ${(error as Error).message}`);
+          recordWarnings.push(
+            `Optional field transformation failed: ${rule.targetField} - ${(error as Error).message}`,
+          );
           // Use default value if available
           if (rule.defaultValue !== undefined) {
             transformedFields[rule.targetField] = rule.defaultValue;
@@ -341,13 +377,16 @@ export class TransformationEngine {
   /**
    * Extract value from source record using field path
    */
-  private extractSourceValue(sourceRecord: Record<string, any>, fieldPath: string): any {
+  private extractSourceValue(
+    sourceRecord: Record<string, any>,
+    fieldPath: string,
+  ): any {
     // Support nested field paths (e.g., "tenant.name" or "address.street")
-    const pathParts = fieldPath.split('.');
+    const pathParts = fieldPath.split(".");
     let value: any = sourceRecord;
 
     for (const part of pathParts) {
-      if (value && typeof value === 'object' && part in value) {
+      if (value && typeof value === "object" && part in value) {
         value = value[part];
       } else {
         return undefined;
@@ -364,12 +403,14 @@ export class TransformationEngine {
     sourceValue: any,
     rule: TransformationRule,
     customTransformations: Record<string, any>,
-    _correlationId: string
+    _correlationId: string,
   ): Promise<any> {
     // Handle null/undefined values
     if (sourceValue == null) {
       if (rule.required && rule.defaultValue === undefined) {
-        throw new Error(`Required field ${rule.sourceField} is null or undefined`);
+        throw new Error(
+          `Required field ${rule.sourceField} is null or undefined`,
+        );
       }
       return rule.defaultValue !== undefined ? rule.defaultValue : null;
     }
@@ -383,7 +424,7 @@ export class TransformationEngine {
         transformedValue,
         rule.transformation,
         rule.transformationParams,
-        customTransformations
+        customTransformations,
       );
     }
 
@@ -396,13 +437,13 @@ export class TransformationEngine {
   private convertDataType(value: any, dataType: string): any {
     try {
       switch (dataType) {
-        case 'string':
+        case "string":
           return String(value);
 
-        case 'number':
-          if (typeof value === 'string') {
+        case "number":
+          if (typeof value === "string") {
             // Remove common formatting (commas, currency symbols)
-            const cleaned = value.replace(/[,$]/g, '');
+            const cleaned = value.replace(/[,$]/g, "");
             const parsed = parseFloat(cleaned);
             if (isNaN(parsed)) {
               throw new Error(`Cannot convert "${value}" to number`);
@@ -411,7 +452,7 @@ export class TransformationEngine {
           }
           return Number(value);
 
-        case 'date': {
+        case "date": {
           if (value instanceof Date) {
             return value;
           }
@@ -422,13 +463,13 @@ export class TransformationEngine {
           return parsed;
         }
 
-        case 'boolean':
-          if (typeof value === 'boolean') {
+        case "boolean":
+          if (typeof value === "boolean") {
             return value;
           }
-          if (typeof value === 'string') {
+          if (typeof value === "string") {
             const lower = value.toLowerCase();
-            return ['true', 'yes', '1', 'on'].includes(lower);
+            return ["true", "yes", "1", "on"].includes(lower);
           }
           return Boolean(value);
 
@@ -447,34 +488,41 @@ export class TransformationEngine {
     value: any,
     transformation: string,
     params: any,
-    customTransformations: Record<string, any>
+    customTransformations: Record<string, any>,
   ): Promise<any> {
     switch (transformation) {
-      case 'uppercase':
+      case "uppercase":
         return String(value).toUpperCase();
 
-      case 'lowercase':
+      case "lowercase":
         return String(value).toLowerCase();
 
-      case 'trim':
+      case "trim":
         return String(value).trim();
 
-        case 'currency': {
-          const precision = params?.precision || 2;
-          return parseFloat(String(value).replace(/[^0-9.-]/g, '')).toFixed(precision);
-        }
+      case "currency": {
+        const precision = params?.precision || 2;
+        return parseFloat(String(value).replace(/[^0-9.-]/g, "")).toFixed(
+          precision,
+        );
+      }
 
-        case 'date_format': {
-          const date = value instanceof Date ? value : new Date(value);
-          const format = params?.format || 'YYYY-MM-DD';
-          return this.formatDate(date, format);
-        }
+      case "date_format": {
+        const date = value instanceof Date ? value : new Date(value);
+        const format = params?.format || "YYYY-MM-DD";
+        return this.formatDate(date, format);
+      }
 
-      case 'custom':
-        if (params?.functionName && customTransformations[params.functionName]) {
+      case "custom":
+        if (
+          params?.functionName &&
+          customTransformations[params.functionName]
+        ) {
           return customTransformations[params.functionName](value, params);
         }
-        throw new Error(`Custom transformation function not found: ${params?.functionName}`);
+        throw new Error(
+          `Custom transformation function not found: ${params?.functionName}`,
+        );
 
       default:
         return value;
@@ -484,7 +532,10 @@ export class TransformationEngine {
   /**
    * Validate transformed value against rules
    */
-  private validateTransformedValue(value: any, rule: TransformationRule): { isValid: boolean; error?: string } {
+  private validateTransformedValue(
+    value: any,
+    rule: TransformationRule,
+  ): { isValid: boolean; error?: string } {
     if (!rule.validation) {
       return { isValid: true };
     }
@@ -492,13 +543,28 @@ export class TransformationEngine {
     const validation = rule.validation;
 
     // Check string length constraints
-    if (validation.minLength !== undefined || validation.maxLength !== undefined) {
+    if (
+      validation.minLength !== undefined ||
+      validation.maxLength !== undefined
+    ) {
       const strValue = String(value);
-      if (validation.minLength !== undefined && strValue.length < validation.minLength) {
-        return { isValid: false, error: `Value too short (min: ${validation.minLength}, actual: ${strValue.length})` };
+      if (
+        validation.minLength !== undefined &&
+        strValue.length < validation.minLength
+      ) {
+        return {
+          isValid: false,
+          error: `Value too short (min: ${validation.minLength}, actual: ${strValue.length})`,
+        };
       }
-      if (validation.maxLength !== undefined && strValue.length > validation.maxLength) {
-        return { isValid: false, error: `Value too long (max: ${validation.maxLength}, actual: ${strValue.length})` };
+      if (
+        validation.maxLength !== undefined &&
+        strValue.length > validation.maxLength
+      ) {
+        return {
+          isValid: false,
+          error: `Value too long (max: ${validation.maxLength}, actual: ${strValue.length})`,
+        };
       }
     }
 
@@ -506,14 +572,20 @@ export class TransformationEngine {
     if (validation.pattern) {
       const regex = new RegExp(validation.pattern);
       if (!regex.test(String(value))) {
-        return { isValid: false, error: `Value does not match pattern: ${validation.pattern}` };
+        return {
+          isValid: false,
+          error: `Value does not match pattern: ${validation.pattern}`,
+        };
       }
     }
 
     // Check allowed values
     if (validation.allowedValues && validation.allowedValues.length > 0) {
       if (!validation.allowedValues.includes(value)) {
-        return { isValid: false, error: `Value not in allowed list: ${validation.allowedValues.join(', ')}` };
+        return {
+          isValid: false,
+          error: `Value not in allowed list: ${validation.allowedValues.join(", ")}`,
+        };
       }
     }
 
@@ -523,7 +595,10 @@ export class TransformationEngine {
   /**
    * Generate unique record ID
    */
-  private generateRecordId(recordIndex: number, sourceRecord: Record<string, any>): string {
+  private generateRecordId(
+    recordIndex: number,
+    sourceRecord: Record<string, any>,
+  ): string {
     // Create a hash from record content for uniqueness
     const recordContent = JSON.stringify(sourceRecord);
     const hash = this.simpleHash(recordContent);
@@ -536,13 +611,13 @@ export class TransformationEngine {
   private formatDate(date: Date, format: string): string {
     // Use UTC to avoid timezone issues
     const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
 
     return format
-      .replace('YYYY', String(year))
-      .replace('MM', month)
-      .replace('DD', day);
+      .replace("YYYY", String(year))
+      .replace("MM", month)
+      .replace("DD", day);
   }
 
   /**
@@ -552,7 +627,7 @@ export class TransformationEngine {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return Math.abs(hash).toString(16);
@@ -582,7 +657,7 @@ export async function transformFileData(
   rawData: RawFileData,
   mappingData: ExcelMappingData,
   correlationId: string,
-  config?: Partial<TransformationConfig>
+  config?: Partial<TransformationConfig>,
 ): Promise<TransformedData> {
   const engine = new TransformationEngine(config);
   return engine.transformData(rawData, mappingData, correlationId);
@@ -595,18 +670,25 @@ export async function transformMultipleFiles(
   rawDataFiles: RawFileData[],
   mappingData: ExcelMappingData,
   correlationId: string,
-  config?: Partial<TransformationConfig>
+  config?: Partial<TransformationConfig>,
 ): Promise<TransformedData[]> {
   const engine = new TransformationEngine(config);
   const results: TransformedData[] = [];
 
   for (const rawData of rawDataFiles) {
     try {
-      const transformed = await engine.transformData(rawData, mappingData, correlationId);
+      const transformed = await engine.transformData(
+        rawData,
+        mappingData,
+        correlationId,
+      );
       results.push(transformed);
     } catch (error) {
       // Log error but continue with other files if configured to do so
-      console.error(`Failed to transform file ${rawData.source.filename}:`, error);
+      console.error(
+        `Failed to transform file ${rawData.source.filename}:`,
+        error,
+      );
       if (config?.continueOnError === false) {
         throw error;
       }

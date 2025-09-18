@@ -12,10 +12,7 @@
  * - Store processed results in S3
  */
 
-import {
-  S3Client,
-  ListObjectsV2Command,
-} from "@aws-sdk/client-s3";
+import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { EventBridgeEvent, Context } from "aws-lambda";
 import { createCorrelatedLogger } from "../utils/logger";
 import { generateCorrelationId } from "../types/errors";
@@ -71,7 +68,7 @@ interface OrganizedFiles {
 
 /**
  * FileProcessor handles batch processing of accumulated files from S3.
- * 
+ *
  * This class encapsulates the core file processing logic:
  * - Queries S3 for files from the last 24 hours
  * - Organizes files by property and date
@@ -89,7 +86,7 @@ class FileProcessor {
       region: environmentConfig.awsRegion,
     });
     this.parameterStore = new ParameterStoreConfig();
-    
+
     // Get bucket names from environment variables (set by CDK)
     this.incomingBucket = process.env.INCOMING_FILES_BUCKET!;
     this.processedBucket = process.env.PROCESSED_FILES_BUCKET!;
@@ -101,7 +98,7 @@ class FileProcessor {
    */
   async processFiles(
     processingType: "daily-batch" | "weekly-report",
-    correlationId: string
+    correlationId: string,
   ): Promise<FileProcessingResult> {
     const startTime = Date.now();
     const logger = createCorrelatedLogger(correlationId, {
@@ -117,7 +114,7 @@ class FileProcessor {
     try {
       // Step 1: Query S3 for files from the last 24 hours
       const files = await this.getFilesFromLast24Hours(correlationId);
-      
+
       logger.info("Files retrieved from S3", {
         fileCount: files.length,
         operation: "files_retrieved",
@@ -125,7 +122,7 @@ class FileProcessor {
 
       // Step 2: Organize files by property and date
       const organizedFiles = this.organizeFilesByPropertyAndDate(files);
-      
+
       const propertiesProcessed = Object.keys(organizedFiles);
       logger.info("Files organized by property", {
         propertiesCount: propertiesProcessed.length,
@@ -138,7 +135,7 @@ class FileProcessor {
       // TODO: Step 5: Generate consolidated reports (Phase 3D)
 
       const processingTimeMs = Date.now() - startTime;
-      
+
       return {
         statusCode: 200,
         message: `File processing completed for ${processingType}`,
@@ -150,13 +147,12 @@ class FileProcessor {
           processingTimeMs,
         },
       };
-
     } catch (error) {
       logger.error("File processing failed", error as Error, {
         operation: "process_files_error",
         processingTimeMs: Date.now() - startTime,
       });
-      
+
       return {
         statusCode: 500,
         message: `File processing failed: ${(error as Error).message}`,
@@ -174,7 +170,9 @@ class FileProcessor {
   /**
    * Query S3 for files from the last 24 hours in the daily-files prefix
    */
-  private async getFilesFromLast24Hours(correlationId: string): Promise<S3FileInfo[]> {
+  private async getFilesFromLast24Hours(
+    correlationId: string,
+  ): Promise<S3FileInfo[]> {
     const logger = createCorrelatedLogger(correlationId, {
       operation: "get_files_24h",
     });
@@ -196,11 +194,11 @@ class FileProcessor {
       });
 
       const response = await retryS3Operation(
-        () => this.s3Client.send(command), 
+        () => this.s3Client.send(command),
         correlationId,
-        "list_daily_files"
+        "list_daily_files",
       );
-      
+
       if (!response.Contents) {
         logger.info("No files found in S3", {
           operation: "s3_query_empty",
@@ -214,7 +212,11 @@ class FileProcessor {
 
         // Only include files modified in the last 24 hours
         if (object.LastModified >= cutoffTime) {
-          const fileInfo = this.parseS3FileKey(object.Key, object.LastModified, object.Size);
+          const fileInfo = this.parseS3FileKey(
+            object.Key,
+            object.LastModified,
+            object.Size,
+          );
           if (fileInfo) {
             files.push(fileInfo);
           }
@@ -228,7 +230,6 @@ class FileProcessor {
       });
 
       return files;
-
     } catch (error) {
       logger.error("Failed to query S3 for files", error as Error, {
         bucket: this.incomingBucket,
@@ -242,17 +243,21 @@ class FileProcessor {
    * Parse S3 file key to extract property ID, date, and filename
    * Expected format: daily-files/{propertyId}/{date}/{filename}
    */
-  private parseS3FileKey(key: string, lastModified: Date, size: number): S3FileInfo | null {
+  private parseS3FileKey(
+    key: string,
+    lastModified: Date,
+    size: number,
+  ): S3FileInfo | null {
     // Expected format: daily-files/{propertyId}/{date}/{filename}
-    const parts = key.split('/');
-    
-    if (parts.length < 4 || parts[0] !== 'daily-files') {
+    const parts = key.split("/");
+
+    if (parts.length < 4 || parts[0] !== "daily-files") {
       return null; // Invalid format
     }
 
     const propertyId = parts[1];
     const date = parts[2];
-    const filename = parts.slice(3).join('/'); // Handle filenames with slashes
+    const filename = parts.slice(3).join("/"); // Handle filenames with slashes
 
     return {
       key,
@@ -274,11 +279,11 @@ class FileProcessor {
       if (!organized[file.propertyId]) {
         organized[file.propertyId] = {};
       }
-      
+
       if (!organized[file.propertyId][file.date]) {
         organized[file.propertyId][file.date] = [];
       }
-      
+
       organized[file.propertyId][file.date].push(file);
     }
 
@@ -338,7 +343,6 @@ export const handler = async (
     });
 
     return result;
-
   } catch (error) {
     logger.error("File processing handler failed", error as Error, {
       operation: "handler_error",
