@@ -7,8 +7,10 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
+    "test:no-coverage": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "test:integration:local": "SKIP_INTEGRATION_TESTS=false vitest run --config vitest.integration.config.ts",
@@ -45,7 +47,8 @@
     "@aws-sdk/client-sqs": "^3.873.0",
     "@aws-sdk/client-ssm": "^3.873.0",
     "@types/aws-lambda": "^8.10.152",
-    "mailparser": "^3.6.5"
+    "mailparser": "^3.6.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@commitlint/config-conventional": "^19.8.1",

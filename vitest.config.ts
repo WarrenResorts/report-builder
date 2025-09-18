@@ -26,7 +26,6 @@ export default defineConfig({
         '.husky/',
         'tests/**',  // Exclude all test files and helpers
         'src/types/**',  // Exclude type definitions
-        'src/lambda/file-processor.ts',  // Exclude placeholder file
       ],
       thresholds: {
         lines: 85,

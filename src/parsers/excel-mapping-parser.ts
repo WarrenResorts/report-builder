@@ -1,0 +1,569 @@
+/**
+ * @fileoverview Excel Mapping File Parser
+ * 
+ * Parses Excel mapping files to extract data transformation rules.
+ * Supports flexible mapping structures and validation of transformation rules.
+ */
+
+import * as XLSX from 'xlsx';
+import { BaseFileParser } from './base/parser-interface';
+import { 
+  ParseResult, 
+  ParsedData,
+  ParserConfig, 
+  ParserErrorCode,
+  ExcelMappingParserOptions 
+} from './base/parser-types';
+
+/**
+ * Represents a single transformation rule from the mapping file
+ */
+export interface TransformationRule {
+  /** Source field identifier */
+  sourceField: string;
+  /** Target field name in output */
+  targetField: string;
+  /** Data type of the field */
+  dataType: 'string' | 'number' | 'date' | 'boolean';
+  /** Whether this field is required */
+  required: boolean;
+  /** Default value if source is empty */
+  defaultValue?: any;
+  /** Transformation function to apply */
+  transformation?: 'uppercase' | 'lowercase' | 'trim' | 'currency' | 'date_format' | 'custom';
+  /** Custom transformation parameters */
+  transformationParams?: Record<string, any>;
+  /** Validation rules */
+  validation?: {
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
+    allowedValues?: any[];
+  };
+}
+
+/**
+ * Represents mapping rules for a specific property
+ */
+export interface PropertyMapping {
+  /** Property identifier */
+  propertyId: string;
+  /** Property name */
+  propertyName: string;
+  /** File format this mapping applies to */
+  fileFormat: 'pdf' | 'csv' | 'txt' | 'all';
+  /** Transformation rules for this property */
+  rules: TransformationRule[];
+  /** Property-specific configuration */
+  config?: {
+    /** Expected file patterns */
+    filePatterns?: string[];
+    /** Property-specific validation */
+    customValidation?: Record<string, any>;
+  };
+}
+
+/**
+ * Complete mapping configuration extracted from Excel file
+ */
+export interface ExcelMappingData {
+  /** Mapping file metadata */
+  metadata: {
+    version: string;
+    createdDate: Date;
+    lastModified: Date;
+    description?: string;
+  };
+  /** Global configuration settings */
+  globalConfig: {
+    /** Default output format */
+    outputFormat: 'csv' | 'json';
+    /** Date format to use */
+    dateFormat: string;
+    /** Currency format */
+    currencyFormat?: string;
+    /** Timezone for date processing */
+    timezone?: string;
+  };
+  /** Property-specific mappings */
+  propertyMappings: PropertyMapping[];
+  /** Custom transformation functions */
+  customTransformations?: Record<string, any>;
+}
+
+/**
+ * Excel Mapping File Parser
+ * 
+ * Parses Excel files containing data transformation rules and property mappings.
+ * Supports multiple sheets and flexible mapping structures.
+ */
+export class ExcelMappingParser extends BaseFileParser {
+  public readonly fileType = 'excel-mapping' as const;
+  public readonly parserInfo = {
+    name: 'ExcelMappingParser',
+    version: '1.0.0',
+    description: 'Parser for Excel mapping files containing transformation rules',
+  };
+
+  /**
+   * Get default parser configuration
+   */
+  getDefaultConfig(): ParserConfig {
+    return {
+      timeoutMs: 30000, // Excel files can be larger
+      maxFileSizeBytes: 10 * 1024 * 1024, // 10MB limit
+      includeRawContent: false, // Excel files are binary, raw content not useful
+      parserOptions: this.getDefaultParserOptions(),
+    };
+  }
+
+  /**
+   * Get default Excel mapping parser options
+   */
+  getDefaultParserOptions(): ExcelMappingParserOptions {
+    return {
+      /** Sheet containing property mappings */
+      mappingSheetName: 'Mappings',
+      /** Sheet containing global configuration */
+      configSheetName: 'Config',
+      /** Sheet containing metadata */
+      metadataSheetName: 'Metadata',
+      /** Whether to validate all rules */
+      validateRules: true,
+      /** Whether to allow missing sheets */
+      allowMissingSheets: true,
+      /** Custom sheet names mapping */
+      customSheetNames: {},
+    };
+  }
+
+  /**
+   * Check if file can be parsed as Excel mapping file
+   */
+  canParse(filename: string, fileBuffer?: Buffer): boolean {
+    // Check by extension first
+    const extension = this.getFileExtension(filename);
+    if (['xlsx', 'xls'].includes(extension)) {
+      return true;
+    }
+
+    // If extension doesn't match, check by content if buffer provided
+    if (fileBuffer) {
+      return this.isExcelBuffer(fileBuffer);
+    }
+
+    return false;
+  }
+
+  /**
+   * Parse Excel mapping file from buffer
+   */
+  async parseFromBuffer(
+    fileBuffer: Buffer,
+    filename: string,
+    config?: Partial<ParserConfig>
+  ): Promise<ParseResult> {
+    const startTime = Date.now();
+
+    try {
+      // Merge configuration
+      const defaultConfig = this.getDefaultConfig();
+      const mergedConfig = {
+        ...defaultConfig,
+        ...config,
+        parserOptions: {
+          ...defaultConfig.parserOptions,
+          ...config?.parserOptions
+        }
+      };
+
+      // Validate file size
+      if (fileBuffer.length > mergedConfig.maxFileSizeBytes!) {
+        throw new Error(`File size ${fileBuffer.length} bytes exceeds maximum ${mergedConfig.maxFileSizeBytes} bytes`);
+      }
+
+      // Parse Excel file
+      const mappingData = await this.parseExcelMappingContent(
+        fileBuffer,
+        mergedConfig.parserOptions as ExcelMappingParserOptions,
+        mergedConfig.timeoutMs!
+      );
+
+      // Create successful result
+      return {
+        success: true,
+        data: mappingData as unknown as ParsedData,
+        metadata: this.createBaseMetadata(filename, fileBuffer, startTime),
+      };
+
+    } catch (error) {
+      const errorCode = this.determineErrorCode(error as Error);
+      return this.createErrorResult(filename, fileBuffer, startTime, error as Error, errorCode);
+    }
+  }
+
+  /**
+   * Excel mapping parser doesn't support string input
+   */
+  async parseFromString(
+    _content: string,
+    _filename: string,
+    _config?: Partial<ParserConfig>
+  ): Promise<ParseResult> {
+    throw new Error('Excel mapping parser does not support string input - use parseFromBuffer with Excel file buffer');
+  }
+
+  /**
+   * Parse Excel mapping content from buffer
+   */
+  private async parseExcelMappingContent(
+    fileBuffer: Buffer,
+    options: ExcelMappingParserOptions,
+    timeoutMs: number
+  ): Promise<ExcelMappingData> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Excel mapping parsing timed out'));
+      }, timeoutMs);
+
+      try {
+        // Parse Excel workbook
+        const workbook = XLSX.read(fileBuffer, { 
+          type: 'buffer',
+          cellDates: true,
+          cellNF: false,
+          cellText: false
+        });
+
+        // Extract data from different sheets
+        const metadata = this.extractMetadata(workbook, options);
+        const globalConfig = this.extractGlobalConfig(workbook, options);
+        const propertyMappings = this.extractPropertyMappings(workbook, options);
+        const customTransformations = this.extractCustomTransformations(workbook, options);
+
+        // Validate rules if requested
+        if (options.validateRules) {
+          this.validateMappingRules(propertyMappings);
+        }
+
+        const mappingData: ExcelMappingData = {
+          metadata,
+          globalConfig,
+          propertyMappings,
+          customTransformations,
+        };
+
+        clearTimeout(timeout);
+        resolve(mappingData);
+
+      } catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Extract metadata from Excel file
+   */
+  private extractMetadata(workbook: XLSX.WorkBook, options: ExcelMappingParserOptions) {
+    const sheetName = options.customSheetNames?.metadata || options.metadataSheetName || 'Metadata';
+    const sheet = workbook.Sheets[sheetName];
+
+    if (!sheet && !options.allowMissingSheets) {
+      throw new Error(`Required metadata sheet '${sheetName}' not found`);
+    }
+
+    // Default metadata if sheet is missing
+    if (!sheet) {
+      return {
+        version: '1.0.0',
+        createdDate: new Date(),
+        lastModified: new Date(),
+        description: 'Auto-generated metadata',
+      };
+    }
+
+    // Extract metadata from sheet (assuming key-value pairs)
+    const data = XLSX.utils.sheet_to_json(sheet, { header: ['key', 'value'] });
+    const metadataMap = new Map(data.map((row: any) => [row.key, row.value]));
+
+    return {
+      version: metadataMap.get('version') || '1.0.0',
+      createdDate: this.parseDate(metadataMap.get('createdDate')) || new Date(),
+      lastModified: this.parseDate(metadataMap.get('lastModified')) || new Date(),
+      description: metadataMap.get('description'),
+    };
+  }
+
+  /**
+   * Extract global configuration from Excel file
+   */
+  private extractGlobalConfig(workbook: XLSX.WorkBook, options: ExcelMappingParserOptions) {
+    const sheetName = options.customSheetNames?.config || options.configSheetName || 'Config';
+    const sheet = workbook.Sheets[sheetName];
+
+    if (!sheet && !options.allowMissingSheets) {
+      throw new Error(`Required config sheet '${sheetName}' not found`);
+    }
+
+    // Default config if sheet is missing
+    if (!sheet) {
+      return {
+        outputFormat: 'csv' as const,
+        dateFormat: 'YYYY-MM-DD',
+        currencyFormat: 'USD',
+        timezone: 'UTC',
+      };
+    }
+
+    // Extract config from sheet
+    const data = XLSX.utils.sheet_to_json(sheet, { header: ['key', 'value'] });
+    const configMap = new Map(data.map((row: any) => [row.key, row.value]));
+
+    return {
+      outputFormat: (configMap.get('outputFormat') || 'csv') as 'csv' | 'json',
+      dateFormat: configMap.get('dateFormat') || 'YYYY-MM-DD',
+      currencyFormat: configMap.get('currencyFormat'),
+      timezone: configMap.get('timezone'),
+    };
+  }
+
+  /**
+   * Extract property mappings from Excel file
+   */
+  private extractPropertyMappings(workbook: XLSX.WorkBook, options: ExcelMappingParserOptions): PropertyMapping[] {
+    const sheetName = options.customSheetNames?.mappings || options.mappingSheetName || 'Mappings';
+    const sheet = workbook.Sheets[sheetName];
+
+    if (!sheet) {
+      throw new Error(`Required mappings sheet '${sheetName}' not found`);
+    }
+
+    // Convert sheet to JSON with first row as headers
+    const rawData = XLSX.utils.sheet_to_json(sheet);
+
+    // Group by property
+    const propertyGroups = new Map<string, any[]>();
+    
+    rawData.forEach((row: any) => {
+      const propertyId = row.propertyId || row.PropertyID || row['Property ID'];
+      if (!propertyId) return;
+
+      if (!propertyGroups.has(propertyId)) {
+        propertyGroups.set(propertyId, []);
+      }
+      propertyGroups.get(propertyId)!.push(row);
+    });
+
+    // Convert to PropertyMapping objects
+    return Array.from(propertyGroups.entries()).map(([propertyId, rows]) => {
+      const firstRow = rows[0];
+      
+      return {
+        propertyId,
+        propertyName: firstRow.propertyName || firstRow.PropertyName || firstRow['Property Name'] || propertyId,
+        fileFormat: (firstRow.fileFormat || firstRow.FileFormat || firstRow['File Format'] || 'all') as any,
+        rules: rows.map(row => this.parseTransformationRule(row)),
+        config: {
+          filePatterns: this.parseArray(firstRow.filePatterns || firstRow.FilePatterns || firstRow['File Patterns']),
+        },
+      };
+    });
+  }
+
+  /**
+   * Extract custom transformations from Excel file
+   */
+  private extractCustomTransformations(workbook: XLSX.WorkBook, _options: ExcelMappingParserOptions) {
+    const sheetName = 'CustomTransformations';
+    const sheet = workbook.Sheets[sheetName];
+
+    if (!sheet) {
+      return {}; // Custom transformations are optional
+    }
+
+    const data = XLSX.utils.sheet_to_json(sheet);
+    const transformations: Record<string, any> = {};
+
+    data.forEach((row: any) => {
+      const name = row.name || row.Name;
+      if (name) {
+        transformations[name] = {
+          description: row.description || row.Description,
+          parameters: this.parseJSON(row.parameters || row.Parameters),
+          code: row.code || row.Code,
+        };
+      }
+    });
+
+    return transformations;
+  }
+
+  /**
+   * Parse a single transformation rule from Excel row
+   */
+  private parseTransformationRule(row: any): TransformationRule {
+    return {
+      sourceField: row.sourceField || row.SourceField || row['Source Field'] || '',
+      targetField: row.targetField || row.TargetField || row['Target Field'] || '',
+      dataType: (row.dataType || row.DataType || row['Data Type'] || 'string') as any,
+      required: this.parseBoolean(row.required || row.Required),
+      defaultValue: row.defaultValue || row.DefaultValue || row['Default Value'],
+      transformation: row.transformation || row.Transformation,
+      transformationParams: this.parseJSON(row.transformationParams || row.TransformationParams || row['Transformation Params']),
+      validation: this.parseValidation(row),
+    };
+  }
+
+  /**
+   * Parse validation rules from Excel row
+   */
+  private parseValidation(row: any) {
+    const validation: any = {};
+    
+    if (row.minLength || row.MinLength || row['Min Length']) {
+      validation.minLength = parseInt(row.minLength || row.MinLength || row['Min Length']);
+    }
+    
+    if (row.maxLength || row.MaxLength || row['Max Length']) {
+      validation.maxLength = parseInt(row.maxLength || row.MaxLength || row['Max Length']);
+    }
+    
+    if (row.pattern || row.Pattern) {
+      validation.pattern = row.pattern || row.Pattern;
+    }
+    
+    if (row.allowedValues || row.AllowedValues || row['Allowed Values']) {
+      validation.allowedValues = this.parseArray(row.allowedValues || row.AllowedValues || row['Allowed Values']);
+    }
+
+    return Object.keys(validation).length > 0 ? validation : undefined;
+  }
+
+  /**
+   * Validate mapping rules for consistency and completeness
+   */
+  private validateMappingRules(propertyMappings: PropertyMapping[]) {
+    for (const mapping of propertyMappings) {
+      // Check for required fields
+      if (!mapping.propertyId) {
+        throw new Error('Property mapping missing propertyId');
+      }
+
+      // Validate transformation rules
+      for (const rule of mapping.rules) {
+        if (!rule.sourceField) {
+          throw new Error(`Rule for property ${mapping.propertyId} missing sourceField`);
+        }
+        
+        if (!rule.targetField) {
+          throw new Error(`Rule for property ${mapping.propertyId} missing targetField`);
+        }
+
+        // Validate data types
+        const validDataTypes = ['string', 'number', 'date', 'boolean'];
+        if (!validDataTypes.includes(rule.dataType)) {
+          throw new Error(`Invalid data type '${rule.dataType}' for rule ${rule.sourceField} -> ${rule.targetField}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Check if buffer contains Excel data
+   */
+  private isExcelBuffer(buffer: Buffer): boolean {
+    // Check for Excel file signatures
+    const xlsxSignature = [0x50, 0x4B]; // PK (ZIP signature for .xlsx)
+    const xlsSignature = [0xD0, 0xCF, 0x11, 0xE0]; // OLE signature for .xls
+
+    // Check XLSX signature
+    if (buffer.length >= 2 && buffer[0] === xlsxSignature[0] && buffer[1] === xlsxSignature[1]) {
+      return true;
+    }
+
+    // Check XLS signature
+    if (buffer.length >= 4) {
+      for (let i = 0; i < xlsSignature.length; i++) {
+        if (buffer[i] !== xlsSignature[i]) {
+          break;
+        }
+        if (i === xlsSignature.length - 1) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Helper method to parse dates from various formats
+   */
+  private parseDate(value: any): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    
+    const parsed = new Date(value);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  /**
+   * Helper method to parse boolean values
+   */
+  private parseBoolean(value: any): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      return ['true', 'yes', '1', 'on'].includes(value.toLowerCase());
+    }
+    return Boolean(value);
+  }
+
+  /**
+   * Helper method to parse JSON strings
+   */
+  private parseJSON(value: any): any {
+    if (!value) return undefined;
+    if (typeof value === 'object') return value;
+    
+    try {
+      return JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Helper method to parse array strings
+   */
+  private parseArray(value: any): string[] | undefined {
+    if (!value) return undefined;
+    if (Array.isArray(value)) return value;
+    
+    if (typeof value === 'string') {
+      return value.split(',').map(item => item.trim()).filter(item => item.length > 0);
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Determine appropriate error code based on error type
+   */
+  private determineErrorCode(error: Error): string {
+    if (error.message.includes('timed out')) {
+      return ParserErrorCode.TIMEOUT;
+    }
+    if (error.message.includes('exceeds maximum')) {
+      return ParserErrorCode.FILE_TOO_LARGE;
+    }
+    if (error.message.includes('sheet') && error.message.includes('not found')) {
+      return ParserErrorCode.INVALID_FORMAT;
+    }
+    if (error.message.includes('missing')) {
+      return ParserErrorCode.INVALID_FORMAT;
+    }
+    return ParserErrorCode.PARSING_ERROR;
+  }
+}
