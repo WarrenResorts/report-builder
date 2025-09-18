@@ -406,9 +406,20 @@ export class CSVGenerator {
   private sanitizeValue(value: string): string {
     return (
       value
-        // Remove null bytes and other control characters except tabs and newlines
-        // eslint-disable-next-line no-control-regex
-        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+        // Remove non-printable characters while preserving tabs, newlines, and carriage returns
+        .split("")
+        .filter((char) => {
+          const code = char.charCodeAt(0);
+          // Keep printable ASCII (32-126), tab (9), newline (10), carriage return (13)
+          return (
+            (code >= 32 && code <= 126) ||
+            code === 9 ||
+            code === 10 ||
+            code === 13 ||
+            code > 126 // Keep Unicode characters
+          );
+        })
+        .join("")
         // Replace multiple whitespace with single space
         .replace(/\s+/g, " ")
         // Trim whitespace
