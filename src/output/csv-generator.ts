@@ -153,6 +153,7 @@ export class CSVGenerator {
         const { csvLine, sanitized, truncated } = this.generateRecordLine(
           record,
           orderedFields,
+          transformedData,
           correlationId,
         );
         csvLines.push(csvLine);
@@ -215,7 +216,7 @@ export class CSVGenerator {
     const results = new Map<string, CSVGenerationResult>();
 
     for (const transformedData of transformedDataFiles) {
-      const key = `${transformedData.propertyId}_${transformedData.processingDate}`;
+      const key = `${transformedData.propertyId}_${transformedData.metadata.transformedAt.toISOString().split('T')[0]}`;
       const result = await this.generateCSV(transformedData, correlationId);
       results.set(key, result);
     }
@@ -291,6 +292,7 @@ export class CSVGenerator {
   private generateRecordLine(
     record: TransformedRecord,
     fields: string[],
+    transformedData: TransformedData,
     correlationId: string,
   ): { csvLine: string; sanitized: number; truncated: number } {
     const values: string[] = [];
@@ -307,10 +309,10 @@ export class CSVGenerator {
             value = record.recordId;
             break;
           case "_sourceFile":
-            value = record.sourceFile;
+            value = transformedData.metadata.sourceFile;
             break;
           case "_processingDate":
-            value = record.processingDate;
+            value = this.formatDate(transformedData.metadata.transformedAt);
             break;
           case "_warnings":
             value = record.metadata.transformationWarnings.join("; ");

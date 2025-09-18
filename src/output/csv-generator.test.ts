@@ -27,13 +27,9 @@ describe("CSV Generator Unit Tests", () => {
     mockTransformedData = {
       propertyId: "PROP001",
       propertyName: "Test Property",
-      processingDate: "2023-01-15",
-      fileFormat: "csv",
       records: [
         {
           recordId: "rec-001",
-          sourceFile: "test1.csv",
-          processingDate: "2023-01-15",
           fields: {
             Name: "John Doe",
             Age: 30,
@@ -43,15 +39,12 @@ describe("CSV Generator Unit Tests", () => {
             StartDate: new Date("2023-01-01T12:00:00"), // Use noon to avoid timezone issues
           },
           metadata: {
-            originalRowIndex: 0,
+            sourceRowIndex: 0,
             transformationWarnings: [],
-            validationErrors: [],
           },
         },
         {
           recordId: "rec-002",
-          sourceFile: "test1.csv",
-          processingDate: "2023-01-15",
           fields: {
             Name: "Jane Smith",
             Age: 25,
@@ -61,24 +54,20 @@ describe("CSV Generator Unit Tests", () => {
             StartDate: new Date("2023-02-01T12:00:00"), // Use noon to avoid timezone issues
           },
           metadata: {
-            originalRowIndex: 1,
+            sourceRowIndex: 1,
             transformationWarnings: ["Age converted from string"],
-            validationErrors: [],
           },
         },
       ],
-      summary: {
-        totalRecords: 2,
-        successfulTransformations: 2,
-        failedTransformations: 0,
-        validationErrors: 0,
-        transformationWarnings: 1,
-      },
       metadata: {
-        processingStartTime: new Date("2023-01-15T10:00:00Z"),
-        processingEndTime: new Date("2023-01-15T10:01:00Z"),
-        processingTimeMs: 60000,
-        transformationEngine: "v1.0.0",
+        sourceFile: "test1.csv",
+        sourceFileType: "csv",
+        transformedAt: new Date("2023-01-15T10:00:00Z"),
+        recordCount: 2,
+        transformationTimeMs: 60000,
+        appliedRules: 5,
+        warnings: [],
+        errors: [],
       },
     };
   });
@@ -447,7 +436,10 @@ describe("CSV Generator Unit Tests", () => {
         {
           ...mockTransformedData,
           propertyId: "PROP002",
-          processingDate: "2023-01-16",
+          metadata: {
+            ...mockTransformedData.metadata,
+            transformedAt: new Date("2023-01-16T10:00:00Z"),
+          },
         },
       ];
 
