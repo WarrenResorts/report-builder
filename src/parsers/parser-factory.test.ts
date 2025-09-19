@@ -154,6 +154,71 @@ describe("ParserFactory", () => {
     });
   });
 
+  describe("isFileTypeSupported", () => {
+    it("should return true for supported file types", () => {
+      expect(ParserFactory.isFileTypeSupported("pdf")).toBe(true);
+      expect(ParserFactory.isFileTypeSupported("csv")).toBe(true);
+      expect(ParserFactory.isFileTypeSupported("txt")).toBe(true);
+      expect(ParserFactory.isFileTypeSupported("excel-mapping")).toBe(true);
+    });
+
+    it("should return false for unsupported file types", () => {
+      expect(ParserFactory.isFileTypeSupported("jpg")).toBe(false);
+      expect(ParserFactory.isFileTypeSupported("docx")).toBe(false);
+      expect(ParserFactory.isFileTypeSupported("unknown")).toBe(false);
+    });
+  });
+
+  describe("registerParser and unregisterParser", () => {
+    it("should register a new parser type", () => {
+      const mockParser = () => new TXTParser();
+      
+      // Register a custom type
+      ParserFactory.registerParser("custom" as any, mockParser);
+      
+      // Should now be supported
+      expect(ParserFactory.isFileTypeSupported("custom")).toBe(true);
+      
+      // Should be able to create parser
+      const parser = ParserFactory.createParser("custom" as any);
+      expect(parser).toBeInstanceOf(TXTParser);
+      
+      // Clean up
+      ParserFactory.unregisterParser("custom" as any);
+    });
+
+    it("should unregister a parser type", () => {
+      const mockParser = () => new TXTParser();
+      
+      // Register then unregister
+      ParserFactory.registerParser("temp" as any, mockParser);
+      expect(ParserFactory.isFileTypeSupported("temp")).toBe(true);
+      
+      ParserFactory.unregisterParser("temp" as any);
+      expect(ParserFactory.isFileTypeSupported("temp")).toBe(false);
+    });
+  });
+
+  describe("getDefaultConfig", () => {
+    it("should return default config for PDF parser", () => {
+      const config = ParserFactory.getDefaultConfig("pdf");
+      expect(config).toBeDefined();
+      expect(config.timeoutMs).toBeDefined();
+    });
+
+    it("should return default config for CSV parser", () => {
+      const config = ParserFactory.getDefaultConfig("csv");
+      expect(config).toBeDefined();
+      expect(config.timeoutMs).toBeDefined();
+    });
+
+    it("should return default config for TXT parser", () => {
+      const config = ParserFactory.getDefaultConfig("txt");
+      expect(config).toBeDefined();
+      expect(config.timeoutMs).toBeDefined();
+    });
+  });
+
   describe("convenience functions", () => {
     it("parseFile should work as standalone function", async () => {
       const buffer = Buffer.from("Simple text content");

@@ -238,48 +238,52 @@ export class ExcelMappingParser extends BaseFileParser {
     options: ExcelMappingParserOptions,
     timeoutMs: number,
   ): Promise<ExcelMappingData> {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error("Excel mapping parsing timed out"));
       }, timeoutMs);
 
-      try {
-        // Parse Excel workbook using ExcelJS
-        const workbook = new Workbook();
-        // Convert Buffer to Stream for ExcelJS
-        const stream = Readable.from(fileBuffer);
-        await workbook.xlsx.read(stream);
+      const parseExcel = async () => {
+        try {
+          // Parse Excel workbook using ExcelJS
+          const workbook = new Workbook();
+          // Convert Buffer to Stream for ExcelJS
+          const stream = Readable.from(fileBuffer);
+          await workbook.xlsx.read(stream);
 
-        // Extract data from different sheets
-        const metadata = this.extractMetadata(workbook, options);
-        const globalConfig = this.extractGlobalConfig(workbook, options);
-        const propertyMappings = this.extractPropertyMappings(
-          workbook,
-          options,
-        );
-        const customTransformations = this.extractCustomTransformations(
-          workbook,
-          options,
-        );
+          // Extract data from different sheets
+          const metadata = this.extractMetadata(workbook, options);
+          const globalConfig = this.extractGlobalConfig(workbook, options);
+          const propertyMappings = this.extractPropertyMappings(
+            workbook,
+            options,
+          );
+          const customTransformations = this.extractCustomTransformations(
+            workbook,
+            options,
+          );
 
-        // Validate rules if requested
-        if (options.validateRules) {
-          this.validateMappingRules(propertyMappings);
+          // Validate rules if requested
+          if (options.validateRules) {
+            this.validateMappingRules(propertyMappings);
+          }
+
+          const mappingData: ExcelMappingData = {
+            metadata,
+            globalConfig,
+            propertyMappings,
+            customTransformations,
+          };
+
+          clearTimeout(timeout);
+          resolve(mappingData);
+        } catch (error) {
+          clearTimeout(timeout);
+          reject(error);
         }
+      };
 
-        const mappingData: ExcelMappingData = {
-          metadata,
-          globalConfig,
-          propertyMappings,
-          customTransformations,
-        };
-
-        clearTimeout(timeout);
-        resolve(mappingData);
-      } catch (error) {
-        clearTimeout(timeout);
-        reject(error);
-      }
+      parseExcel();
     });
   }
 
@@ -456,7 +460,7 @@ export class ExcelMappingParser extends BaseFileParser {
    */
   private worksheetToJson(worksheet: Worksheet, headers?: string[]): any[] {
     const jsonData: any[] = [];
-    
+
     if (!worksheet) {
       return jsonData;
     }
@@ -493,16 +497,18 @@ export class ExcelMappingParser extends BaseFileParser {
         if (header) {
           // Get cell value, handling different types
           let value = cell.value;
-          
+
           // Handle date values
-          if (cell.type === 6 && value instanceof Date) { // Date type
+          if (cell.type === 6 && value instanceof Date) {
+            // Date type
             value = value;
-          } else if (cell.type === 1) { // Number type
+          } else if (cell.type === 1) {
+            // Number type
             value = Number(value);
           } else {
             value = cell.text || value;
           }
-          
+
           rowData[header] = value;
           hasData = true;
         }
