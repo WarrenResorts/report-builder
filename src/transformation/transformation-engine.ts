@@ -24,7 +24,7 @@ export interface RawFileData {
     parsedAt: Date;
   };
   /** Parsed content from the file */
-  content: Record<string, any>;
+  content: Record<string, FieldValue>;
   /** Metadata from the parsing process */
   metadata: {
     recordCount: number;
@@ -62,7 +62,7 @@ export interface TransformedRecord {
   /** Unique record identifier */
   recordId: string;
   /** Transformed field values */
-  fields: Record<string, any>;
+  fields: Record<string, FieldValue>;
   /** Record-specific metadata */
   metadata: {
     sourceRowIndex?: number;
@@ -85,10 +85,23 @@ export interface TransformationError {
   /** Field that caused the error */
   field?: string;
   /** Source value that failed */
-  sourceValue?: any;
+  sourceValue?: FieldValue;
   /** Record index where error occurred */
   recordIndex?: number;
 }
+
+/**
+ * Supported field value types
+ */
+export type FieldValue = string | number | Date | boolean | null;
+
+/**
+ * Custom transformation function signature
+ */
+export type CustomTransformationFunction = (
+  value: FieldValue,
+  params?: Record<string, unknown>
+) => FieldValue | Promise<FieldValue>;
 
 /**
  * Transformation configuration
@@ -101,7 +114,7 @@ export interface TransformationConfig {
   /** Whether to include debug information */
   includeDebugInfo: boolean;
   /** Custom transformation functions */
-  customTransformations?: Record<string, (value: any, params?: any) => any>;
+  customTransformations?: Record<string, CustomTransformationFunction>;
   /** Validation mode */
   validationMode: "strict" | "lenient" | "skip";
 }
@@ -378,33 +391,33 @@ export class TransformationEngine {
    * Extract value from source record using field path
    */
   private extractSourceValue(
-    sourceRecord: Record<string, any>,
+    sourceRecord: Record<string, FieldValue>,
     fieldPath: string,
-  ): any {
+  ): FieldValue {
     // Support nested field paths (e.g., "tenant.name" or "address.street")
     const pathParts = fieldPath.split(".");
-    let value: any = sourceRecord;
+    let value: FieldValue | Record<string, FieldValue> = sourceRecord;
 
     for (const part of pathParts) {
-      if (value && typeof value === "object" && part in value) {
-        value = value[part];
+      if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date) && part in value) {
+        value = (value as Record<string, FieldValue>)[part];
       } else {
-        return undefined;
+        return null;
       }
     }
 
-    return value;
+    return value as FieldValue;
   }
 
   /**
    * Apply transformation rule to a value
    */
   private async applyTransformationRule(
-    sourceValue: any,
+    sourceValue: FieldValue,
     rule: TransformationRule,
-    customTransformations: Record<string, any>,
+    customTransformations: Record<string, CustomTransformationFunction>,
     _correlationId: string,
-  ): Promise<any> {
+  ): Promise<FieldValue> {
     // Handle null/undefined values
     if (sourceValue == null) {
       if (rule.required && rule.defaultValue === undefined) {
@@ -434,7 +447,7 @@ export class TransformationEngine {
   /**
    * Convert value to specified data type
    */
-  private convertDataType(value: any, dataType: string): any {
+  private convertDataType(value: FieldValue, dataType: string): FieldValue {
     try {
       switch (dataType) {
         case "string":
@@ -456,7 +469,10 @@ export class TransformationEngine {
           if (value instanceof Date) {
             return value;
           }
-          const parsed = new Date(value);
+          if (value === null) {
+            throw new Error("Cannot convert null to date");
+          }
+          const parsed = new Date(value as string | number);
           if (isNaN(parsed.getTime())) {
             throw new Error(`Cannot convert "${value}" to date`);
           }
@@ -485,11 +501,11 @@ export class TransformationEngine {
    * Apply transformation function to a value
    */
   private async applyTransformation(
-    value: any,
+    value: FieldValue,
     transformation: string,
-    params: any,
-    customTransformations: Record<string, any>,
-  ): Promise<any> {
+    params: Record<string, unknown> | undefined,
+    customTransformations: Record<string, CustomTransformationFunction>,
+  ): Promise<FieldValue> {
     switch (transformation) {
       case "uppercase":
         return String(value).toUpperCase();
@@ -501,24 +517,28 @@ export class TransformationEngine {
         return String(value).trim();
 
       case "currency": {
-        const precision = params?.precision || 2;
+        const precision = (params?.precision as number) || 2;
         return parseFloat(String(value).replace(/[^0-9.-]/g, "")).toFixed(
           precision,
         );
       }
 
       case "date_format": {
-        const date = value instanceof Date ? value : new Date(value);
-        const format = params?.format || "YYYY-MM-DD";
+        if (value === null) {
+          throw new Error("Cannot format null date");
+        }
+        const date = value instanceof Date ? value : new Date(value as string | number);
+        const format = (params?.format as string) || "YYYY-MM-DD";
         return this.formatDate(date, format);
       }
 
       case "custom":
         if (
           params?.functionName &&
+          typeof params.functionName === 'string' &&
           customTransformations[params.functionName]
         ) {
-          return customTransformations[params.functionName](value, params);
+          return await customTransformations[params.functionName](value, params);
         }
         throw new Error(
           `Custom transformation function not found: ${params?.functionName}`,
@@ -533,7 +553,7 @@ export class TransformationEngine {
    * Validate transformed value against rules
    */
   private validateTransformedValue(
-    value: any,
+    value: FieldValue,
     rule: TransformationRule,
   ): { isValid: boolean; error?: string } {
     if (!rule.validation) {
@@ -581,7 +601,7 @@ export class TransformationEngine {
 
     // Check allowed values
     if (validation.allowedValues && validation.allowedValues.length > 0) {
-      if (!validation.allowedValues.includes(value)) {
+      if (value !== null && !validation.allowedValues.includes(value as string | number | boolean)) {
         return {
           isValid: false,
           error: `Value not in allowed list: ${validation.allowedValues.join(", ")}`,
