@@ -121,7 +121,7 @@ jobs:
         run: npm run format:check
 
       - name: Run tests with coverage
-        run: npm test -- --coverage
+        run: npm test
 
       # Coverage comment removed due to GitHub token permissions
       # The coverage results are still available in the test output above
