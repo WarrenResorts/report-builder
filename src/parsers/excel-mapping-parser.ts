@@ -29,7 +29,7 @@ export interface TransformationRule {
   /** Whether this field is required */
   required: boolean;
   /** Default value if source is empty */
-  defaultValue?: any;
+  defaultValue?: string | number | Date | boolean | null;
   /** Transformation function to apply */
   transformation?:
     | "uppercase"
@@ -39,14 +39,9 @@ export interface TransformationRule {
     | "date_format"
     | "custom";
   /** Custom transformation parameters */
-  transformationParams?: Record<string, any>;
+  transformationParams?: Record<string, unknown>;
   /** Validation rules */
-  validation?: {
-    minLength?: number;
-    maxLength?: number;
-    pattern?: string;
-    allowedValues?: any[];
-  };
+  validation?: ValidationConfig;
 }
 
 /**
@@ -68,6 +63,40 @@ export interface PropertyMapping {
     /** Property-specific validation */
     customValidation?: Record<string, any>;
   };
+}
+
+/**
+ * Raw data structure from Excel worksheet
+ */
+interface ExcelRowData {
+  [key: string]: string | number | Date | boolean | null | undefined;
+}
+
+/**
+ * Key-value pair from configuration sheets
+ */
+interface KeyValuePair {
+  key: string;
+  value: string | number | Date | boolean | null;
+}
+
+/**
+ * Validation configuration object
+ */
+interface ValidationConfig {
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  allowedValues?: (string | number | boolean)[];
+}
+
+/**
+ * Custom transformation definition
+ */
+interface CustomTransformation {
+  description?: string;
+  parameters?: Record<string, unknown>;
+  code?: string;
 }
 
 /**
@@ -95,7 +124,7 @@ export interface ExcelMappingData {
   /** Property-specific mappings */
   propertyMappings: PropertyMapping[];
   /** Custom transformation functions */
-  customTransformations?: Record<string, any>;
+  customTransformations?: Record<string, CustomTransformation>;
 }
 
 /**
@@ -316,14 +345,14 @@ export class ExcelMappingParser extends BaseFileParser {
 
     // Extract metadata from sheet (assuming key-value pairs)
     const data = this.worksheetToJson(worksheet, ["key", "value"]);
-    const metadataMap = new Map(data.map((row: any) => [row.key, row.value]));
+    const metadataMap = new Map(data.map((row) => [row.key as string, row.value]));
 
     return {
-      version: metadataMap.get("version") || "1.0.0",
+      version: String(metadataMap.get("version") || "1.0.0"),
       createdDate: this.parseDate(metadataMap.get("createdDate")) || new Date(),
       lastModified:
         this.parseDate(metadataMap.get("lastModified")) || new Date(),
-      description: metadataMap.get("description"),
+      description: metadataMap.get("description") ? String(metadataMap.get("description")) : undefined,
     };
   }
 
@@ -354,13 +383,13 @@ export class ExcelMappingParser extends BaseFileParser {
 
     // Extract config from sheet
     const data = this.worksheetToJson(worksheet, ["key", "value"]);
-    const configMap = new Map(data.map((row: any) => [row.key, row.value]));
+    const configMap = new Map(data.map((row) => [row.key as string, row.value]));
 
     return {
-      outputFormat: (configMap.get("outputFormat") || "csv") as "csv" | "json",
-      dateFormat: configMap.get("dateFormat") || "YYYY-MM-DD",
-      currencyFormat: configMap.get("currencyFormat"),
-      timezone: configMap.get("timezone"),
+      outputFormat: (String(configMap.get("outputFormat") || "csv")) as "csv" | "json",
+      dateFormat: String(configMap.get("dateFormat") || "YYYY-MM-DD"),
+      currencyFormat: configMap.get("currencyFormat") ? String(configMap.get("currencyFormat")) : undefined,
+      timezone: configMap.get("timezone") ? String(configMap.get("timezone")) : undefined,
     };
   }
 
@@ -385,10 +414,10 @@ export class ExcelMappingParser extends BaseFileParser {
     const rawData = this.worksheetToJson(worksheet);
 
     // Group by property
-    const propertyGroups = new Map<string, any[]>();
+    const propertyGroups = new Map<string, ExcelRowData[]>();
 
-    rawData.forEach((row: any) => {
-      const propertyId = row.propertyId || row.PropertyID || row["Property ID"];
+    rawData.forEach((row) => {
+      const propertyId = String(row.propertyId || row.PropertyID || row["Property ID"] || "");
       if (!propertyId) return;
 
       if (!propertyGroups.has(propertyId)) {
@@ -403,22 +432,23 @@ export class ExcelMappingParser extends BaseFileParser {
 
       return {
         propertyId,
-        propertyName:
+        propertyName: String(
           firstRow.propertyName ||
           firstRow.PropertyName ||
           firstRow["Property Name"] ||
-          propertyId,
-        fileFormat: (firstRow.fileFormat ||
+          propertyId
+        ),
+        fileFormat: (String(firstRow.fileFormat ||
           firstRow.FileFormat ||
           firstRow["File Format"] ||
-          "all") as any,
+          "all")) as "pdf" | "csv" | "txt" | "all",
         rules: rows.map((row) => this.parseTransformationRule(row)),
         config: {
           filePatterns: this.parseArray(
             firstRow.filePatterns ||
               firstRow.FilePatterns ||
               firstRow["File Patterns"],
-          ),
+          )?.map(String),
         },
       };
     });
@@ -439,15 +469,15 @@ export class ExcelMappingParser extends BaseFileParser {
     }
 
     const data = this.worksheetToJson(worksheet);
-    const transformations: Record<string, any> = {};
+    const transformations: Record<string, CustomTransformation> = {};
 
-    data.forEach((row: any) => {
-      const name = row.name || row.Name;
+    data.forEach((row) => {
+      const name = String(row.name || row.Name || "");
       if (name) {
         transformations[name] = {
-          description: row.description || row.Description,
-          parameters: this.parseJSON(row.parameters || row.Parameters),
-          code: row.code || row.Code,
+          description: row.description || row.Description ? String(row.description || row.Description) : undefined,
+          parameters: this.parseJSON(row.parameters || row.Parameters) as Record<string, unknown> | undefined,
+          code: row.code || row.Code ? String(row.code || row.Code) : undefined,
         };
       }
     });
@@ -458,8 +488,8 @@ export class ExcelMappingParser extends BaseFileParser {
   /**
    * Convert ExcelJS worksheet to JSON format (similar to XLSX.utils.sheet_to_json)
    */
-  private worksheetToJson(worksheet: Worksheet, headers?: string[]): any[] {
-    const jsonData: any[] = [];
+  private worksheetToJson(worksheet: Worksheet, headers?: string[]): ExcelRowData[] {
+    const jsonData: ExcelRowData[] = [];
 
     if (!worksheet) {
       return jsonData;
@@ -489,24 +519,25 @@ export class ExcelMappingParser extends BaseFileParser {
     // Process data rows
     for (let rowNum = dataStartRow; rowNum <= actualRange; rowNum++) {
       const row = worksheet.getRow(rowNum);
-      const rowData: any = {};
+      const rowData: ExcelRowData = {};
       let hasData = false;
 
       row.eachCell((cell, colNumber) => {
         const header = headerRow[colNumber - 1];
         if (header) {
           // Get cell value, handling different types
-          let value = cell.value;
+          let value: string | number | Date | boolean | null = null;
 
-          // Handle date values
-          if (cell.type === 6 && value instanceof Date) {
+          // Handle different cell types
+          if (cell.type === 6 && cell.value instanceof Date) {
             // Date type - keep as Date object
-            // value is already a Date, no transformation needed
-          } else if (cell.type === 1) {
+            value = cell.value;
+          } else if (cell.type === 1 && typeof cell.value === 'number') {
             // Number type
-            value = Number(value);
-          } else {
-            value = cell.text || value;
+            value = cell.value;
+          } else if (cell.value !== null && cell.value !== undefined) {
+            // Text or other types
+            value = cell.text || String(cell.value);
           }
 
           rowData[header] = value;
@@ -526,49 +557,63 @@ export class ExcelMappingParser extends BaseFileParser {
   /**
    * Parse a single transformation rule from Excel row
    */
-  private parseTransformationRule(row: any): TransformationRule {
+  private parseTransformationRule(row: ExcelRowData): TransformationRule {
     return {
-      sourceField:
-        row.sourceField || row.SourceField || row["Source Field"] || "",
-      targetField:
-        row.targetField || row.TargetField || row["Target Field"] || "",
-      dataType: (row.dataType ||
+      sourceField: String(
+        row.sourceField || row.SourceField || row["Source Field"] || ""
+      ),
+      targetField: String(
+        row.targetField || row.TargetField || row["Target Field"] || ""
+      ),
+      dataType: (String(row.dataType ||
         row.DataType ||
         row["Data Type"] ||
-        "string") as any,
+        "string")) as "string" | "number" | "date" | "boolean",
       required: this.parseBoolean(row.required || row.Required),
       defaultValue:
-        row.defaultValue || row.DefaultValue || row["Default Value"],
-      transformation: row.transformation || row.Transformation,
+        row.defaultValue || row.DefaultValue || row["Default Value"] || null,
+      transformation: this.parseTransformationType(row.transformation || row.Transformation),
       transformationParams: this.parseJSON(
         row.transformationParams ||
           row.TransformationParams ||
           row["Transformation Params"],
-      ),
+      ) as Record<string, unknown> | undefined,
       validation: this.parseValidation(row),
     };
   }
 
   /**
+   * Parse transformation type from Excel row value
+   */
+  private parseTransformationType(value: unknown): TransformationRule['transformation'] {
+    if (!value) return undefined;
+    const strValue = String(value).toLowerCase();
+    const validTypes: TransformationRule['transformation'][] = [
+      "uppercase", "lowercase", "trim", "currency", "date_format", "custom"
+    ];
+    return validTypes.find(type => type === strValue) || undefined;
+  }
+
+  /**
    * Parse validation rules from Excel row
    */
-  private parseValidation(row: any) {
-    const validation: any = {};
+  private parseValidation(row: ExcelRowData): ValidationConfig | undefined {
+    const validation: Partial<ValidationConfig> = {};
 
     if (row.minLength || row.MinLength || row["Min Length"]) {
       validation.minLength = parseInt(
-        row.minLength || row.MinLength || row["Min Length"],
+        String(row.minLength || row.MinLength || row["Min Length"]),
       );
     }
 
     if (row.maxLength || row.MaxLength || row["Max Length"]) {
       validation.maxLength = parseInt(
-        row.maxLength || row.MaxLength || row["Max Length"],
+        String(row.maxLength || row.MaxLength || row["Max Length"]),
       );
     }
 
     if (row.pattern || row.Pattern) {
-      validation.pattern = row.pattern || row.Pattern;
+      validation.pattern = String(row.pattern || row.Pattern);
     }
 
     if (row.allowedValues || row.AllowedValues || row["Allowed Values"]) {
@@ -577,7 +622,7 @@ export class ExcelMappingParser extends BaseFileParser {
       );
     }
 
-    return Object.keys(validation).length > 0 ? validation : undefined;
+    return Object.keys(validation).length > 0 ? validation as ValidationConfig : undefined;
   }
 
   /**
@@ -650,18 +695,18 @@ export class ExcelMappingParser extends BaseFileParser {
   /**
    * Helper method to parse dates from various formats
    */
-  private parseDate(value: any): Date | null {
+  private parseDate(value: unknown): Date | null {
     if (!value) return null;
     if (value instanceof Date) return value;
 
-    const parsed = new Date(value);
+    const parsed = new Date(String(value));
     return isNaN(parsed.getTime()) ? null : parsed;
   }
 
   /**
    * Helper method to parse boolean values
    */
-  private parseBoolean(value: any): boolean {
+  private parseBoolean(value: unknown): boolean {
     if (typeof value === "boolean") return value;
     if (typeof value === "string") {
       return ["true", "yes", "1", "on"].includes(value.toLowerCase());
@@ -672,12 +717,12 @@ export class ExcelMappingParser extends BaseFileParser {
   /**
    * Helper method to parse JSON strings
    */
-  private parseJSON(value: any): any {
+  private parseJSON(value: unknown): unknown {
     if (!value) return undefined;
     if (typeof value === "object") return value;
 
     try {
-      return JSON.parse(value);
+      return JSON.parse(String(value));
     } catch {
       return undefined;
     }
@@ -686,15 +731,25 @@ export class ExcelMappingParser extends BaseFileParser {
   /**
    * Helper method to parse array strings
    */
-  private parseArray(value: any): string[] | undefined {
+  private parseArray(value: unknown): (string | number | boolean)[] | undefined {
     if (!value) return undefined;
     if (Array.isArray(value)) return value;
 
     if (typeof value === "string") {
       return value
         .split(",")
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0);
+        .map((item) => {
+          const trimmed = item.trim();
+          // Skip empty strings
+          if (trimmed === "") return "";
+          // Try to convert to number or boolean if possible
+          if (trimmed === "true") return true;
+          if (trimmed === "false") return false;
+          const num = Number(trimmed);
+          if (!isNaN(num) && isFinite(num) && trimmed !== "") return num;
+          return trimmed;
+        })
+        .filter((item) => item !== "");
     }
 
     return undefined;
