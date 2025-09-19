@@ -1,6 +1,37 @@
 import { describe, it, expect } from "vitest";
 import { TXTParser } from "./txt-parser";
 
+// Type for TXT parser data structure
+interface TXTParserData {
+  text?: string;
+  lines?: string[];
+  structureType?: string;
+  keyValuePairs?: Record<string, string>;
+  structuredData?: any[];
+  patterns?: {
+    hasEmailAddresses?: boolean;
+    hasPhoneNumbers?: boolean;
+    hasUrls?: boolean;
+    hasDates?: boolean;
+  };
+  statistics?: {
+    lineCount?: number;
+    wordCount?: number;
+    characterCount?: number;
+  };
+  encoding?: {
+    detected?: string;
+    confidence?: number;
+  };
+  rawContent?: string;
+}
+
+// Type for accessing private methods in tests
+type TXTParserPrivate = TXTParser & {
+  parseTextContent: (content: string, options: any) => Promise<any>;
+  detectEncodingAndConvert: (buffer: Buffer) => { text: string; encoding: any };
+};
+
 describe("TXTParser", () => {
   let parser: TXTParser;
 
@@ -60,9 +91,9 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "test.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).text).toBe(textContent);
-      expect((result.data as any).lines).toHaveLength(3);
-      expect((result.data as any).structureType).toBe("unstructured");
+      expect((result.data as TXTParserData).text).toBe(textContent);
+      expect((result.data as TXTParserData).lines).toHaveLength(3);
+      expect((result.data as TXTParserData).structureType).toBe("unstructured");
       expect(result.metadata.recordCount).toBe(3);
     });
 
@@ -74,12 +105,12 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "config.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("key-value");
-      expect((result.data as any).keyValuePairs).toHaveProperty(
+      expect((result.data as TXTParserData).structureType).toBe("key-value");
+      expect((result.data as TXTParserData).keyValuePairs).toHaveProperty(
         "Name",
         "John Doe",
       );
-      expect((result.data as any).keyValuePairs).toHaveProperty("Age", "30");
+      expect((result.data as TXTParserData).keyValuePairs).toHaveProperty("Age", "30");
     });
 
     it("should detect tabular structure", async () => {
@@ -90,8 +121,8 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "data.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("tabular");
-      expect((result.data as any).structuredData).toHaveLength(4);
+      expect((result.data as TXTParserData).structureType).toBe("tabular");
+      expect((result.data as TXTParserData).structuredData).toHaveLength(4);
     });
 
     it("should detect pipe-delimited structure", async () => {
@@ -101,7 +132,7 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "data.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("delimited");
+      expect((result.data as TXTParserData).structureType).toBe("delimited");
     });
 
     it("should detect log structure", async () => {
@@ -112,7 +143,7 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "app.log");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("log");
+      expect((result.data as TXTParserData).structureType).toBe("log");
     });
 
     it("should detect list structure", async () => {
@@ -123,7 +154,7 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "list.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("list");
+      expect((result.data as TXTParserData).structureType).toBe("list");
     });
 
     it("should detect report structure", async () => {
@@ -134,7 +165,7 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "report.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("report");
+      expect((result.data as TXTParserData).structureType).toBe("report");
     });
 
     it("should handle UTF-8 BOM", async () => {
@@ -145,7 +176,7 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "bom.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).text).toBe(textContent);
+      expect((result.data as TXTParserData).text).toBe(textContent);
       expect(result.metadata.warnings).toContain(
         "UTF-8 BOM detected and removed",
       );
@@ -160,7 +191,7 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "utf16.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).encoding.detected).toBe("utf16le");
+      expect((result.data as TXTParserData).encoding.detected).toBe("utf16le");
     });
 
     it("should handle UTF-16 BE BOM", async () => {
@@ -172,7 +203,7 @@ describe("TXTParser", () => {
       const result = await parser.parseFromBuffer(buffer, "utf16be.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).encoding.detected).toBe("utf16be");
+      expect((result.data as TXTParserData).encoding.detected).toBe("utf16be");
     });
 
     it("should warn about high non-ASCII character ratio", async () => {
@@ -215,7 +246,7 @@ ID: 12345`;
       const result = await parser.parseFromBuffer(buffer, "contact.txt");
 
       expect(result.success).toBe(true);
-      const patterns = (result.data as any).patterns;
+      const patterns = (result.data as TXTParserData).patterns;
       expect(patterns.hasEmailAddresses).toBe(true);
       expect(patterns.hasPhoneNumbers).toBe(true);
       expect(patterns.hasAddresses).toBe(true);
@@ -233,7 +264,7 @@ ID: 12345`;
       const result = await parser.parseFromBuffer(buffer, "large.txt", config);
 
       expect(result.success).toBe(true);
-      expect((result.data as any).lines).toHaveLength(50000);
+      expect((result.data as TXTParserData).lines).toHaveLength(50000);
       expect(
         result.metadata.warnings.some((w) =>
           w.includes("only processing first"),
@@ -249,7 +280,7 @@ ID: 12345`;
       const result = await parser.parseFromBuffer(buffer, "stats.txt");
 
       expect(result.success).toBe(true);
-      const stats = (result.data as any).statistics;
+      const stats = (result.data as TXTParserData).statistics;
       expect(stats.lineCount).toBe(5);
       expect(stats.emptyLines).toBe(1);
       expect(stats.longestLine).toBe(36); // Length of longest line
@@ -290,7 +321,7 @@ ID: 12345`;
       const result = await parser.parseFromBuffer(buffer, "test.txt", config);
 
       expect(result.success).toBe(true);
-      expect((result.data as any).rawContent).toBe(textContent);
+      expect((result.data as TXTParserData).rawContent).toBe(textContent);
     });
 
     it("should not include raw content by default", async () => {
@@ -300,7 +331,7 @@ ID: 12345`;
       const result = await parser.parseFromBuffer(buffer, "test.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).rawContent).toBeUndefined();
+      expect((result.data as TXTParserData).rawContent).toBeUndefined();
     });
 
     it("should disable structure detection when configured", async () => {
@@ -315,8 +346,8 @@ ID: 12345`;
       );
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("unstructured");
-      expect((result.data as any).keyValuePairs).toBeUndefined();
+      expect((result.data as TXTParserData).structureType).toBe("unstructured");
+      expect((result.data as TXTParserData).keyValuePairs).toBeUndefined();
     });
 
     it("should handle file size limits", async () => {
@@ -333,8 +364,8 @@ ID: 12345`;
       const textContent = "Test content";
       const buffer = Buffer.from(textContent);
       // Simulate timeout by mocking the parsing method to take longer
-      const originalParse = (parser as any).parseTextContent;
-      (parser as any).parseTextContent = () =>
+      const originalParse = (parser as TXTParserPrivate).parseTextContent;
+      (parser as TXTParserPrivate).parseTextContent = () =>
         new Promise((resolve) =>
           setTimeout(
             () =>
@@ -367,7 +398,7 @@ ID: 12345`;
       const config = { timeoutMs: 100 }; // 100ms timeout
       const result = await parser.parseFromBuffer(buffer, "test.txt", config);
 
-      (parser as any).parseTextContent = originalParse;
+      (parser as TXTParserPrivate).parseTextContent = originalParse;
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe("TIMEOUT");
@@ -381,7 +412,7 @@ ID: 12345`;
 
       // Should still succeed but detect UTF-16
       expect(result.success).toBe(true);
-      expect((result.data as any).encoding.detected).toBe("utf16le");
+      expect((result.data as TXTParserData).encoding.detected).toBe("utf16le");
     });
   });
 
@@ -392,7 +423,7 @@ ID: 12345`;
       const result = await parser.parseFromString(textContent, "test.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).text).toBe(textContent);
+      expect((result.data as TXTParserData).text).toBe(textContent);
     });
   });
 
@@ -422,15 +453,15 @@ ID: 12345`;
 
     it("should determine correct error codes", async () => {
       // Mock the parsing to throw a decode error
-      const originalDetect = (parser as any).detectEncodingAndConvert;
-      (parser as any).detectEncodingAndConvert = () => {
+      const originalDetect = (parser as TXTParserPrivate).detectEncodingAndConvert;
+      (parser as TXTParserPrivate).detectEncodingAndConvert = () => {
         throw new Error("Failed to decode text file: invalid encoding");
       };
 
       const buffer = Buffer.from("test");
       const result = await parser.parseFromBuffer(buffer, "test.txt");
 
-      (parser as any).detectEncodingAndConvert = originalDetect;
+      (parser as TXTParserPrivate).detectEncodingAndConvert = originalDetect;
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe("INVALID_FORMAT");
@@ -444,8 +475,8 @@ ID: 12345`;
       const result = await parser.parseFromBuffer(buffer, "empty.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("unstructured");
-      expect((result.data as any).statistics.lineCount).toBe(1); // Empty string creates one line
+      expect((result.data as TXTParserData).structureType).toBe("unstructured");
+      expect((result.data as TXTParserData).statistics.lineCount).toBe(1); // Empty string creates one line
     });
 
     it("should handle files with only whitespace", async () => {
@@ -454,7 +485,7 @@ ID: 12345`;
       const result = await parser.parseFromBuffer(buffer, "whitespace.txt");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).structureType).toBe("unstructured");
+      expect((result.data as TXTParserData).structureType).toBe("unstructured");
     });
 
     it("should handle mixed structure types", async () => {
@@ -465,7 +496,7 @@ ID: 12345`;
 
       expect(result.success).toBe(true);
       // Should detect key-value structure (most prominent)
-      expect((result.data as any).structureType).toBe("key-value");
+      expect((result.data as TXTParserData).structureType).toBe("key-value");
     });
   });
 });
