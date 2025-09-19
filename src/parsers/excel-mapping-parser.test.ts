@@ -522,19 +522,17 @@ function createMockWorkbook(): any {
 }
 
 function createMinimalMockWorkbook(): any {
-  const mockSheetToJson = vi
-    .fn()
-    .mockReturnValue([
-      {
-        propertyId: "PROP001",
-        propertyName: "Test Property",
-        fileFormat: "all",
-        sourceField: "test_field",
-        targetField: "TestField",
-        dataType: "string",
-        required: "true",
-      },
-    ]);
+  const mockSheetToJson = vi.fn().mockReturnValue([
+    {
+      propertyId: "PROP001",
+      propertyName: "Test Property",
+      fileFormat: "all",
+      sourceField: "test_field",
+      targetField: "TestField",
+      dataType: "string",
+      required: "true",
+    },
+  ]);
   mockXLSX.utils.sheet_to_json = mockSheetToJson;
 
   return {

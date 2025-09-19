@@ -216,7 +216,7 @@ export class CSVGenerator {
     const results = new Map<string, CSVGenerationResult>();
 
     for (const transformedData of transformedDataFiles) {
-      const key = `${transformedData.propertyId}_${transformedData.metadata.transformedAt.toISOString().split('T')[0]}`;
+      const key = `${transformedData.propertyId}_${transformedData.metadata.transformedAt.toISOString().split("T")[0]}`;
       const result = await this.generateCSV(transformedData, correlationId);
       results.set(key, result);
     }
