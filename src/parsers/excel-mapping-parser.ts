@@ -500,8 +500,8 @@ export class ExcelMappingParser extends BaseFileParser {
 
           // Handle date values
           if (cell.type === 6 && value instanceof Date) {
-            // Date type
-            value = value;
+            // Date type - keep as Date object
+            // value is already a Date, no transformation needed
           } else if (cell.type === 1) {
             // Number type
             value = Number(value);
