@@ -9,6 +9,10 @@ import {
 import { PDFParser } from "./pdf-parser";
 import { CSVParser } from "./csv-parser";
 import { TXTParser } from "./txt-parser";
+import type { SupportedFileType } from "./base/parser-types";
+
+// Type for testing unsupported file types
+type TestFileType = SupportedFileType | "unsupported" | "custom" | "temp";
 
 describe("ParserFactory", () => {
   describe("getSupportedFileTypes", () => {
@@ -44,7 +48,7 @@ describe("ParserFactory", () => {
 
     it("should throw error for unsupported file type", () => {
       expect(() => {
-        ParserFactory.createParser("unsupported" as any);
+        ParserFactory.createParser("unsupported" as TestFileType);
       }).toThrow("Unsupported file type: unsupported");
     });
   });
@@ -174,27 +178,27 @@ describe("ParserFactory", () => {
       const mockParser = () => new TXTParser();
       
       // Register a custom type
-      ParserFactory.registerParser("custom" as any, mockParser);
+      ParserFactory.registerParser("custom" as TestFileType, mockParser);
       
       // Should now be supported
       expect(ParserFactory.isFileTypeSupported("custom")).toBe(true);
       
       // Should be able to create parser
-      const parser = ParserFactory.createParser("custom" as any);
+      const parser = ParserFactory.createParser("custom" as TestFileType);
       expect(parser).toBeInstanceOf(TXTParser);
       
       // Clean up
-      ParserFactory.unregisterParser("custom" as any);
+      ParserFactory.unregisterParser("custom" as TestFileType);
     });
 
     it("should unregister a parser type", () => {
       const mockParser = () => new TXTParser();
       
       // Register then unregister
-      ParserFactory.registerParser("temp" as any, mockParser);
+      ParserFactory.registerParser("temp" as TestFileType, mockParser);
       expect(ParserFactory.isFileTypeSupported("temp")).toBe(true);
       
-      ParserFactory.unregisterParser("temp" as any);
+      ParserFactory.unregisterParser("temp" as TestFileType);
       expect(ParserFactory.isFileTypeSupported("temp")).toBe(false);
     });
   });
