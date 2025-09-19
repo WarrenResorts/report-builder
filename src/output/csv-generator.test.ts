@@ -404,7 +404,7 @@ describe("CSV Generator Unit Tests", () => {
             processingDate: "2023-01-15",
             fields: {
               // Create a circular reference that will fail JSON.stringify
-              CircularRef: {} as any,
+              CircularRef: {} as Record<string, unknown>,
             },
             metadata: {
               originalRowIndex: 0,

@@ -41,7 +41,7 @@ interface MockWorkbook extends Partial<Workbook> {
   getWorksheet: (name: string) => Worksheet | undefined;
 }
 
-const MockWorkbook = Workbook as any;
+const MockWorkbook = Workbook as unknown as new () => MockWorkbookInstance;
 
 describe("ExcelMappingParser", () => {
   let parser: ExcelMappingParser;

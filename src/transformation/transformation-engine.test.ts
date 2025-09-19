@@ -10,6 +10,11 @@ import {
 import * as TransformationModule from "./index";
 import type { ExcelMappingData } from "../parsers/excel-mapping-parser";
 
+// Types for testing invalid/unknown values
+type TestFileType = "pdf" | "csv" | "txt" | "unknown";
+type TestDataType = "string" | "number" | "date" | "boolean" | "unknown";
+type TestTransformation = "uppercase" | "lowercase" | "trim" | "currency" | "date_format" | "custom" | "unknown_transformation";
+
 // Mock the logger
 vi.mock("../utils/logger", () => ({
   Logger: vi.fn().mockImplementation(() => ({
@@ -721,10 +726,10 @@ describe("TransformationEngine", () => {
 
     it("should handle unknown file types", async () => {
       const unknownTypeData = { ...mockRawData };
-      unknownTypeData.source.fileType = "unknown" as any;
+      unknownTypeData.source.fileType = "unknown" as TestFileType;
 
       // Update mapping to match unknown type
-      mockMappingData.propertyMappings[0].fileFormat = "unknown" as any;
+      mockMappingData.propertyMappings[0].fileFormat = "unknown" as TestFileType;
       mockMappingData.propertyMappings[0].rules = [
         {
           sourceField: "someField",
@@ -1062,7 +1067,7 @@ describe("TransformationEngine", () => {
         {
           sourceField: "custom_field",
           targetField: "CustomField",
-          dataType: "unknown" as any, // Unknown type
+          dataType: "unknown" as TestDataType, // Unknown type
           required: true,
         },
       ];
@@ -1092,7 +1097,7 @@ describe("TransformationEngine", () => {
           targetField: "Name",
           dataType: "string",
           required: true,
-          transformation: "unknown_transformation" as any, // Unknown transformation
+          transformation: "unknown_transformation" as TestTransformation, // Unknown transformation
         },
       ];
 
