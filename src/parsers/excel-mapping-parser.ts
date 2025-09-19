@@ -5,7 +5,8 @@
  * Supports flexible mapping structures and validation of transformation rules.
  */
 
-import * as XLSX from "xlsx";
+import { Workbook, Worksheet } from "exceljs";
+import { Readable } from "stream";
 import { BaseFileParser } from "./base/parser-interface";
 import {
   ParseResult,
@@ -237,19 +238,17 @@ export class ExcelMappingParser extends BaseFileParser {
     options: ExcelMappingParserOptions,
     timeoutMs: number,
   ): Promise<ExcelMappingData> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error("Excel mapping parsing timed out"));
       }, timeoutMs);
 
       try {
-        // Parse Excel workbook
-        const workbook = XLSX.read(fileBuffer, {
-          type: "buffer",
-          cellDates: true,
-          cellNF: false,
-          cellText: false,
-        });
+        // Parse Excel workbook using ExcelJS
+        const workbook = new Workbook();
+        // Convert Buffer to Stream for ExcelJS
+        const stream = Readable.from(fileBuffer);
+        await workbook.xlsx.read(stream);
 
         // Extract data from different sheets
         const metadata = this.extractMetadata(workbook, options);
@@ -288,21 +287,21 @@ export class ExcelMappingParser extends BaseFileParser {
    * Extract metadata from Excel file
    */
   private extractMetadata(
-    workbook: XLSX.WorkBook,
+    workbook: Workbook,
     options: ExcelMappingParserOptions,
   ) {
     const sheetName =
       options.customSheetNames?.metadata ||
       options.metadataSheetName ||
       "Metadata";
-    const sheet = workbook.Sheets[sheetName];
+    const worksheet = workbook.getWorksheet(sheetName);
 
-    if (!sheet && !options.allowMissingSheets) {
+    if (!worksheet && !options.allowMissingSheets) {
       throw new Error(`Required metadata sheet '${sheetName}' not found`);
     }
 
     // Default metadata if sheet is missing
-    if (!sheet) {
+    if (!worksheet) {
       return {
         version: "1.0.0",
         createdDate: new Date(),
@@ -312,7 +311,7 @@ export class ExcelMappingParser extends BaseFileParser {
     }
 
     // Extract metadata from sheet (assuming key-value pairs)
-    const data = XLSX.utils.sheet_to_json(sheet, { header: ["key", "value"] });
+    const data = this.worksheetToJson(worksheet, ["key", "value"]);
     const metadataMap = new Map(data.map((row: any) => [row.key, row.value]));
 
     return {
@@ -328,19 +327,19 @@ export class ExcelMappingParser extends BaseFileParser {
    * Extract global configuration from Excel file
    */
   private extractGlobalConfig(
-    workbook: XLSX.WorkBook,
+    workbook: Workbook,
     options: ExcelMappingParserOptions,
   ) {
     const sheetName =
       options.customSheetNames?.config || options.configSheetName || "Config";
-    const sheet = workbook.Sheets[sheetName];
+    const worksheet = workbook.getWorksheet(sheetName);
 
-    if (!sheet && !options.allowMissingSheets) {
+    if (!worksheet && !options.allowMissingSheets) {
       throw new Error(`Required config sheet '${sheetName}' not found`);
     }
 
     // Default config if sheet is missing
-    if (!sheet) {
+    if (!worksheet) {
       return {
         outputFormat: "csv" as const,
         dateFormat: "YYYY-MM-DD",
@@ -350,7 +349,7 @@ export class ExcelMappingParser extends BaseFileParser {
     }
 
     // Extract config from sheet
-    const data = XLSX.utils.sheet_to_json(sheet, { header: ["key", "value"] });
+    const data = this.worksheetToJson(worksheet, ["key", "value"]);
     const configMap = new Map(data.map((row: any) => [row.key, row.value]));
 
     return {
@@ -365,21 +364,21 @@ export class ExcelMappingParser extends BaseFileParser {
    * Extract property mappings from Excel file
    */
   private extractPropertyMappings(
-    workbook: XLSX.WorkBook,
+    workbook: Workbook,
     options: ExcelMappingParserOptions,
   ): PropertyMapping[] {
     const sheetName =
       options.customSheetNames?.mappings ||
       options.mappingSheetName ||
       "Mappings";
-    const sheet = workbook.Sheets[sheetName];
+    const worksheet = workbook.getWorksheet(sheetName);
 
-    if (!sheet) {
+    if (!worksheet) {
       throw new Error(`Required mappings sheet '${sheetName}' not found`);
     }
 
     // Convert sheet to JSON with first row as headers
-    const rawData = XLSX.utils.sheet_to_json(sheet);
+    const rawData = this.worksheetToJson(worksheet);
 
     // Group by property
     const propertyGroups = new Map<string, any[]>();
@@ -425,17 +424,17 @@ export class ExcelMappingParser extends BaseFileParser {
    * Extract custom transformations from Excel file
    */
   private extractCustomTransformations(
-    workbook: XLSX.WorkBook,
+    workbook: Workbook,
     _options: ExcelMappingParserOptions,
   ) {
     const sheetName = "CustomTransformations";
-    const sheet = workbook.Sheets[sheetName];
+    const worksheet = workbook.getWorksheet(sheetName);
 
-    if (!sheet) {
+    if (!worksheet) {
       return {}; // Custom transformations are optional
     }
 
-    const data = XLSX.utils.sheet_to_json(sheet);
+    const data = this.worksheetToJson(worksheet);
     const transformations: Record<string, any> = {};
 
     data.forEach((row: any) => {
@@ -450,6 +449,72 @@ export class ExcelMappingParser extends BaseFileParser {
     });
 
     return transformations;
+  }
+
+  /**
+   * Convert ExcelJS worksheet to JSON format (similar to XLSX.utils.sheet_to_json)
+   */
+  private worksheetToJson(worksheet: Worksheet, headers?: string[]): any[] {
+    const jsonData: any[] = [];
+    
+    if (!worksheet) {
+      return jsonData;
+    }
+
+    // Get the actual range of the worksheet
+    const actualRange = worksheet.actualRowCount;
+    if (actualRange === 0) {
+      return jsonData;
+    }
+
+    let headerRow: string[] = [];
+    let dataStartRow = 2; // Default to row 2 (assuming row 1 has headers)
+
+    if (headers) {
+      // Use provided headers
+      headerRow = headers;
+      dataStartRow = 1; // Start from row 1 if headers are provided
+    } else {
+      // Use first row as headers
+      const firstRow = worksheet.getRow(1);
+      firstRow.eachCell((cell, colNumber) => {
+        headerRow[colNumber - 1] = cell.text || `col_${colNumber}`;
+      });
+    }
+
+    // Process data rows
+    for (let rowNum = dataStartRow; rowNum <= actualRange; rowNum++) {
+      const row = worksheet.getRow(rowNum);
+      const rowData: any = {};
+      let hasData = false;
+
+      row.eachCell((cell, colNumber) => {
+        const header = headerRow[colNumber - 1];
+        if (header) {
+          // Get cell value, handling different types
+          let value = cell.value;
+          
+          // Handle date values
+          if (cell.type === 6 && value instanceof Date) { // Date type
+            value = value;
+          } else if (cell.type === 1) { // Number type
+            value = Number(value);
+          } else {
+            value = cell.text || value;
+          }
+          
+          rowData[header] = value;
+          hasData = true;
+        }
+      });
+
+      // Only add rows that have some data
+      if (hasData) {
+        jsonData.push(rowData);
+      }
+    }
+
+    return jsonData;
   }
 
   /**

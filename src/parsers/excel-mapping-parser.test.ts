@@ -2,23 +2,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ExcelMappingParser } from "./excel-mapping-parser";
 import type { ExcelMappingData } from "./excel-mapping-parser";
 
-// Mock XLSX module
-vi.mock("xlsx", () => ({
-  read: vi.fn(),
-  utils: {
-    book_new: vi.fn(),
-    aoa_to_sheet: vi.fn(),
-    book_append_sheet: vi.fn(),
-    sheet_to_json: vi.fn(),
-  },
-  write: vi.fn(),
+// Mock ExcelJS module
+vi.mock("exceljs", () => ({
+  Workbook: vi.fn(() => ({
+    xlsx: {
+      read: vi.fn(),
+      load: vi.fn(),
+    },
+    getWorksheet: vi.fn(),
+  })),
 }));
 
-import * as XLSX from "xlsx";
-const mockXLSX = XLSX as any;
+import { Workbook } from "exceljs";
+const MockWorkbook = Workbook as any;
 
 describe("ExcelMappingParser", () => {
   let parser: ExcelMappingParser;
+  let mockWorkbookInstance: any;
 
   beforeEach(() => {
     parser = new ExcelMappingParser();
@@ -26,9 +26,17 @@ describe("ExcelMappingParser", () => {
     // Reset all mocks
     vi.clearAllMocks();
 
-    // Ensure mockXLSX.read is a proper mock function
-    mockXLSX.read = vi.fn();
-    mockXLSX.utils.sheet_to_json = vi.fn();
+    // Create a mock workbook instance
+    mockWorkbookInstance = {
+      xlsx: {
+        read: vi.fn(),
+        load: vi.fn(),
+      },
+      getWorksheet: vi.fn(),
+    };
+
+    // Make the Workbook constructor return our mock instance
+    MockWorkbook.mockImplementation(() => mockWorkbookInstance);
   });
 
   afterEach(() => {
@@ -64,8 +72,8 @@ describe("ExcelMappingParser", () => {
 
   describe("parseFromBuffer", () => {
     it("should parse a complete Excel mapping file successfully", async () => {
-      const mockWorkbook = createMockWorkbook();
-      mockXLSX.read.mockReturnValue(mockWorkbook);
+      const mockWorksheets = createMockWorksheets();
+      setupMockWorkbook(mockWorksheets);
 
       const excelBuffer = createMockExcelBuffer();
       const result = await parser.parseFromBuffer(excelBuffer, "mapping.xlsx");
@@ -603,4 +611,107 @@ function createMockWorkbookWithCustomTransformations(): any {
       },
     },
   };
+}
+
+// New ExcelJS helper functions
+function createMockWorksheets(): any {
+  return {
+    Metadata: createMockMetadataWorksheet(),
+    Config: createMockConfigWorksheet(),
+    Mappings: createMockMappingsWorksheet(),
+  };
+}
+
+function createMockMetadataWorksheet(): any {
+  return {
+    actualRowCount: 5,
+    getRow: vi.fn((rowNum: number) => {
+      const mockRows = [
+        null, // Row 0 (unused)
+        { eachCell: vi.fn((callback) => {
+          callback({ text: "version" }, 1);
+          callback({ text: "2.1.0" }, 2);
+        })},
+        { eachCell: vi.fn((callback) => {
+          callback({ text: "createdDate" }, 1);
+          callback({ text: "2023-12-01" }, 2);
+        })},
+        { eachCell: vi.fn((callback) => {
+          callback({ text: "lastModified" }, 1);
+          callback({ text: "2023-12-15" }, 2);
+        })},
+        { eachCell: vi.fn((callback) => {
+          callback({ text: "description" }, 1);
+          callback({ text: "Property mapping rules" }, 2);
+        })},
+      ];
+      return mockRows[rowNum] || { eachCell: vi.fn() };
+    }),
+  };
+}
+
+function createMockConfigWorksheet(): any {
+  return {
+    actualRowCount: 5,
+    getRow: vi.fn((rowNum: number) => {
+      const mockRows = [
+        null, // Row 0 (unused)
+        { eachCell: vi.fn((callback) => {
+          callback({ text: "outputFormat" }, 1);
+          callback({ text: "csv" }, 2);
+        })},
+        { eachCell: vi.fn((callback) => {
+          callback({ text: "dateFormat" }, 1);
+          callback({ text: "YYYY-MM-DD" }, 2);
+        })},
+        { eachCell: vi.fn((callback) => {
+          callback({ text: "currencyFormat" }, 1);
+          callback({ text: "USD" }, 2);
+        })},
+        { eachCell: vi.fn((callback) => {
+          callback({ text: "timezone" }, 1);
+          callback({ text: "UTC" }, 2);
+        })},
+      ];
+      return mockRows[rowNum] || { eachCell: vi.fn() };
+    }),
+  };
+}
+
+function createMockMappingsWorksheet(): any {
+  return {
+    actualRowCount: 3,
+    getRow: vi.fn((rowNum: number) => {
+      const mockRows = [
+        null, // Row 0 (unused)
+        { eachCell: vi.fn((callback) => {
+          // Header row
+          callback({ text: "propertyId" }, 1);
+          callback({ text: "propertyName" }, 2);
+          callback({ text: "fileFormat" }, 3);
+          callback({ text: "sourceField" }, 4);
+          callback({ text: "targetField" }, 5);
+          callback({ text: "dataType" }, 6);
+          callback({ text: "required" }, 7);
+        })},
+        { eachCell: vi.fn((callback) => {
+          // Data row
+          callback({ text: "PROP001" }, 1);
+          callback({ text: "Test Property" }, 2);
+          callback({ text: "all" }, 3);
+          callback({ text: "test_field" }, 4);
+          callback({ text: "TestField" }, 5);
+          callback({ text: "string" }, 6);
+          callback({ text: "true" }, 7);
+        })},
+      ];
+      return mockRows[rowNum] || { eachCell: vi.fn() };
+    }),
+  };
+}
+
+function setupMockWorkbook(worksheets: any): void {
+  mockWorkbookInstance.getWorksheet = vi.fn((name: string) => {
+    return worksheets[name] || null;
+  });
 }
