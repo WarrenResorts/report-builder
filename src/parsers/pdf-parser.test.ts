@@ -1,6 +1,42 @@
 import { describe, it, expect, vi } from "vitest";
 import { PDFParser } from "./pdf-parser";
 
+// Type for PDF parser data structure
+interface PDFParserData {
+  text?: string;
+  pages?: Array<{
+    pageNumber: number;
+    text: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  pageCount?: number;
+  metadata?: {
+    title?: string;
+    author?: string;
+    subject?: string;
+    creator?: string;
+    producer?: string;
+    creationDate?: Date;
+    modificationDate?: Date;
+  };
+  rawContent?: string;
+  extractionMethod?: string;
+  documentInfo?: {
+    title?: string;
+    author?: string;
+    subject?: string;
+    creator?: string;
+    producer?: string;
+    creationDate?: Date;
+    modificationDate?: Date;
+  };
+}
+
+// Type for accessing private methods in tests
+type PDFParserPrivate = PDFParser & {
+  extractPDFContent: (buffer: Buffer, options: any) => Promise<any>;
+};
+
 describe("PDFParser", () => {
   let parser: PDFParser;
 
@@ -77,8 +113,8 @@ describe("PDFParser", () => {
       );
 
       expect(result.success).toBe(true);
-      expect((result.data as any).rawContent).toBeDefined();
-      expect((result.data as any).rawContent).toBe(
+      expect((result.data as PDFParserData).rawContent).toBeDefined();
+      expect((result.data as PDFParserData).rawContent).toBe(
         pdfBuffer.toString("base64"),
       );
     });
@@ -89,7 +125,7 @@ describe("PDFParser", () => {
       const result = await parser.parseFromBuffer(pdfBuffer, "test.pdf");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).rawContent).toBeUndefined();
+      expect((result.data as PDFParserData).rawContent).toBeUndefined();
     });
 
     it("should handle PDF with custom parser options", async () => {
@@ -109,7 +145,7 @@ describe("PDFParser", () => {
       );
 
       expect(result.success).toBe(true);
-      expect((result.data as any).pageCount).toBeLessThanOrEqual(5);
+      expect((result.data as PDFParserData).pageCount).toBeLessThanOrEqual(5);
     });
 
     it("should add warning for page limit reached", async () => {
@@ -193,8 +229,8 @@ describe("PDFParser", () => {
       const pdfBuffer = Buffer.from("%PDF-1.4\nPDF content");
 
       // Mock the extraction to throw a corrupted file error
-      const originalExtract = (parser as any).extractPDFContent;
-      (parser as any).extractPDFContent = vi
+      const originalExtract = (parser as PDFParserPrivate).extractPDFContent;
+      (parser as PDFParserPrivate).extractPDFContent = vi
         .fn()
         .mockRejectedValue(
           new Error("File is corrupted and cannot be processed"),
@@ -202,7 +238,7 @@ describe("PDFParser", () => {
 
       const result = await parser.parseFromBuffer(pdfBuffer, "corrupted.pdf");
 
-      (parser as any).extractPDFContent = originalExtract;
+      (parser as PDFParserPrivate).extractPDFContent = originalExtract;
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe("CORRUPTED_FILE");
@@ -214,7 +250,7 @@ describe("PDFParser", () => {
       const result = await parser.parseFromBuffer(pdfBuffer, "test.pdf");
 
       expect(result.success).toBe(true);
-      const data = result.data as any;
+      const data = result.data as PDFParserData;
       expect(data.documentInfo).toBeDefined();
       expect(data.documentInfo.title).toBeDefined();
       expect(data.documentInfo.creator).toBeDefined();
@@ -274,14 +310,14 @@ describe("PDFParser", () => {
       const pdfBuffer = Buffer.from("%PDF-1.4\nPDF content");
 
       // Mock extraction to throw timeout error
-      const originalExtract = (parser as any).extractPDFContent;
-      (parser as any).extractPDFContent = vi
+      const originalExtract = (parser as PDFParserPrivate).extractPDFContent;
+      (parser as PDFParserPrivate).extractPDFContent = vi
         .fn()
         .mockRejectedValue(new Error("Operation timed out after 1000ms"));
 
       const result = await parser.parseFromBuffer(pdfBuffer, "test.pdf");
 
-      (parser as any).extractPDFContent = originalExtract;
+      (parser as PDFParserPrivate).extractPDFContent = originalExtract;
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe("TIMEOUT");
@@ -291,14 +327,14 @@ describe("PDFParser", () => {
       const pdfBuffer = Buffer.from("%PDF-1.4\nPDF content");
 
       // Mock extraction to throw size error
-      const originalExtract = (parser as any).extractPDFContent;
-      (parser as any).extractPDFContent = vi
+      const originalExtract = (parser as PDFParserPrivate).extractPDFContent;
+      (parser as PDFParserPrivate).extractPDFContent = vi
         .fn()
         .mockRejectedValue(new Error("File size exceeds maximum allowed"));
 
       const result = await parser.parseFromBuffer(pdfBuffer, "test.pdf");
 
-      (parser as any).extractPDFContent = originalExtract;
+      (parser as PDFParserPrivate).extractPDFContent = originalExtract;
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe("FILE_TOO_LARGE");
@@ -308,14 +344,14 @@ describe("PDFParser", () => {
       const pdfBuffer = Buffer.from("%PDF-1.4\nPDF content");
 
       // Mock extraction to throw damaged error
-      const originalExtract = (parser as any).extractPDFContent;
-      (parser as any).extractPDFContent = vi
+      const originalExtract = (parser as PDFParserPrivate).extractPDFContent;
+      (parser as PDFParserPrivate).extractPDFContent = vi
         .fn()
         .mockRejectedValue(new Error("File is damaged and cannot be read"));
 
       const result = await parser.parseFromBuffer(pdfBuffer, "test.pdf");
 
-      (parser as any).extractPDFContent = originalExtract;
+      (parser as PDFParserPrivate).extractPDFContent = originalExtract;
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe("CORRUPTED_FILE");
@@ -325,14 +361,14 @@ describe("PDFParser", () => {
       const pdfBuffer = Buffer.from("%PDF-1.4\nPDF content");
 
       // Mock extraction to throw generic error
-      const originalExtract = (parser as any).extractPDFContent;
-      (parser as any).extractPDFContent = vi
+      const originalExtract = (parser as PDFParserPrivate).extractPDFContent;
+      (parser as PDFParserPrivate).extractPDFContent = vi
         .fn()
         .mockRejectedValue(new Error("Generic parsing error"));
 
       const result = await parser.parseFromBuffer(pdfBuffer, "test.pdf");
 
-      (parser as any).extractPDFContent = originalExtract;
+      (parser as PDFParserPrivate).extractPDFContent = originalExtract;
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe("PARSING_ERROR");
@@ -353,7 +389,7 @@ describe("PDFParser", () => {
       // All should succeed
       results.forEach((result) => {
         expect(result.success).toBe(true);
-        expect((result.data as any).pages.length).toBeGreaterThan(0);
+        expect((result.data as PDFParserData).pages.length).toBeGreaterThan(0);
       });
     });
   });
