@@ -1,6 +1,26 @@
 import { describe, it, expect } from "vitest";
 import { CSVParser } from "./csv-parser";
 
+// Type for CSV parser data structure
+interface CSVParserData {
+  headers?: string[];
+  rows?: Record<string, string | number>[];
+  rawRows?: string[][];
+  dataRowCount?: number;
+  delimiter?: string;
+  statistics?: {
+    totalRows?: number;
+    totalColumns?: number;
+    emptyRows?: number;
+    emptyColumns?: number;
+  };
+}
+
+// Type for accessing private methods in tests
+type CSVParserPrivate = CSVParser & {
+  parseCSVContent: (content: string, options: any) => Promise<any>;
+};
+
 describe("CSVParser", () => {
   let parser: CSVParser;
 
@@ -49,9 +69,9 @@ describe("CSVParser", () => {
 
       expect(result.success).toBe(true);
       expect(result.data).toHaveProperty("headers");
-      expect((result.data as any).headers).toEqual(["name", "age", "city"]);
-      expect((result.data as any).dataRowCount).toBe(2);
-      expect((result.data as any).delimiter).toBe(",");
+      expect((result.data as CSVParserData).headers).toEqual(["name", "age", "city"]);
+      expect((result.data as CSVParserData).dataRowCount).toBe(2);
+      expect((result.data as CSVParserData).delimiter).toBe(",");
       expect(result.metadata.recordCount).toBe(2);
     });
 
@@ -63,8 +83,8 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "test.csv", config);
 
       expect(result.success).toBe(true);
-      expect((result.data as any).headers).toBeUndefined();
-      expect((result.data as any).dataRowCount).toBe(2);
+      expect((result.data as CSVParserData).headers).toBeUndefined();
+      expect((result.data as CSVParserData).dataRowCount).toBe(2);
     });
 
     it("should detect semicolon delimiter", async () => {
@@ -74,7 +94,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "test.csv");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).delimiter).toBe(";");
+      expect((result.data as CSVParserData).delimiter).toBe(";");
     });
 
     it("should detect tab delimiter", async () => {
@@ -84,7 +104,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "test.tsv");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).delimiter).toBe("\t");
+      expect((result.data as CSVParserData).delimiter).toBe("\t");
     });
 
     it("should handle quoted fields", async () => {
@@ -95,7 +115,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "test.csv");
 
       expect(result.success).toBe(true);
-      const rows = (result.data as any).rows;
+      const rows = (result.data as CSVParserData).rows;
       expect(rows[0].description).toBe("A person with, comma");
     });
 
@@ -107,7 +127,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "test.csv");
 
       expect(result.success).toBe(true);
-      const rows = (result.data as any).rows;
+      const rows = (result.data as CSVParserData).rows;
       expect(rows[0].quote).toBe('He said "Hello"');
     });
 
@@ -118,7 +138,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "test.csv");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).dataRowCount).toBe(2);
+      expect((result.data as CSVParserData).dataRowCount).toBe(2);
     });
 
     it("should handle UTF-8 BOM", async () => {
@@ -191,7 +211,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromString(csvContent, "test.csv");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).dataRowCount).toBe(2);
+      expect((result.data as CSVParserData).dataRowCount).toBe(2);
     });
   });
 
@@ -218,7 +238,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "pipe.csv", config);
 
       expect(result.success).toBe(true);
-      expect((result.data as any).delimiter).toBe("|");
+      expect((result.data as CSVParserData).delimiter).toBe("|");
     });
 
     it("should handle CSV without auto-detection", async () => {
@@ -229,7 +249,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "test.csv", config);
 
       expect(result.success).toBe(true);
-      expect((result.data as any).delimiter).toBe(",");
+      expect((result.data as CSVParserData).delimiter).toBe(",");
     });
 
     it("should handle CSV with auto-detection fallback", async () => {
@@ -255,7 +275,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "custom.csv", config);
 
       expect(result.success).toBe(true);
-      const rows = (result.data as any).rows;
+      const rows = (result.data as CSVParserData).rows;
       expect(rows[0].description).toBe("He said 'Hello'");
     });
 
@@ -312,7 +332,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "multiline.csv");
 
       expect(result.success).toBe(true);
-      const rows = (result.data as any).rows;
+      const rows = (result.data as CSVParserData).rows;
       expect(rows[0].description).toContain("Line 1");
       expect(rows[0].description).toContain("Line 2");
     });
@@ -330,7 +350,7 @@ describe("CSVParser", () => {
 
       expect(result.success).toBe(true);
       expect(
-        (result.data as any).rawRows.some(
+        (result.data as CSVParserData).rawRows.some(
           (row: string[]) => row.length === 1 && row[0] === "",
         ),
       ).toBe(true);
@@ -341,8 +361,8 @@ describe("CSVParser", () => {
       const buffer = Buffer.from(csvContent);
 
       // Mock the parsing method to simulate a slow operation
-      const originalParse = (parser as any).parseCSVContent;
-      (parser as any).parseCSVContent = () =>
+      const originalParse = (parser as CSVParserPrivate).parseCSVContent;
+      (parser as CSVParserPrivate).parseCSVContent = () =>
         new Promise((resolve) =>
           setTimeout(
             () =>
@@ -370,7 +390,7 @@ describe("CSVParser", () => {
       const config = { timeoutMs: 100 }; // 100ms timeout
       const result = await parser.parseFromBuffer(buffer, "test.csv", config);
 
-      (parser as any).parseCSVContent = originalParse;
+      (parser as CSVParserPrivate).parseCSVContent = originalParse;
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe("TIMEOUT");
@@ -385,7 +405,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "semicolon.csv");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).delimiter).toBe(";");
+      expect((result.data as CSVParserData).delimiter).toBe(";");
     });
 
     it("should handle mixed delimiters and choose best one", async () => {
@@ -395,7 +415,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "mixed.csv");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).delimiter).toBe(","); // Should prefer comma
+      expect((result.data as CSVParserData).delimiter).toBe(","); // Should prefer comma
     });
 
     it("should warn about non-comma delimiter detection", async () => {
@@ -405,7 +425,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "tab.csv");
 
       expect(result.success).toBe(true);
-      expect((result.data as any).delimiter).toBe("\t");
+      expect((result.data as CSVParserData).delimiter).toBe("\t");
       expect(
         result.metadata.warnings.some((w) => w.includes("Detected delimiter")),
       ).toBe(true);
@@ -421,7 +441,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "end-quotes.csv");
 
       expect(result.success).toBe(true);
-      const rows = (result.data as any).rows;
+      const rows = (result.data as CSVParserData).rows;
       expect(rows[0].quote).toBe('He said "Hello"');
     });
 
@@ -432,7 +452,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "empty-quoted.csv");
 
       expect(result.success).toBe(true);
-      const rows = (result.data as any).rows;
+      const rows = (result.data as CSVParserData).rows;
       expect(rows[0].empty).toBe("");
     });
 
@@ -446,7 +466,7 @@ describe("CSVParser", () => {
       );
 
       expect(result.success).toBe(true);
-      const rows = (result.data as any).rows;
+      const rows = (result.data as CSVParserData).rows;
       expect(rows[0].a).toBe("");
       expect(rows[0].b).toBe("");
       expect(rows[0].c).toBe("");
@@ -461,7 +481,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "stats.csv");
 
       expect(result.success).toBe(true);
-      const stats = (result.data as any).statistics;
+      const stats = (result.data as CSVParserData).statistics;
       expect(stats.emptyRows).toBe(1);
       expect(stats.inconsistentColumnCounts).toBe(1);
       expect(stats.maxColumns).toBe(3);
@@ -475,7 +495,7 @@ describe("CSVParser", () => {
       const result = await parser.parseFromBuffer(buffer, "consistent.csv");
 
       expect(result.success).toBe(true);
-      const stats = (result.data as any).statistics;
+      const stats = (result.data as CSVParserData).statistics;
       expect(stats.inconsistentColumnCounts).toBe(0);
     });
   });
