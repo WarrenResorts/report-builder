@@ -7,7 +7,7 @@ interface TXTParserData {
   lines?: string[];
   structureType?: string;
   keyValuePairs?: Record<string, string>;
-  structuredData?: any[];
+  structuredData?: unknown[];
   patterns?: {
     hasEmailAddresses?: boolean;
     hasPhoneNumbers?: boolean;
@@ -28,8 +28,8 @@ interface TXTParserData {
 
 // Type for accessing private methods in tests
 type TXTParserPrivate = TXTParser & {
-  parseTextContent: (content: string, options: any) => Promise<any>;
-  detectEncodingAndConvert: (buffer: Buffer) => { text: string; encoding: any };
+  parseTextContent: (content: string, options: unknown) => Promise<unknown>;
+  detectEncodingAndConvert: (buffer: Buffer) => { text: string; encoding: unknown };
 };
 
 describe("TXTParser", () => {
@@ -110,7 +110,10 @@ describe("TXTParser", () => {
         "Name",
         "John Doe",
       );
-      expect((result.data as TXTParserData).keyValuePairs).toHaveProperty("Age", "30");
+      expect((result.data as TXTParserData).keyValuePairs).toHaveProperty(
+        "Age",
+        "30",
+      );
     });
 
     it("should detect tabular structure", async () => {
@@ -453,7 +456,8 @@ ID: 12345`;
 
     it("should determine correct error codes", async () => {
       // Mock the parsing to throw a decode error
-      const originalDetect = (parser as TXTParserPrivate).detectEncodingAndConvert;
+      const originalDetect = (parser as TXTParserPrivate)
+        .detectEncodingAndConvert;
       (parser as TXTParserPrivate).detectEncodingAndConvert = () => {
         throw new Error("Failed to decode text file: invalid encoding");
       };

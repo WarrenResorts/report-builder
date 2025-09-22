@@ -13,7 +13,14 @@ import type { ExcelMappingData } from "../parsers/excel-mapping-parser";
 // Types for testing invalid/unknown values
 type TestFileType = "pdf" | "csv" | "txt" | "unknown";
 type TestDataType = "string" | "number" | "date" | "boolean" | "unknown";
-type TestTransformation = "uppercase" | "lowercase" | "trim" | "currency" | "date_format" | "custom" | "unknown_transformation";
+type TestTransformation =
+  | "uppercase"
+  | "lowercase"
+  | "trim"
+  | "currency"
+  | "date_format"
+  | "custom"
+  | "unknown_transformation";
 
 // Mock the logger
 vi.mock("../utils/logger", () => ({
@@ -81,8 +88,10 @@ describe("TransformationEngine", () => {
         },
       ],
       customTransformations: {
-        formatCurrency: (value: any, params: any) => {
-          return parseFloat(value).toFixed(params.precision || 2);
+        formatCurrency: (value: unknown, params: unknown) => {
+          const numValue = parseFloat(String(value));
+          const precision = (params as { precision?: number })?.precision || 2;
+          return numValue.toFixed(precision);
         },
       },
     };
@@ -729,7 +738,8 @@ describe("TransformationEngine", () => {
       unknownTypeData.source.fileType = "unknown" as TestFileType;
 
       // Update mapping to match unknown type
-      mockMappingData.propertyMappings[0].fileFormat = "unknown" as TestFileType;
+      mockMappingData.propertyMappings[0].fileFormat =
+        "unknown" as TestFileType;
       mockMappingData.propertyMappings[0].rules = [
         {
           sourceField: "someField",

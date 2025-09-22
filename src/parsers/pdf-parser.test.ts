@@ -34,7 +34,7 @@ interface PDFParserData {
 
 // Type for accessing private methods in tests
 type PDFParserPrivate = PDFParser & {
-  extractPDFContent: (buffer: Buffer, options: any) => Promise<any>;
+  extractPDFContent: (buffer: Buffer, options: unknown) => Promise<unknown>;
 };
 
 describe("PDFParser", () => {

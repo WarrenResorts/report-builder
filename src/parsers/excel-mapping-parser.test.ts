@@ -15,33 +15,20 @@ vi.mock("exceljs", () => ({
 
 import { Workbook, Worksheet } from "exceljs";
 
-// Type for accessing private methods in tests
-type ExcelMappingParserPrivate = ExcelMappingParser & {
-  validateMappingRules: (mappings: any[]) => void;
-  extractMetadata: (workbook: Workbook, options: any) => any;
-  extractGlobalConfig: (workbook: Workbook, options: any) => any;
-  extractPropertyMappings: (workbook: Workbook, options: any) => any[];
-  extractCustomTransformations: (workbook: Workbook, options: any) => any;
-  parseBoolean: (value: unknown) => boolean;
-  parseJSON: (value: unknown) => unknown;
-  parseArray: (value: unknown) => (string | number | boolean)[] | undefined;
-  parseDate: (value: unknown) => Date | null;
-  parseValidation: (row: any) => any;
-  parseTransformationRule: (row: any) => any;
-  worksheetToJson: (worksheet: Worksheet | null | undefined, headers?: string[]) => any[];
-  determineErrorCode: (error: Error) => string;
-};
+// For accessing private methods in tests, we use 'any' casting
+// This is a test-specific compromise - the intersection type approach
+// causes TypeScript to reduce the type to 'never' due to private method conflicts
 
-// Mock workbook interface
-interface MockWorkbook extends Partial<Workbook> {
+// Mock workbook interface - don't extend Workbook to avoid conflicts
+interface MockWorkbook {
   xlsx: {
-    read: (stream: any) => Promise<void>;
+    read: (stream: NodeJS.ReadableStream) => Promise<void>;
     load: (buffer: Buffer) => Promise<void>;
   };
-  getWorksheet: (name: string) => Worksheet | undefined;
+  getWorksheet: (name: string) => any;
 }
 
-const MockWorkbook = Workbook as unknown as new () => MockWorkbookInstance;
+const MockWorkbook = Workbook as unknown as new () => MockWorkbook;
 
 describe("ExcelMappingParser", () => {
   let parser: ExcelMappingParser;
@@ -51,7 +38,7 @@ describe("ExcelMappingParser", () => {
   const createMockExcelBuffer = () => Buffer.from([0x50, 0x4b, 0x03, 0x04]); // ZIP signature
 
   // Generic mock worksheet creator - replaces 13 specific functions with 1 flexible one
-  const createMockWorksheet = (rows: Record<string, any>[]) => ({
+  const createMockWorksheet = (rows: Record<string, unknown>[]) => ({
     actualRowCount: rows.length + 1,
     getRow: vi.fn((rowNum: number) => {
       if (rowNum === 0) return { eachCell: vi.fn() };
@@ -95,9 +82,9 @@ describe("ExcelMappingParser", () => {
   });
 
   // Setup mock workbook with sheets
-  const setupMockWorkbook = (sheets: Record<string, Record<string, any>[]>) => {
+  const setupMockWorkbook = (sheets: Record<string, Record<string, unknown>[]>) => {
     mockWorkbookInstance.getWorksheet = vi.fn((name: string) =>
-      sheets[name] ? createMockWorksheet(sheets[name]) : null,
+      sheets[name] ? createMockWorksheet(sheets[name]) : undefined,
     );
   };
 
@@ -113,7 +100,7 @@ describe("ExcelMappingParser", () => {
       getWorksheet: vi.fn(),
     };
 
-    MockWorkbook.mockImplementation(() => mockWorkbookInstance);
+    (MockWorkbook as any).mockImplementation(() => mockWorkbookInstance);
   });
 
   afterEach(() => {
@@ -293,7 +280,9 @@ describe("ExcelMappingParser", () => {
     it("should validate transformation rules and fail on missing propertyId", () => {
       const invalidMappings = [{ propertyId: "", rules: [] }];
       expect(() =>
-        (parser as ExcelMappingParserPrivate).validateMappingRules(invalidMappings),
+        (parser as any).validateMappingRules(
+          invalidMappings,
+        ),
       ).toThrow("missing propertyId");
     });
 
@@ -359,7 +348,10 @@ describe("ExcelMappingParser", () => {
         ),
       };
 
-      const result = (parser as ExcelMappingParserPrivate).extractMetadata(mockWorkbook, {});
+      const result = (parser as any).extractMetadata(
+        mockWorkbook,
+        {},
+      );
 
       expect(result.version).toBe("1.0");
       expect(result.description).toBe("Test mapping file");
@@ -383,7 +375,10 @@ describe("ExcelMappingParser", () => {
         ),
       };
 
-      const result = (parser as ExcelMappingParserPrivate).extractGlobalConfig(mockWorkbook, {});
+      const result = (parser as any).extractGlobalConfig(
+        mockWorkbook,
+        {},
+      );
 
       expect(result.timezone).toBe("UTC");
       expect(result.dateFormat).toBe("YYYY-MM-DD");
@@ -455,81 +450,114 @@ describe("ExcelMappingParser", () => {
       ];
 
       testCases.forEach(({ input, expected }) => {
-        expect((parser as ExcelMappingParserPrivate).parseBoolean(input)).toBe(expected);
+        expect((parser as any).parseBoolean(input)).toBe(
+          expected,
+        );
       });
     });
 
     it("should parse JSON values correctly", () => {
-      expect((parser as ExcelMappingParserPrivate).parseJSON('{"key": "value"}')).toEqual({
+      expect(
+        (parser as any).parseJSON('{"key": "value"}'),
+      ).toEqual({
         key: "value",
       });
-      expect((parser as ExcelMappingParserPrivate).parseJSON("invalid")).toBeUndefined();
+      expect(
+        (parser as any).parseJSON("invalid"),
+      ).toBeUndefined();
     });
 
     it("should parse array values correctly", () => {
-      expect((parser as ExcelMappingParserPrivate).parseArray("item1,item2,item3")).toEqual([
-        "item1",
-        "item2",
-        "item3",
-      ]);
-      expect((parser as ExcelMappingParserPrivate).parseArray("single")).toEqual(["single"]);
-      expect((parser as ExcelMappingParserPrivate).parseArray("")).toBeUndefined();
-      expect((parser as ExcelMappingParserPrivate).parseArray(null)).toBeUndefined();
+      expect(
+        (parser as any).parseArray("item1,item2,item3"),
+      ).toEqual(["item1", "item2", "item3"]);
+      expect(
+        (parser as any).parseArray("single"),
+      ).toEqual(["single"]);
+      expect(
+        (parser as any).parseArray(""),
+      ).toBeUndefined();
+      expect(
+        (parser as any).parseArray(null),
+      ).toBeUndefined();
     });
 
     it("should parse dates correctly", () => {
       const testDate = new Date("2023-12-25");
-      expect((parser as ExcelMappingParserPrivate).parseDate(testDate)).toBe(testDate);
-      expect((parser as ExcelMappingParserPrivate).parseDate("2023-12-25")).toEqual(
-        new Date("2023-12-25"),
+      expect((parser as any).parseDate(testDate)).toBe(
+        testDate,
       );
-      expect((parser as ExcelMappingParserPrivate).parseDate("invalid date")).toBeNull();
+      expect(
+        (parser as any).parseDate("2023-12-25"),
+      ).toEqual(new Date("2023-12-25"));
+      expect(
+        (parser as any).parseDate("invalid date"),
+      ).toBeNull();
     });
 
     it("should parse arrays correctly and handle edge cases", () => {
       // String cases
-      expect((parser as ExcelMappingParserPrivate).parseArray("item1,item2,item3")).toEqual([
-        "item1",
-        "item2",
-        "item3",
-      ]);
-      expect((parser as ExcelMappingParserPrivate).parseArray("single")).toEqual(["single"]);
-      expect((parser as ExcelMappingParserPrivate).parseArray("a, b, c")).toEqual(["a", "b", "c"]);
+      expect(
+        (parser as any).parseArray("item1,item2,item3"),
+      ).toEqual(["item1", "item2", "item3"]);
+      expect(
+        (parser as any).parseArray("single"),
+      ).toEqual(["single"]);
+      expect(
+        (parser as any).parseArray("a, b, c"),
+      ).toEqual(["a", "b", "c"]);
 
       // Array cases
-      expect((parser as ExcelMappingParserPrivate).parseArray([])).toEqual([]);
-      expect((parser as ExcelMappingParserPrivate).parseArray(["existing", "array"])).toEqual([
-        "existing",
-        "array",
-      ]);
+      expect((parser as any).parseArray([])).toEqual([]);
+      expect(
+        (parser as any).parseArray(["existing", "array"]),
+      ).toEqual(["existing", "array"]);
 
       // Edge cases
-      expect((parser as ExcelMappingParserPrivate).parseArray("")).toBeUndefined();
-      expect((parser as ExcelMappingParserPrivate).parseArray("  ")).toEqual([]);
-      expect((parser as ExcelMappingParserPrivate).parseArray(null)).toBeUndefined();
-      expect((parser as ExcelMappingParserPrivate).parseArray(undefined)).toBeUndefined();
-      expect((parser as ExcelMappingParserPrivate).parseArray(123)).toBeUndefined();
+      expect(
+        (parser as any).parseArray(""),
+      ).toBeUndefined();
+      expect((parser as any).parseArray("  ")).toEqual(
+        [],
+      );
+      expect(
+        (parser as any).parseArray(null),
+      ).toBeUndefined();
+      expect(
+        (parser as any).parseArray(undefined),
+      ).toBeUndefined();
+      expect(
+        (parser as any).parseArray(123),
+      ).toBeUndefined();
     });
 
     it("should parse validation rules with different options", () => {
       // Test allowedValues
       const rowWithAllowedValues = { allowedValues: "option1,option2,option3" };
-      const result1 = (parser as ExcelMappingParserPrivate).parseValidation(rowWithAllowedValues);
+      const result1 = (parser as any).parseValidation(
+        rowWithAllowedValues,
+      );
       expect(result1?.allowedValues).toEqual(["option1", "option2", "option3"]);
 
       // Test maxLength
       const rowWithMaxLength = { maxLength: "100" };
-      const result2 = (parser as ExcelMappingParserPrivate).parseValidation(rowWithMaxLength);
+      const result2 = (parser as any).parseValidation(
+        rowWithMaxLength,
+      );
       expect(result2?.maxLength).toBe(100);
 
       // Test pattern
       const rowWithPattern = { pattern: "^[A-Z]+$" };
-      const result3 = (parser as ExcelMappingParserPrivate).parseValidation(rowWithPattern);
+      const result3 = (parser as any).parseValidation(
+        rowWithPattern,
+      );
       expect(result3?.pattern).toBe("^[A-Z]+$");
 
       // Test minLength
       const rowWithMinLength = { minLength: "5" };
-      const result4 = (parser as ExcelMappingParserPrivate).parseValidation(rowWithMinLength);
+      const result4 = (parser as any).parseValidation(
+        rowWithMinLength,
+      );
       expect(result4?.minLength).toBe(5);
     });
 
@@ -542,7 +570,9 @@ describe("ExcelMappingParser", () => {
         DataType: "number",
       };
 
-      const result = (parser as ExcelMappingParserPrivate).parseTransformationRule(rowWithDataType);
+      const result = (
+        parser as any
+      ).parseTransformationRule(rowWithDataType);
       expect(result.dataType).toBe("number");
 
       // Test default dataType fallback
@@ -552,9 +582,9 @@ describe("ExcelMappingParser", () => {
         targetField: "TestField3",
       };
 
-      const result2 = (parser as ExcelMappingParserPrivate).parseTransformationRule(
-        rowWithoutDataType,
-      );
+      const result2 = (
+        parser as any
+      ).parseTransformationRule(rowWithoutDataType);
       expect(result2.dataType).toBe("string");
     });
 
@@ -585,11 +615,10 @@ describe("ExcelMappingParser", () => {
         }),
       };
 
-      const result = (parser as ExcelMappingParserPrivate).worksheetToJson(mockWorksheet, [
-        "date",
-        "number",
-        "text",
-      ]);
+      const result = (parser as any).worksheetToJson(
+        mockWorksheet,
+        ["date", "number", "text"],
+      );
 
       expect(result).toHaveLength(1);
       expect(result[0].date).toBeInstanceOf(Date);
@@ -598,11 +627,17 @@ describe("ExcelMappingParser", () => {
     });
 
     it("should handle edge cases in worksheetToJson", () => {
-      expect((parser as ExcelMappingParserPrivate).worksheetToJson(null)).toEqual([]);
-      expect((parser as ExcelMappingParserPrivate).worksheetToJson(undefined)).toEqual([]);
+      expect(
+        (parser as any).worksheetToJson(null),
+      ).toEqual([]);
+      expect(
+        (parser as any).worksheetToJson(undefined),
+      ).toEqual([]);
 
       const emptyWorksheet = { actualRowCount: 0, getRow: vi.fn() };
-      expect((parser as ExcelMappingParserPrivate).worksheetToJson(emptyWorksheet)).toEqual([]);
+      expect(
+        (parser as any).worksheetToJson(emptyWorksheet),
+      ).toEqual([]);
     });
 
     it("should handle alternative column names in property mappings", () => {
@@ -618,7 +653,9 @@ describe("ExcelMappingParser", () => {
         ),
       };
 
-      const result = (parser as ExcelMappingParserPrivate).extractPropertyMappings(mockWorkbook1, {});
+      const result = (
+        parser as any
+      ).extractPropertyMappings(mockWorkbook1, {});
       expect(result[0].propertyName).toBe("Alternative Property Name");
       expect(result[0].fileFormat).toBe("pdf");
     });
@@ -637,10 +674,9 @@ describe("ExcelMappingParser", () => {
         ),
       };
 
-      const result = (parser as ExcelMappingParserPrivate).extractCustomTransformations(
-        mockWorkbook,
-        {},
-      );
+      const result = (
+        parser as any
+      ).extractCustomTransformations(mockWorkbook, {});
       expect(result.customTransform1.description).toBe(
         "Custom transformation description",
       );
@@ -652,41 +688,54 @@ describe("ExcelMappingParser", () => {
       const mockWorkbook = { getWorksheet: vi.fn(() => null) };
 
       expect(() =>
-        (parser as ExcelMappingParserPrivate).extractMetadata(mockWorkbook, {
+        (parser as any).extractMetadata(mockWorkbook, {
           allowMissingSheets: false,
         }),
       ).toThrow("Required metadata sheet");
 
       expect(() =>
-        (parser as ExcelMappingParserPrivate).extractGlobalConfig(mockWorkbook, {
-          allowMissingSheets: false,
-        }),
+        (parser as any).extractGlobalConfig(
+          mockWorkbook,
+          {
+            allowMissingSheets: false,
+          },
+        ),
       ).toThrow("Required config sheet");
     });
   });
 
   describe("error handling", () => {
     it("should determine correct error codes", () => {
-      expect((parser as ExcelMappingParserPrivate).determineErrorCode(new Error("timed out"))).toBe(
-        "TIMEOUT",
-      );
       expect(
-        (parser as ExcelMappingParserPrivate).determineErrorCode(
+        (parser as any).determineErrorCode(
+          new Error("timed out"),
+        ),
+      ).toBe("TIMEOUT");
+      expect(
+        (parser as any).determineErrorCode(
           new Error("Excel mapping parsing timed out"),
         ),
       ).toBe("TIMEOUT");
       expect(
-        (parser as ExcelMappingParserPrivate).determineErrorCode(new Error("sheet not found")),
+        (parser as any).determineErrorCode(
+          new Error("sheet not found"),
+        ),
       ).toBe("INVALID_FORMAT");
       expect(
-        (parser as ExcelMappingParserPrivate).determineErrorCode(new Error("missing sourceField")),
+        (parser as any).determineErrorCode(
+          new Error("missing sourceField"),
+        ),
       ).toBe("INVALID_FORMAT");
       expect(
-        (parser as ExcelMappingParserPrivate).determineErrorCode(new Error("exceeds maximum")),
+        (parser as any).determineErrorCode(
+          new Error("exceeds maximum"),
+        ),
       ).toBe("FILE_TOO_LARGE");
-      expect((parser as ExcelMappingParserPrivate).determineErrorCode(new Error("other error"))).toBe(
-        "PARSING_ERROR",
-      );
+      expect(
+        (parser as any).determineErrorCode(
+          new Error("other error"),
+        ),
+      ).toBe("PARSING_ERROR");
     });
   });
 });

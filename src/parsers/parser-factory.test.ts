@@ -176,28 +176,28 @@ describe("ParserFactory", () => {
   describe("registerParser and unregisterParser", () => {
     it("should register a new parser type", () => {
       const mockParser = () => new TXTParser();
-      
+
       // Register a custom type
       ParserFactory.registerParser("custom" as TestFileType, mockParser);
-      
+
       // Should now be supported
       expect(ParserFactory.isFileTypeSupported("custom")).toBe(true);
-      
+
       // Should be able to create parser
       const parser = ParserFactory.createParser("custom" as TestFileType);
       expect(parser).toBeInstanceOf(TXTParser);
-      
+
       // Clean up
       ParserFactory.unregisterParser("custom" as TestFileType);
     });
 
     it("should unregister a parser type", () => {
       const mockParser = () => new TXTParser();
-      
+
       // Register then unregister
       ParserFactory.registerParser("temp" as TestFileType, mockParser);
       expect(ParserFactory.isFileTypeSupported("temp")).toBe(true);
-      
+
       ParserFactory.unregisterParser("temp" as TestFileType);
       expect(ParserFactory.isFileTypeSupported("temp")).toBe(false);
     });

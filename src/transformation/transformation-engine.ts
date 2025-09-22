@@ -100,7 +100,7 @@ export type FieldValue = string | number | Date | boolean | null;
  */
 export type CustomTransformationFunction = (
   value: FieldValue,
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
 ) => FieldValue | Promise<FieldValue>;
 
 /**
@@ -275,9 +275,9 @@ export class TransformationEngine {
    * Extract individual records from raw content based on file type
    */
   private extractSourceRecords(
-    content: Record<string, any>,
+    content: Record<string, FieldValue>,
     fileType: string,
-  ): Record<string, any>[] {
+  ): Record<string, FieldValue>[] {
     switch (fileType) {
       case "csv":
         // CSV content should have a 'rows' property with array of objects
@@ -316,13 +316,13 @@ export class TransformationEngine {
    * Transform a single record using transformation rules
    */
   private async transformRecord(
-    sourceRecord: Record<string, any>,
+    sourceRecord: Record<string, FieldValue>,
     recordIndex: number,
     rules: TransformationRule[],
-    customTransformations: Record<string, any> = {},
+    customTransformations: Record<string, CustomTransformationFunction> = {},
     correlationId: string,
   ): Promise<TransformedRecord> {
-    const transformedFields: Record<string, any> = {};
+    const transformedFields: Record<string, FieldValue> = {};
     const recordWarnings: string[] = [];
 
     for (const rule of rules) {
@@ -399,7 +399,13 @@ export class TransformationEngine {
     let value: FieldValue | Record<string, FieldValue> = sourceRecord;
 
     for (const part of pathParts) {
-      if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date) && part in value) {
+      if (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        !(value instanceof Date) &&
+        part in value
+      ) {
         value = (value as Record<string, FieldValue>)[part];
       } else {
         return null;
@@ -527,7 +533,8 @@ export class TransformationEngine {
         if (value === null) {
           throw new Error("Cannot format null date");
         }
-        const date = value instanceof Date ? value : new Date(value as string | number);
+        const date =
+          value instanceof Date ? value : new Date(value as string | number);
         const format = (params?.format as string) || "YYYY-MM-DD";
         return this.formatDate(date, format);
       }
@@ -535,10 +542,13 @@ export class TransformationEngine {
       case "custom":
         if (
           params?.functionName &&
-          typeof params.functionName === 'string' &&
+          typeof params.functionName === "string" &&
           customTransformations[params.functionName]
         ) {
-          return await customTransformations[params.functionName](value, params);
+          return await customTransformations[params.functionName](
+            value,
+            params,
+          );
         }
         throw new Error(
           `Custom transformation function not found: ${params?.functionName}`,
@@ -601,7 +611,10 @@ export class TransformationEngine {
 
     // Check allowed values
     if (validation.allowedValues && validation.allowedValues.length > 0) {
-      if (value !== null && !validation.allowedValues.includes(value as string | number | boolean)) {
+      if (
+        value !== null &&
+        !validation.allowedValues.includes(value as string | number | boolean)
+      ) {
         return {
           isValid: false,
           error: `Value not in allowed list: ${validation.allowedValues.join(", ")}`,
@@ -617,7 +630,7 @@ export class TransformationEngine {
    */
   private generateRecordId(
     recordIndex: number,
-    sourceRecord: Record<string, any>,
+    sourceRecord: Record<string, FieldValue>,
   ): string {
     // Create a hash from record content for uniqueness
     const recordContent = JSON.stringify(sourceRecord);

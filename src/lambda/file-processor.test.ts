@@ -56,7 +56,7 @@ const createMockLambdaContext = (): Context => ({
 // Helper function to create mock EventBridge event
 const createMockEventBridgeEvent = (
   processingType: "daily-batch" | "weekly-report" = "daily-batch",
-): EventBridgeEvent<string, any> => ({
+): EventBridgeEvent<string, Record<string, unknown>> => ({
   version: "0",
   id: "test-event-id",
   "detail-type": "Scheduled Event",

@@ -18,7 +18,7 @@ interface CSVParserData {
 
 // Type for accessing private methods in tests
 type CSVParserPrivate = CSVParser & {
-  parseCSVContent: (content: string, options: any) => Promise<any>;
+  parseCSVContent: (content: string, options: unknown) => Promise<unknown>;
 };
 
 describe("CSVParser", () => {
@@ -69,7 +69,11 @@ describe("CSVParser", () => {
 
       expect(result.success).toBe(true);
       expect(result.data).toHaveProperty("headers");
-      expect((result.data as CSVParserData).headers).toEqual(["name", "age", "city"]);
+      expect((result.data as CSVParserData).headers).toEqual([
+        "name",
+        "age",
+        "city",
+      ]);
       expect((result.data as CSVParserData).dataRowCount).toBe(2);
       expect((result.data as CSVParserData).delimiter).toBe(",");
       expect(result.metadata.recordCount).toBe(2);
