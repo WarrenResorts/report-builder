@@ -37,7 +37,7 @@ import type {
 /**
  * Interface for the file processing event
  */
-interface FileProcessingEvent {
+export interface FileProcessingEvent {
   processingType: "daily-batch" | "weekly-report";
   environment: string;
   timestamp: string;
@@ -718,13 +718,14 @@ class FileProcessor {
       return Buffer.concat(chunks);
     }
 
-    // Fallback for test environments - treat as already a Buffer or Uint8Array
-    if (response.Body instanceof Buffer) {
+    // Fallback for test environments - check if it's already a Buffer or Uint8Array
+    if (Buffer.isBuffer(response.Body)) {
       return response.Body;
     }
 
-    if (response.Body instanceof Uint8Array) {
-      return Buffer.from(response.Body);
+    if (response.Body && typeof response.Body === 'object' && 'byteLength' in response.Body) {
+      // Likely a Uint8Array or similar
+      return Buffer.from(response.Body as Uint8Array);
     }
 
     // Last resort - convert to string and back to buffer

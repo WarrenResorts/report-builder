@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
-import { handler } from "./file-processor";
+import { handler, FileProcessingEvent } from "./file-processor";
 import { EventBridgeEvent, Context } from "aws-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 import { ParameterStoreConfig } from "../config/parameter-store";
@@ -56,7 +56,7 @@ const createMockLambdaContext = (): Context => ({
 // Helper function to create mock EventBridge event
 const createMockEventBridgeEvent = (
   processingType: "daily-batch" | "weekly-report" = "daily-batch",
-): EventBridgeEvent<string, Record<string, unknown>> => ({
+): EventBridgeEvent<string, FileProcessingEvent> => ({
   version: "0",
   id: "test-event-id",
   "detail-type": "Scheduled Event",
