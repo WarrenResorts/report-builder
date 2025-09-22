@@ -291,7 +291,10 @@ export class LambdaConstruct extends Construct {
       role: this.fileProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.fileProcessor.timeoutMinutes),
       memorySize: config.lambda.fileProcessor.memoryMB,
+      projectRoot: path.join(__dirname, '..', '..', '..'),
+      depsLockFilePath: path.join(__dirname, '..', '..', '..', 'package-lock.json'),
       bundling: {
+        nodeModules: ['exceljs'],
         externalModules: ['@aws-sdk/*'],
         format: lambdaNodejs.OutputFormat.ESM,
         target: 'es2022',
