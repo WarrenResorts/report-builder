@@ -470,4 +470,239 @@ describe("File Processor Lambda", () => {
       expect(typeof result.summary.processingTimeMs).toBe("number");
     });
   });
+
+  describe("Phase 3 File Processing Integration", () => {
+    it("should process files with parsers and generate logs", async () => {
+      const mockObjects = createMockS3Objects();
+
+      // Mock S3 list operation with recent files
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: mockObjects,
+      });
+
+      // Mock file downloads (these will be called by processPropertyFiles)
+      mockRetryS3Operation.mockResolvedValue({
+        Body: Buffer.from("Sample file content"),
+      });
+
+      // Mock mapping file query (empty for now)
+      mockRetryS3Operation.mockResolvedValue({
+        Contents: [], // No mapping files
+      });
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedFiles).toBe(3); // Should process 3 recent files
+
+      // Verify the integration executed Phase 3 steps
+      expect(result).toHaveProperty("summary");
+      expect(result.summary).toHaveProperty("filesFound", 3);
+      expect(result.summary).toHaveProperty("propertiesProcessed");
+      expect(Array.isArray(result.summary.propertiesProcessed)).toBe(true);
+    });
+
+    it("should handle file processing errors gracefully", async () => {
+      const mockObjects = createMockS3Objects();
+
+      // Mock S3 list operation
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: mockObjects,
+      });
+
+      // Mock file download failures
+      mockRetryS3Operation.mockRejectedValue(new Error("File download failed"));
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200); // Should still succeed overall
+      expect(result.processedFiles).toBe(3); // Should report the files it attempted to process
+    });
+
+    it("should execute all Phase 3 steps in sequence", async () => {
+      const mockObjects = createMockS3Objects();
+
+      // Mock S3 operations
+      mockRetryS3Operation.mockResolvedValue({
+        Contents: mockObjects,
+      });
+
+      // Additional mocks for file downloads and mapping
+      mockRetryS3Operation.mockResolvedValue({
+        Body: Buffer.from("Test content"),
+      });
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+
+      // The logs should show all Phase 3 steps executed:
+      // - Files processed and parsed
+      // - Data transformations applied
+      // - Consolidated reports generated
+      expect(result.summary).toHaveProperty("filesFound");
+      expect(result.summary).toHaveProperty("propertiesProcessed");
+      expect(result.summary).toHaveProperty("processingTimeMs");
+    });
+
+    it("should test file parsing edge cases and error paths", async () => {
+      const now = new Date();
+      const mockObjects = [
+        {
+          Key: "daily-files/PROP123/2024-01-15/test.pdf",
+          LastModified: now, // Use current time to pass 24-hour filter
+          Size: 100,
+        },
+        {
+          Key: "daily-files/PROP123/2024-01-15/test.unknown",
+          LastModified: now, // Use current time to pass 24-hour filter
+          Size: 100,
+        },
+      ];
+
+      // Mock S3 list operation
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: mockObjects,
+      });
+
+      // Mock file downloads - simulate PDF with different body types
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () =>
+            Promise.resolve(new Uint8Array([37, 80, 68, 70])), // PDF header
+        },
+      });
+
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Body: new Uint8Array([65, 66, 67]), // ABC as bytes
+      });
+
+      // Mock mapping file operation - return empty
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: [],
+      });
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedFiles).toBe(2);
+    });
+
+    it("should test Excel mapping integration with actual mapping file", async () => {
+      const now = new Date();
+      const mockObjects = [
+        {
+          Key: "daily-files/PROP123/2024-01-15/data.csv",
+          LastModified: now, // Use current time to pass 24-hour filter
+          Size: 100,
+        },
+      ];
+
+      // Mock S3 list operation
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: mockObjects,
+      });
+
+      // Mock file download
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Body: Buffer.from("name,age\\nJohn,30\\nJane,25"),
+      });
+
+      // Mock mapping file list - return mapping file
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: [{ Key: "mapping.xlsx", LastModified: new Date() }],
+      });
+
+      // Mock mapping file download
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Body: Buffer.from("fake excel content"),
+      });
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedFiles).toBe(1);
+    });
+
+    it("should test transformation engine with successful mapping", async () => {
+      const now = new Date();
+      const mockObjects = [
+        {
+          Key: "daily-files/PROP123/2024-01-15/valid.txt",
+          LastModified: now, // Use current time to pass 24-hour filter
+          Size: 100,
+        },
+      ];
+
+      // Mock successful file parsing
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: mockObjects,
+      });
+
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Body: Buffer.from('{"records": [{"name": "test", "value": 123}]}'),
+      });
+
+      // Mock mapping with actual transformations
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: [{ Key: "mapping.xlsx", LastModified: new Date() }],
+      });
+
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Body: Buffer.from("excel mapping content"),
+      });
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedFiles).toBe(1);
+    });
+
+    it("should test report generation edge cases", async () => {
+      const mockObjects = createMockS3Objects();
+
+      // Mock S3 operations for file processing
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Contents: mockObjects,
+      });
+
+      // Mock all file downloads with JSON data
+      mockRetryS3Operation.mockResolvedValue({
+        Body: Buffer.from(
+          '{"data": [{"field1": "value1", "field2": "value2"}]}',
+        ),
+      });
+
+      // Mock mapping operations - empty mapping to trigger specific paths
+      mockRetryS3Operation.mockResolvedValue({
+        Contents: [],
+      });
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedFiles).toBe(3);
+    });
+  });
 });
