@@ -5,7 +5,9 @@
  * Supports flexible mapping structures and validation of transformation rules.
  */
 
-import { Workbook, Worksheet } from "exceljs";
+import * as ExcelJS from "exceljs";
+type Workbook = ExcelJS.Workbook;
+type Worksheet = ExcelJS.Worksheet;
 import { Readable } from "stream";
 import { BaseFileParser } from "./base/parser-interface";
 import {
@@ -271,7 +273,7 @@ export class ExcelMappingParser extends BaseFileParser {
       const parseExcel = async () => {
         try {
           // Parse Excel workbook using ExcelJS
-          const workbook = new Workbook();
+          const workbook = new ExcelJS.Workbook();
           // Convert Buffer to Stream for ExcelJS
           const stream = Readable.from(fileBuffer);
           await workbook.xlsx.read(stream);

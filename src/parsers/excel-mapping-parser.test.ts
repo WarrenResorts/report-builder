@@ -13,7 +13,7 @@ vi.mock("exceljs", () => ({
   })),
 }));
 
-import { Workbook } from "exceljs";
+import * as ExcelJS from "exceljs";
 
 // For accessing private methods in tests, we use 'any' casting
 // This is a test-specific compromise - the intersection type approach
@@ -28,7 +28,7 @@ interface MockWorkbook {
   getWorksheet: (name: string) => any;
 }
 
-const MockWorkbook = Workbook as unknown as new () => MockWorkbook;
+const MockWorkbook = ExcelJS.Workbook as unknown as new () => MockWorkbook;
 
 describe("ExcelMappingParser", () => {
   let parser: ExcelMappingParser;
