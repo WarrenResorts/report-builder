@@ -29,7 +29,10 @@ interface TXTParserData {
 // Type for accessing private methods in tests
 type TXTParserPrivate = TXTParser & {
   parseTextContent: (content: string, options: unknown) => Promise<unknown>;
-  detectEncodingAndConvert: (buffer: Buffer) => { text: string; encoding: unknown };
+  detectEncodingAndConvert: (buffer: Buffer) => {
+    text: string;
+    encoding: unknown;
+  };
 };
 
 describe("TXTParser", () => {

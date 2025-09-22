@@ -10,6 +10,7 @@ import type {
   ExcelMappingData,
   PropertyMapping,
   TransformationRule,
+  CustomTransformation,
 } from "../parsers/excel-mapping-parser";
 
 /**
@@ -93,7 +94,7 @@ export interface TransformationError {
 /**
  * Supported field value types
  */
-export type FieldValue = string | number | Date | boolean | null;
+export type FieldValue = string | number | Date | boolean | null | Record<string, unknown>;
 
 /**
  * Custom transformation function signature
@@ -114,7 +115,7 @@ export interface TransformationConfig {
   /** Whether to include debug information */
   includeDebugInfo: boolean;
   /** Custom transformation functions */
-  customTransformations?: Record<string, CustomTransformationFunction>;
+  customTransformations?: Record<string, CustomTransformationFunction> | Record<string, CustomTransformation>;
   /** Validation mode */
   validationMode: "strict" | "lenient" | "skip";
 }
@@ -319,7 +320,7 @@ export class TransformationEngine {
     sourceRecord: Record<string, FieldValue>,
     recordIndex: number,
     rules: TransformationRule[],
-    customTransformations: Record<string, CustomTransformationFunction> = {},
+    customTransformations: Record<string, CustomTransformationFunction> | Record<string, CustomTransformation> = {},
     correlationId: string,
   ): Promise<TransformedRecord> {
     const transformedFields: Record<string, FieldValue> = {};
@@ -421,7 +422,7 @@ export class TransformationEngine {
   private async applyTransformationRule(
     sourceValue: FieldValue,
     rule: TransformationRule,
-    customTransformations: Record<string, CustomTransformationFunction>,
+    customTransformations: Record<string, CustomTransformationFunction> | Record<string, CustomTransformation>,
     _correlationId: string,
   ): Promise<FieldValue> {
     // Handle null/undefined values
@@ -510,7 +511,7 @@ export class TransformationEngine {
     value: FieldValue,
     transformation: string,
     params: Record<string, unknown> | undefined,
-    customTransformations: Record<string, CustomTransformationFunction>,
+    customTransformations: Record<string, CustomTransformationFunction> | Record<string, CustomTransformation>,
   ): Promise<FieldValue> {
     switch (transformation) {
       case "uppercase":
@@ -545,10 +546,16 @@ export class TransformationEngine {
           typeof params.functionName === "string" &&
           customTransformations[params.functionName]
         ) {
-          return await customTransformations[params.functionName](
-            value,
-            params,
-          );
+          const transformation = customTransformations[params.functionName];
+          // Check if it's a function (CustomTransformationFunction) or data structure (CustomTransformation)
+          if (typeof transformation === "function") {
+            return await transformation(value, params);
+          } else {
+            // Handle CustomTransformation data structure - for now, just log and return value
+            // In a real implementation, you might want to execute the code string
+            console.warn(`Custom transformation '${params.functionName}' is not a function but a data structure`);
+            return value;
+          }
         }
         throw new Error(
           `Custom transformation function not found: ${params?.functionName}`,

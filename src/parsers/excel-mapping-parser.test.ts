@@ -13,7 +13,7 @@ vi.mock("exceljs", () => ({
   })),
 }));
 
-import { Workbook, Worksheet } from "exceljs";
+import { Workbook } from "exceljs";
 
 // For accessing private methods in tests, we use 'any' casting
 // This is a test-specific compromise - the intersection type approach
@@ -82,7 +82,9 @@ describe("ExcelMappingParser", () => {
   });
 
   // Setup mock workbook with sheets
-  const setupMockWorkbook = (sheets: Record<string, Record<string, unknown>[]>) => {
+  const setupMockWorkbook = (
+    sheets: Record<string, Record<string, unknown>[]>,
+  ) => {
     mockWorkbookInstance.getWorksheet = vi.fn((name: string) =>
       sheets[name] ? createMockWorksheet(sheets[name]) : undefined,
     );
@@ -280,9 +282,7 @@ describe("ExcelMappingParser", () => {
     it("should validate transformation rules and fail on missing propertyId", () => {
       const invalidMappings = [{ propertyId: "", rules: [] }];
       expect(() =>
-        (parser as any).validateMappingRules(
-          invalidMappings,
-        ),
+        (parser as any).validateMappingRules(invalidMappings),
       ).toThrow("missing propertyId");
     });
 
@@ -348,10 +348,7 @@ describe("ExcelMappingParser", () => {
         ),
       };
 
-      const result = (parser as any).extractMetadata(
-        mockWorkbook,
-        {},
-      );
+      const result = (parser as any).extractMetadata(mockWorkbook, {});
 
       expect(result.version).toBe("1.0");
       expect(result.description).toBe("Test mapping file");
@@ -375,10 +372,7 @@ describe("ExcelMappingParser", () => {
         ),
       };
 
-      const result = (parser as any).extractGlobalConfig(
-        mockWorkbook,
-        {},
-      );
+      const result = (parser as any).extractGlobalConfig(mockWorkbook, {});
 
       expect(result.timezone).toBe("UTC");
       expect(result.dateFormat).toBe("YYYY-MM-DD");
@@ -450,114 +444,81 @@ describe("ExcelMappingParser", () => {
       ];
 
       testCases.forEach(({ input, expected }) => {
-        expect((parser as any).parseBoolean(input)).toBe(
-          expected,
-        );
+        expect((parser as any).parseBoolean(input)).toBe(expected);
       });
     });
 
     it("should parse JSON values correctly", () => {
-      expect(
-        (parser as any).parseJSON('{"key": "value"}'),
-      ).toEqual({
+      expect((parser as any).parseJSON('{"key": "value"}')).toEqual({
         key: "value",
       });
-      expect(
-        (parser as any).parseJSON("invalid"),
-      ).toBeUndefined();
+      expect((parser as any).parseJSON("invalid")).toBeUndefined();
     });
 
     it("should parse array values correctly", () => {
-      expect(
-        (parser as any).parseArray("item1,item2,item3"),
-      ).toEqual(["item1", "item2", "item3"]);
-      expect(
-        (parser as any).parseArray("single"),
-      ).toEqual(["single"]);
-      expect(
-        (parser as any).parseArray(""),
-      ).toBeUndefined();
-      expect(
-        (parser as any).parseArray(null),
-      ).toBeUndefined();
+      expect((parser as any).parseArray("item1,item2,item3")).toEqual([
+        "item1",
+        "item2",
+        "item3",
+      ]);
+      expect((parser as any).parseArray("single")).toEqual(["single"]);
+      expect((parser as any).parseArray("")).toBeUndefined();
+      expect((parser as any).parseArray(null)).toBeUndefined();
     });
 
     it("should parse dates correctly", () => {
       const testDate = new Date("2023-12-25");
-      expect((parser as any).parseDate(testDate)).toBe(
-        testDate,
+      expect((parser as any).parseDate(testDate)).toBe(testDate);
+      expect((parser as any).parseDate("2023-12-25")).toEqual(
+        new Date("2023-12-25"),
       );
-      expect(
-        (parser as any).parseDate("2023-12-25"),
-      ).toEqual(new Date("2023-12-25"));
-      expect(
-        (parser as any).parseDate("invalid date"),
-      ).toBeNull();
+      expect((parser as any).parseDate("invalid date")).toBeNull();
     });
 
     it("should parse arrays correctly and handle edge cases", () => {
       // String cases
-      expect(
-        (parser as any).parseArray("item1,item2,item3"),
-      ).toEqual(["item1", "item2", "item3"]);
-      expect(
-        (parser as any).parseArray("single"),
-      ).toEqual(["single"]);
-      expect(
-        (parser as any).parseArray("a, b, c"),
-      ).toEqual(["a", "b", "c"]);
+      expect((parser as any).parseArray("item1,item2,item3")).toEqual([
+        "item1",
+        "item2",
+        "item3",
+      ]);
+      expect((parser as any).parseArray("single")).toEqual(["single"]);
+      expect((parser as any).parseArray("a, b, c")).toEqual(["a", "b", "c"]);
 
       // Array cases
       expect((parser as any).parseArray([])).toEqual([]);
-      expect(
-        (parser as any).parseArray(["existing", "array"]),
-      ).toEqual(["existing", "array"]);
+      expect((parser as any).parseArray(["existing", "array"])).toEqual([
+        "existing",
+        "array",
+      ]);
 
       // Edge cases
-      expect(
-        (parser as any).parseArray(""),
-      ).toBeUndefined();
-      expect((parser as any).parseArray("  ")).toEqual(
-        [],
-      );
-      expect(
-        (parser as any).parseArray(null),
-      ).toBeUndefined();
-      expect(
-        (parser as any).parseArray(undefined),
-      ).toBeUndefined();
-      expect(
-        (parser as any).parseArray(123),
-      ).toBeUndefined();
+      expect((parser as any).parseArray("")).toBeUndefined();
+      expect((parser as any).parseArray("  ")).toEqual([]);
+      expect((parser as any).parseArray(null)).toBeUndefined();
+      expect((parser as any).parseArray(undefined)).toBeUndefined();
+      expect((parser as any).parseArray(123)).toBeUndefined();
     });
 
     it("should parse validation rules with different options", () => {
       // Test allowedValues
       const rowWithAllowedValues = { allowedValues: "option1,option2,option3" };
-      const result1 = (parser as any).parseValidation(
-        rowWithAllowedValues,
-      );
+      const result1 = (parser as any).parseValidation(rowWithAllowedValues);
       expect(result1?.allowedValues).toEqual(["option1", "option2", "option3"]);
 
       // Test maxLength
       const rowWithMaxLength = { maxLength: "100" };
-      const result2 = (parser as any).parseValidation(
-        rowWithMaxLength,
-      );
+      const result2 = (parser as any).parseValidation(rowWithMaxLength);
       expect(result2?.maxLength).toBe(100);
 
       // Test pattern
       const rowWithPattern = { pattern: "^[A-Z]+$" };
-      const result3 = (parser as any).parseValidation(
-        rowWithPattern,
-      );
+      const result3 = (parser as any).parseValidation(rowWithPattern);
       expect(result3?.pattern).toBe("^[A-Z]+$");
 
       // Test minLength
       const rowWithMinLength = { minLength: "5" };
-      const result4 = (parser as any).parseValidation(
-        rowWithMinLength,
-      );
+      const result4 = (parser as any).parseValidation(rowWithMinLength);
       expect(result4?.minLength).toBe(5);
     });
 
@@ -570,9 +531,7 @@ describe("ExcelMappingParser", () => {
         DataType: "number",
       };
 
-      const result = (
-        parser as any
-      ).parseTransformationRule(rowWithDataType);
+      const result = (parser as any).parseTransformationRule(rowWithDataType);
       expect(result.dataType).toBe("number");
 
       // Test default dataType fallback
@@ -582,9 +541,9 @@ describe("ExcelMappingParser", () => {
         targetField: "TestField3",
       };
 
-      const result2 = (
-        parser as any
-      ).parseTransformationRule(rowWithoutDataType);
+      const result2 = (parser as any).parseTransformationRule(
+        rowWithoutDataType,
+      );
       expect(result2.dataType).toBe("string");
     });
 
@@ -615,10 +574,11 @@ describe("ExcelMappingParser", () => {
         }),
       };
 
-      const result = (parser as any).worksheetToJson(
-        mockWorksheet,
-        ["date", "number", "text"],
-      );
+      const result = (parser as any).worksheetToJson(mockWorksheet, [
+        "date",
+        "number",
+        "text",
+      ]);
 
       expect(result).toHaveLength(1);
       expect(result[0].date).toBeInstanceOf(Date);
@@ -627,17 +587,11 @@ describe("ExcelMappingParser", () => {
     });
 
     it("should handle edge cases in worksheetToJson", () => {
-      expect(
-        (parser as any).worksheetToJson(null),
-      ).toEqual([]);
-      expect(
-        (parser as any).worksheetToJson(undefined),
-      ).toEqual([]);
+      expect((parser as any).worksheetToJson(null)).toEqual([]);
+      expect((parser as any).worksheetToJson(undefined)).toEqual([]);
 
       const emptyWorksheet = { actualRowCount: 0, getRow: vi.fn() };
-      expect(
-        (parser as any).worksheetToJson(emptyWorksheet),
-      ).toEqual([]);
+      expect((parser as any).worksheetToJson(emptyWorksheet)).toEqual([]);
     });
 
     it("should handle alternative column names in property mappings", () => {
@@ -653,9 +607,7 @@ describe("ExcelMappingParser", () => {
         ),
       };
 
-      const result = (
-        parser as any
-      ).extractPropertyMappings(mockWorkbook1, {});
+      const result = (parser as any).extractPropertyMappings(mockWorkbook1, {});
       expect(result[0].propertyName).toBe("Alternative Property Name");
       expect(result[0].fileFormat).toBe("pdf");
     });
@@ -674,9 +626,10 @@ describe("ExcelMappingParser", () => {
         ),
       };
 
-      const result = (
-        parser as any
-      ).extractCustomTransformations(mockWorkbook, {});
+      const result = (parser as any).extractCustomTransformations(
+        mockWorkbook,
+        {},
+      );
       expect(result.customTransform1.description).toBe(
         "Custom transformation description",
       );
@@ -694,48 +647,35 @@ describe("ExcelMappingParser", () => {
       ).toThrow("Required metadata sheet");
 
       expect(() =>
-        (parser as any).extractGlobalConfig(
-          mockWorkbook,
-          {
-            allowMissingSheets: false,
-          },
-        ),
+        (parser as any).extractGlobalConfig(mockWorkbook, {
+          allowMissingSheets: false,
+        }),
       ).toThrow("Required config sheet");
     });
   });
 
   describe("error handling", () => {
     it("should determine correct error codes", () => {
-      expect(
-        (parser as any).determineErrorCode(
-          new Error("timed out"),
-        ),
-      ).toBe("TIMEOUT");
+      expect((parser as any).determineErrorCode(new Error("timed out"))).toBe(
+        "TIMEOUT",
+      );
       expect(
         (parser as any).determineErrorCode(
           new Error("Excel mapping parsing timed out"),
         ),
       ).toBe("TIMEOUT");
       expect(
-        (parser as any).determineErrorCode(
-          new Error("sheet not found"),
-        ),
+        (parser as any).determineErrorCode(new Error("sheet not found")),
       ).toBe("INVALID_FORMAT");
       expect(
-        (parser as any).determineErrorCode(
-          new Error("missing sourceField"),
-        ),
+        (parser as any).determineErrorCode(new Error("missing sourceField")),
       ).toBe("INVALID_FORMAT");
       expect(
-        (parser as any).determineErrorCode(
-          new Error("exceeds maximum"),
-        ),
+        (parser as any).determineErrorCode(new Error("exceeds maximum")),
       ).toBe("FILE_TOO_LARGE");
-      expect(
-        (parser as any).determineErrorCode(
-          new Error("other error"),
-        ),
-      ).toBe("PARSING_ERROR");
+      expect((parser as any).determineErrorCode(new Error("other error"))).toBe(
+        "PARSING_ERROR",
+      );
     });
   });
 });

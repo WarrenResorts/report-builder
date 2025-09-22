@@ -89,7 +89,7 @@ interface ValidationConfig {
 /**
  * Custom transformation definition
  */
-interface CustomTransformation {
+export interface CustomTransformation {
   description?: string;
   parameters?: Record<string, unknown>;
   code?: string;
