@@ -723,7 +723,11 @@ class FileProcessor {
       return response.Body;
     }
 
-    if (response.Body && typeof response.Body === 'object' && 'byteLength' in response.Body) {
+    if (
+      response.Body &&
+      typeof response.Body === "object" &&
+      "byteLength" in response.Body
+    ) {
       // Likely a Uint8Array or similar
       return Buffer.from(response.Body as Uint8Array);
     }
