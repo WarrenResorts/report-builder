@@ -675,12 +675,14 @@ class FileProcessor {
   private async downloadFileFromS3(
     fileKey: string,
     correlationId: string,
+    bucket?: string,
   ): Promise<Buffer> {
+    const targetBucket = bucket || this.incomingBucket;
     const response = await retryS3Operation(
       () =>
         this.s3Client.send(
           new GetObjectCommand({
-            Bucket: this.incomingBucket,
+            Bucket: targetBucket,
             Key: fileKey,
           }),
         ),
@@ -865,6 +867,7 @@ class FileProcessor {
       const mappingFileBuffer = await this.downloadFileFromS3(
         excelFiles[0].Key!,
         correlationId,
+        this.mappingBucket,
       );
 
       const excelParser = new ExcelMappingParser();
