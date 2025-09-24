@@ -6,9 +6,7 @@
  * and structures commonly found in property management documents.
  */
 
-// Import pdf-parse dynamically to avoid test file loading issues
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdf = require("pdf-parse");
+// Import pdf-parse using dynamic import to avoid test file loading issues
 import { BaseFileParser } from "./base/parser-interface";
 import {
   ParseResult,
@@ -235,7 +233,8 @@ export class PDFParser extends BaseFileParser {
 
       if (isRealPDF) {
         // Use pdf-parse for real PDFs
-        const data = await pdf(buffer);
+        const pdfParse = (await import("pdf-parse")) as any;
+        const data = await pdfParse(buffer);
 
         // Extract property name from repeated headers
         const propertyName = this.extractPropertyName(data.text);
