@@ -6,6 +6,7 @@
  * and structures commonly found in property management documents.
  */
 
+import * as pdf from "pdf-parse";
 import { BaseFileParser } from "./base/parser-interface";
 import {
   ParseResult,
@@ -45,6 +46,9 @@ export interface PDFParsedData extends Record<string, unknown> {
 
   /** Raw content if requested */
   rawContent?: string;
+
+  /** Extracted property name from headers */
+  propertyName?: string;
 }
 
 /**
@@ -214,9 +218,7 @@ export class PDFParser extends BaseFileParser {
   }
 
   /**
-   * Extract content from PDF buffer
-   *
-   * Note: This is a simulation. In production, use a real PDF library.
+   * Extract content from PDF buffer using pdf-parse library
    */
   private async extractPDFContent(
     buffer: Buffer,
@@ -225,52 +227,120 @@ export class PDFParser extends BaseFileParser {
   ): Promise<PDFParsedData> {
     const options = config.parserOptions as PDFParserOptions;
 
-    // Simulate PDF parsing delay
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    try {
+      // Use pdf-parse to extract text content
+      const data = await pdf(buffer);
 
-    // Simulate extracting PDF metadata
-    const documentInfo = this.extractDocumentInfo(buffer);
+      // Extract property name from repeated headers
+      const propertyName = this.extractPropertyName(data.text);
+      if (propertyName) {
+        warnings.push(`Property identified: ${propertyName}`);
+      }
 
-    // Simulate page extraction
-    const simulatedPageCount = Math.min(
-      Math.floor(Math.random() * 10) + 1, // Random 1-10 pages
-      options?.maxPages || 100,
-    );
+      // Split text into pages (approximate)
+      const pageTexts = this.splitTextIntoPages(data.text, data.numpages);
+      
+      const pages = pageTexts.map((pageText, index) => ({
+        pageNumber: index + 1,
+        text: pageText,
+        metadata: {
+          propertyName: propertyName,
+          extractedFromPDF: true,
+        },
+      }));
 
-    const pages = Array.from({ length: simulatedPageCount }, (_, index) => ({
-      pageNumber: index + 1,
-      text: this.generateSimulatedPageText(index + 1, documentInfo?.title),
-      metadata: {
-        hasImages: Math.random() > 0.7,
-        wordCount: Math.floor(Math.random() * 500) + 100,
-      },
-    }));
+      // Extract document metadata
+      const documentInfo = {
+        title: data.info?.Title,
+        author: data.info?.Author,
+        subject: data.info?.Subject,
+        creator: data.info?.Creator,
+        producer: data.info?.Producer,
+        creationDate: data.info?.CreationDate ? new Date(data.info.CreationDate) : undefined,
+        modificationDate: data.info?.ModDate ? new Date(data.info.ModDate) : undefined,
+      };
 
-    // Combine all page text
-    const allText = pages.map((page) => page.text).join("\n\n");
+      // Add warnings for common issues
+      if (data.numpages >= (options?.maxPages || 100)) {
+        warnings.push(
+          `PDF has more than ${options?.maxPages} pages, only first ${options?.maxPages} processed`,
+        );
+      }
 
-    // Add warnings for common issues
-    if (simulatedPageCount >= (options?.maxPages || 100)) {
-      warnings.push(
-        `PDF has more than ${options?.maxPages} pages, only first ${options?.maxPages} processed`,
-      );
+      if (data.text.length < 100) {
+        warnings.push(
+          "PDF contains very little text - may be image-based or corrupted",
+        );
+      }
+
+      return {
+        text: data.text,
+        pageCount: data.numpages,
+        pages,
+        documentInfo,
+        rawContent: options?.includeRawContent ? data.text : undefined,
+        propertyName, // Add property name to parsed data
+      };
+    } catch (error) {
+      throw new Error(`Failed to parse PDF: ${(error as Error).message}`);
     }
+  }
 
-    if (allText.length < 100) {
-      warnings.push(
-        "PDF contains very little text - may be image-based or corrupted",
-      );
+  /**
+   * Extract property name from PDF text by looking for repeated headers
+   */
+  private extractPropertyName(text: string): string | undefined {
+    const lines = text.split('\n').filter(line => line.trim());
+    const lineFrequency: Record<string, number> = {};
+    
+    // Count frequency of lines that could be headers
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed.length > 10 && trimmed.length < 100) {
+        lineFrequency[trimmed] = (lineFrequency[trimmed] || 0) + 1;
+      }
+    });
+    
+    // Find lines that appear multiple times (likely page headers)
+    const repeatedLines = Object.entries(lineFrequency)
+      .filter(([line, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1]);
+    
+    // Look for hotel/property name patterns in repeated lines
+    for (const [line, count] of repeatedLines) {
+      // Look for lines containing hotel/inn/resort and property-like patterns
+      if (/\b(hotel|inn|resort|suites|lodge)\b/i.test(line) || 
+          /^[A-Z][a-z]+ [A-Z][a-z]+ (Inn|Hotel|Resort)/i.test(line)) {
+        // Extract just the property name part
+        const match = line.match(/^([A-Z][a-z]+ [A-Z][a-z]+ (?:Inn|Hotel|Resort|Suites|Lodge))/i);
+        if (match) {
+          return match[1].trim();
+        }
+      }
     }
+    
+    return undefined;
+  }
 
-    return {
-      text: allText,
-      pageCount: simulatedPageCount,
-      pages,
-      documentInfo,
-      rawContent: config.includeRawContent
-        ? buffer.toString("base64")
-        : undefined,
-    };
+  /**
+   * Split text into approximate pages
+   */
+  private splitTextIntoPages(text: string, pageCount: number): string[] {
+    if (pageCount <= 1) {
+      return [text];
+    }
+    
+    const lines = text.split('\n');
+    const linesPerPage = Math.ceil(lines.length / pageCount);
+    const pages: string[] = [];
+    
+    for (let i = 0; i < pageCount; i++) {
+      const startLine = i * linesPerPage;
+      const endLine = Math.min(startLine + linesPerPage, lines.length);
+      pages.push(lines.slice(startLine, endLine).join('\n'));
+    }
+    
+    return pages;
   }
 
   /**
