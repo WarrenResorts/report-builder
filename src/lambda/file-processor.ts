@@ -416,6 +416,25 @@ class FileProcessor {
             );
 
             if (parseResult.success && parseResult.data) {
+              // For PDF files, use extracted property name if available
+              let finalPropertyId = propertyId;
+              if (
+                supportedType === "pdf" &&
+                typeof parseResult.data === "object" &&
+                parseResult.data !== null &&
+                "propertyName" in parseResult.data &&
+                parseResult.data.propertyName
+              ) {
+                finalPropertyId = parseResult.data.propertyName as string;
+
+                logger.info("Using extracted property name from PDF", {
+                  fileKey: file.key,
+                  originalPropertyId: propertyId,
+                  extractedPropertyName: finalPropertyId,
+                  operation: "property_name_extracted",
+                });
+              }
+
               processedFiles.push({
                 fileKey: file.key,
                 originalContent:
@@ -424,13 +443,13 @@ class FileProcessor {
                     : JSON.stringify(parseResult.data),
                 transformedData: [], // Will be populated in Step 4
                 errors: [],
-                propertyId,
+                propertyId: finalPropertyId,
                 processingTime: Date.now() - startTime,
               });
 
               logger.info("File processed successfully", {
                 fileKey: file.key,
-                propertyId,
+                propertyId: finalPropertyId,
                 fileType: fileExtension,
                 processingTime: Date.now() - startTime,
                 operation: "file_parse_success",
@@ -445,7 +464,7 @@ class FileProcessor {
                 originalContent: "",
                 transformedData: [],
                 errors: [errorMsg],
-                propertyId,
+                propertyId, // Use original propertyId for failed parses
                 processingTime: Date.now() - startTime,
               });
 
