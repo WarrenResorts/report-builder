@@ -412,12 +412,18 @@ class FileProcessor {
             const parser = ParserFactory.createParser(supportedType);
 
             // Parse the file content
-            console.log(`DEBUG: About to parse file ${file.key} as ${supportedType}`);
+            console.log(
+              `DEBUG: About to parse file ${file.key} as ${supportedType}`,
+            );
             const parseResult = await parser.parseFromBuffer(
               fileContent,
               file.filename,
             );
-            console.log(`DEBUG: Parse result for ${file.key}:`, { success: parseResult.success, hasData: !!parseResult.data, dataType: typeof parseResult.data });
+            console.log(`DEBUG: Parse result for ${file.key}:`, {
+              success: parseResult.success,
+              hasData: !!parseResult.data,
+              dataType: typeof parseResult.data,
+            });
 
             if (parseResult.success && parseResult.data) {
               // For PDF files, use extracted property name if available
