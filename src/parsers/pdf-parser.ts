@@ -230,17 +230,30 @@ export class PDFParser extends BaseFileParser {
     try {
       // Check if this is a real PDF or a test buffer
       const isRealPDF = this.isComplexPDF(buffer);
+      console.log(
+        `DEBUG: PDF parser - isComplexPDF: ${isRealPDF}, buffer size: ${buffer.length}`,
+      );
 
       if (isRealPDF) {
+        console.log("DEBUG: Using real PDF parsing path");
         // Use pdf-parse for real PDFs
         const pdfParse = (await import("pdf-parse")) as any;
+        console.log("DEBUG: pdf-parse imported, about to parse buffer");
         const data = await pdfParse(buffer);
+        console.log(
+          `DEBUG: pdf-parse complete - pages: ${data.numpages}, text length: ${data.text.length}`,
+        );
 
         // Extract property name from repeated headers
+        console.log("DEBUG: About to call extractPropertyName");
         const propertyName = this.extractPropertyName(data.text);
+        console.log(`DEBUG: extractPropertyName result: ${propertyName}`);
+
         if (propertyName) {
+          console.log(`DEBUG: Property name found: ${propertyName}`);
           warnings.push(`Property identified: ${propertyName}`);
         } else {
+          console.log("DEBUG: No property name found");
           // Debug logging when property name extraction fails
           warnings.push(
             `DEBUG: No property name found. Text length: ${data.text.length}, First 200 chars: ${data.text.substring(0, 200).replace(/\n/g, "\\n")}`,
@@ -296,6 +309,7 @@ export class PDFParser extends BaseFileParser {
           propertyName, // Add property name to parsed data
         };
       } else {
+        console.log("DEBUG: Using PDF simulation path (not a complex PDF)");
         // Fallback to simulation for test scenarios
         return this.simulatePDFParsing(buffer, config, warnings);
       }
@@ -393,7 +407,11 @@ export class PDFParser extends BaseFileParser {
    * Extract property name from PDF text by looking for repeated headers
    */
   private extractPropertyName(text: string): string | undefined {
+    console.log(
+      `DEBUG: extractPropertyName called with text length: ${text.length}`,
+    );
     const lines = text.split("\n").filter((line) => line.trim());
+    console.log(`DEBUG: Found ${lines.length} non-empty lines`);
     const lineFrequency: Record<string, number> = {};
 
     // Count frequency of lines that could be headers
@@ -404,10 +422,16 @@ export class PDFParser extends BaseFileParser {
       }
     });
 
+    console.log(
+      `DEBUG: Found ${Object.keys(lineFrequency).length} potential header lines`,
+    );
+
     // Find lines that appear multiple times (likely page headers)
     const repeatedLines = Object.entries(lineFrequency)
       .filter(([_line, count]) => count > 1)
       .sort((a, b) => b[1] - a[1]);
+
+    console.log(`DEBUG: Found ${repeatedLines.length} repeated lines`);
 
     // Debug: Log the top repeated lines for analysis
     console.log(

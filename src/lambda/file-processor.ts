@@ -425,7 +425,45 @@ class FileProcessor {
               dataType: typeof parseResult.data,
             });
 
+            // For PDF files, log more details about the parsed data
+            if (
+              supportedType === "pdf" &&
+              parseResult.success &&
+              parseResult.data
+            ) {
+              console.log(
+                `DEBUG: PDF data keys:`,
+                Object.keys(parseResult.data),
+              );
+              if (
+                typeof parseResult.data === "object" &&
+                parseResult.data !== null &&
+                "propertyName" in parseResult.data
+              ) {
+                console.log(
+                  `DEBUG: Property name found in PDF:`,
+                  parseResult.data.propertyName,
+                );
+              } else {
+                console.log(`DEBUG: No propertyName field in PDF data`);
+              }
+            }
+
             if (parseResult.success && parseResult.data) {
+              logger.info(
+                "Parse successful, checking for property name extraction",
+                {
+                  correlationId,
+                  operation: "parse_success_check",
+                  fileKey: file.key,
+                  supportedType,
+                  hasPropertyName:
+                    typeof parseResult.data === "object" &&
+                    parseResult.data !== null &&
+                    "propertyName" in parseResult.data,
+                },
+              );
+
               // For PDF files, use extracted property name if available
               let finalPropertyId = propertyId;
               if (
@@ -438,10 +476,32 @@ class FileProcessor {
                 finalPropertyId = parseResult.data.propertyName as string;
 
                 logger.info("Using extracted property name from PDF", {
+                  correlationId,
                   fileKey: file.key,
                   originalPropertyId: propertyId,
                   extractedPropertyName: finalPropertyId,
                   operation: "property_name_extracted",
+                });
+              } else if (supportedType === "pdf") {
+                logger.info("PDF parsed but no property name extracted", {
+                  correlationId,
+                  operation: "property_name_not_extracted",
+                  fileKey: file.key,
+                  dataKeys:
+                    typeof parseResult.data === "object" &&
+                    parseResult.data !== null
+                      ? Object.keys(parseResult.data)
+                      : [],
+                  hasPropertyNameField:
+                    typeof parseResult.data === "object" &&
+                    parseResult.data !== null &&
+                    "propertyName" in parseResult.data,
+                  propertyNameValue:
+                    typeof parseResult.data === "object" &&
+                    parseResult.data !== null &&
+                    "propertyName" in parseResult.data
+                      ? parseResult.data.propertyName
+                      : "N/A",
                 });
               }
 
