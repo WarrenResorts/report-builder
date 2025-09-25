@@ -240,6 +240,11 @@ export class PDFParser extends BaseFileParser {
         const propertyName = this.extractPropertyName(data.text);
         if (propertyName) {
           warnings.push(`Property identified: ${propertyName}`);
+        } else {
+          // Debug logging when property name extraction fails
+          warnings.push(
+            `DEBUG: No property name found. Text length: ${data.text.length}, First 200 chars: ${data.text.substring(0, 200).replace(/\n/g, "\\n")}`,
+          );
         }
 
         // Split text into pages (approximate)
@@ -403,6 +408,12 @@ export class PDFParser extends BaseFileParser {
     const repeatedLines = Object.entries(lineFrequency)
       .filter(([_line, count]) => count > 1)
       .sort((a, b) => b[1] - a[1]);
+
+    // Debug: Log the top repeated lines for analysis
+    console.log(
+      "DEBUG: Top repeated lines:",
+      repeatedLines.slice(0, 5).map(([line, count]) => `${count}x: "${line}"`),
+    );
 
     // Look for hotel/property name patterns in repeated lines
     for (const [line] of repeatedLines) {
