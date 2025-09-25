@@ -10,6 +10,8 @@
  * - Process and transform file data using mapping rules
  * - Generate consolidated CSV reports
  * - Store processed results in S3
+ *
+ * Enhanced with property name extraction from PDF content for accurate mapping.
  */
 
 import {
