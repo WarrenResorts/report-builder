@@ -241,6 +241,18 @@ export class PDFParser extends BaseFileParser {
         // Use pdf-parse for real PDFs
         const pdfParse = (await import("pdf-parse")) as any;
         console.log("DEBUG: pdf-parse imported, about to parse buffer");
+        /* c8 ignore next */
+        console.log(
+          `DEBUG: buffer type: ${typeof buffer}, isBuffer: ${Buffer.isBuffer(buffer)}`,
+        );
+        /* c8 ignore next */
+        console.log(
+          `DEBUG: buffer first 50 bytes as string: "${buffer.toString("utf8", 0, 50)}"`,
+        );
+        /* c8 ignore next */
+        console.log(
+          `DEBUG: buffer first 20 bytes as hex: ${buffer.subarray(0, 20).toString("hex")}`,
+        );
         const data = await pdfParse(buffer);
         /* c8 ignore next 3 */
         console.log(
