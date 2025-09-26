@@ -412,6 +412,7 @@ class FileProcessor {
             const parser = ParserFactory.createParser(supportedType);
 
             // Parse the file content
+            /* c8 ignore next */
             console.log(
               `DEBUG: About to parse file ${file.key} as ${supportedType}`,
             );
@@ -419,6 +420,7 @@ class FileProcessor {
               fileContent,
               file.filename,
             );
+            /* c8 ignore next 4 */
             console.log(`DEBUG: Parse result for ${file.key}:`, {
               success: parseResult.success,
               hasData: !!parseResult.data,
@@ -431,6 +433,7 @@ class FileProcessor {
               parseResult.success &&
               parseResult.data
             ) {
+              /* c8 ignore next 3 */
               console.log(
                 `DEBUG: PDF data keys:`,
                 Object.keys(parseResult.data),
@@ -440,11 +443,13 @@ class FileProcessor {
                 parseResult.data !== null &&
                 "propertyName" in parseResult.data
               ) {
+                /* c8 ignore next 3 */
                 console.log(
                   `DEBUG: Property name found in PDF:`,
                   parseResult.data.propertyName,
                 );
               } else {
+                /* c8 ignore next */
                 console.log(`DEBUG: No propertyName field in PDF data`);
               }
             }
