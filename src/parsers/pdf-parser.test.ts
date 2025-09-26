@@ -393,4 +393,43 @@ describe("PDFParser", () => {
       });
     });
   });
+
+  describe("property name extraction", () => {
+    it("should test extractPropertyName method indirectly", async () => {
+      // Test the extractPropertyName method by calling it through the parser's private methods
+      const parser = new PDFParser() as any;
+
+      // Create test text that should extract a property name
+      const testText = `Crown City Inn
+Daily Report
+Date: 2024-01-15
+Revenue: $1,234.56
+
+Crown City Inn
+Page 2
+More data here
+
+Crown City Inn
+Summary Page`;
+
+      // Call the private extractPropertyName method
+      const propertyName = parser.extractPropertyName(testText);
+
+      expect(propertyName).toBe("Crown City Inn");
+    });
+
+    it("should test extractPropertyName with no match", async () => {
+      const parser = new PDFParser() as any;
+
+      // Create test text that should NOT extract a property name
+      const testText = `Some Random Text
+Daily Report
+Date: 2024-01-15
+No property name here`;
+
+      const propertyName = parser.extractPropertyName(testText);
+
+      expect(propertyName).toBeUndefined();
+    });
+  });
 });

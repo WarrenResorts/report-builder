@@ -294,7 +294,7 @@ export class LambdaConstruct extends Construct {
       projectRoot: path.join(__dirname, '..', '..', '..'),
       depsLockFilePath: path.join(__dirname, '..', '..', '..', 'package-lock.json'),
       bundling: {
-        nodeModules: ['exceljs', 'pdf-parse'],
+        nodeModules: ['exceljs', 'pdfjs-dist'],
         externalModules: ['@aws-sdk/*'],
         format: lambdaNodejs.OutputFormat.ESM,
         target: 'es2022',

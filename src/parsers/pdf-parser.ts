@@ -238,30 +238,51 @@ export class PDFParser extends BaseFileParser {
       if (isRealPDF) {
         /* c8 ignore next */
         console.log("DEBUG: Using real PDF parsing path");
-        // Use pdf-parse for real PDFs
-        const pdfParse = (await import("pdf-parse")) as any;
-        console.log("DEBUG: pdf-parse imported, about to parse buffer");
+        // Use pdfjs-dist for real PDFs
         /* c8 ignore next */
-        console.log(
-          `DEBUG: buffer type: ${typeof buffer}, isBuffer: ${Buffer.isBuffer(buffer)}`,
-        );
+        console.log("DEBUG: About to import pdfjs-dist");
+        const pdfjsLib = await import("pdfjs-dist");
         /* c8 ignore next */
-        console.log(
-          `DEBUG: buffer first 50 bytes as string: "${buffer.toString("utf8", 0, 50)}"`,
-        );
-        /* c8 ignore next */
-        console.log(
-          `DEBUG: buffer first 20 bytes as hex: ${buffer.subarray(0, 20).toString("hex")}`,
-        );
-        const data = await pdfParse(buffer);
+        console.log("DEBUG: pdfjs-dist import successful");
+
+        // Load the PDF document
+        console.log("DEBUG: pdfjs-dist imported, about to parse buffer");
+        const loadingTask = pdfjsLib.getDocument({ data: buffer });
+        const pdfDocument = await loadingTask.promise;
         /* c8 ignore next 3 */
         console.log(
-          `DEBUG: pdf-parse complete - pages: ${data.numpages}, text length: ${data.text.length}`,
+          `DEBUG: pdfjs-dist loaded - pages: ${pdfDocument.numPages}`,
+        );
+
+        // Extract text from all pages
+        let allText = "";
+        const pages = [];
+
+        for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+          const page = await pdfDocument.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(" ");
+
+          allText += pageText + "\n\n";
+          pages.push({
+            pageNumber: pageNum,
+            text: pageText,
+            metadata: {
+              extractedFromPDF: true,
+            } as any,
+          });
+        }
+
+        /* c8 ignore next 3 */
+        console.log(
+          `DEBUG: pdfjs-dist text extraction complete - total text length: ${allText.length}`,
         );
 
         // Extract property name from repeated headers
         console.log("DEBUG: About to call extractPropertyName");
-        const propertyName = this.extractPropertyName(data.text);
+        const propertyName = this.extractPropertyName(allText);
         console.log(`DEBUG: extractPropertyName result: ${propertyName}`);
 
         if (propertyName) {
@@ -271,56 +292,44 @@ export class PDFParser extends BaseFileParser {
           console.log("DEBUG: No property name found");
           // Debug logging when property name extraction fails
           warnings.push(
-            `DEBUG: No property name found. Text length: ${data.text.length}, First 200 chars: ${data.text.substring(0, 200).replace(/\n/g, "\\n")}`,
+            `DEBUG: No property name found. Text length: ${allText.length}, First 200 chars: ${allText.substring(0, 200).replace(/\n/g, "\\n")}`,
           );
         }
 
-        // Split text into pages (approximate)
-        const pageTexts = this.splitTextIntoPages(data.text, data.numpages);
+        // Pages already extracted above with pdfjs-dist
+        // Add propertyName to each page's metadata
+        pages.forEach((page) => {
+          page.metadata.propertyName = propertyName;
+        });
 
-        const pages = pageTexts.map((pageText, index) => ({
-          pageNumber: index + 1,
-          text: pageText,
-          metadata: {
-            propertyName: propertyName,
-            extractedFromPDF: true,
-          },
-        }));
-
-        // Extract document metadata
+        // Extract document metadata (basic info since pdfjs-dist doesn't provide detailed metadata like pdf-parse)
         const documentInfo = {
-          title: data.info?.Title,
-          author: data.info?.Author,
-          subject: data.info?.Subject,
-          creator: data.info?.Creator,
-          producer: data.info?.Producer,
-          creationDate: data.info?.CreationDate
-            ? new Date(data.info.CreationDate)
-            : undefined,
-          modificationDate: data.info?.ModDate
-            ? new Date(data.info.ModDate)
-            : undefined,
+          title: "PDF Document",
+          creator: "pdfjs-dist",
+          producer: "Mozilla PDF.js",
+          creationDate: new Date(),
+          modificationDate: new Date(),
         };
 
         // Add warnings for common issues
-        if (data.numpages >= (options?.maxPages || 100)) {
+        if (pdfDocument.numPages >= (options?.maxPages || 100)) {
           warnings.push(
             `PDF has more than ${options?.maxPages} pages, only first ${options?.maxPages} processed`,
           );
         }
 
-        if (data.text.length < 100) {
+        if (allText.length < 100) {
           warnings.push(
             "PDF contains very little text - may be image-based or corrupted",
           );
         }
 
         return {
-          text: data.text,
-          pageCount: data.numpages,
+          text: allText,
+          pageCount: pdfDocument.numPages,
           pages,
           documentInfo,
-          rawContent: options?.includeRawContent ? data.text : undefined,
+          rawContent: options?.includeRawContent ? allText : undefined,
           propertyName, // Add property name to parsed data
         };
       } else {
