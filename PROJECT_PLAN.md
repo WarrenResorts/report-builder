@@ -188,7 +188,7 @@ Enhanced S3 Structure:
 ## 🛠️ Technical Decisions
 
 ### File Processing Options
-1. **PDF Processing**: AWS Textract (managed) vs pdf-parse (in Lambda)
+1. **PDF Processing**: AWS Textract (managed) vs pdfjs-dist (in Lambda)
 2. **Excel Mapping**: ExcelJS library in Lambda
 3. **CSV Processing**: Built-in Node.js csv-parser
 4. **Data Comparison**: Custom delta engine with JSON diff algorithms

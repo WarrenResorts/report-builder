@@ -126,7 +126,7 @@ interface FileProcessingResult {
 - Validates file integrity and formats
 
 ### 3. Data Processing
-- **PDF Processing**: Extracts text using AWS Textract or pdf-parse
+- **PDF Processing**: Extracts text using AWS Textract or pdfjs-dist
 - **CSV Processing**: Parses and validates data structures
 - **Excel Processing**: Converts to standard format using ExcelJS
 - **Data Transformation**: Applies mapping rules from Excel mapping file

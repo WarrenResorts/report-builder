@@ -6,7 +6,7 @@
  * and structures commonly found in property management documents.
  */
 
-// Import pdf-parse using dynamic import to avoid test file loading issues
+// Import pdfjs-dist using dynamic import for Lambda compatibility
 import { BaseFileParser } from "./base/parser-interface";
 import {
   ParseResult,
@@ -55,7 +55,7 @@ export interface PDFParsedData extends Record<string, unknown> {
  * PDF Parser implementation
  *
  * Note: This is a placeholder implementation that simulates PDF parsing.
- * In a production environment, you would use a library like pdf-parse,
+ * In a production environment, you would use a library like pdfjs-dist,
  * pdf2pic with OCR, or similar PDF processing tools.
  */
 export class PDFParser extends BaseFileParser {
@@ -218,7 +218,7 @@ export class PDFParser extends BaseFileParser {
   }
 
   /**
-   * Extract content from PDF buffer using pdf-parse library
+   * Extract content from PDF buffer using pdfjs-dist library
    */
   private async extractPDFContent(
     buffer: Buffer,
@@ -302,7 +302,7 @@ export class PDFParser extends BaseFileParser {
           page.metadata.propertyName = propertyName;
         });
 
-        // Extract document metadata (basic info since pdfjs-dist doesn't provide detailed metadata like pdf-parse)
+        // Extract document metadata (basic info from pdfjs-dist)
         const documentInfo = {
           title: "PDF Document",
           creator: "pdfjs-dist",
@@ -356,7 +356,7 @@ export class PDFParser extends BaseFileParser {
       }
       // No fallback for real PDFs - fail clearly with the real error
       throw new Error(
-        `Failed to parse PDF with pdf-parse library: ${(error as Error).message}`,
+        `Failed to parse PDF with pdfjs-dist library: ${(error as Error).message}`,
       );
     }
   }
