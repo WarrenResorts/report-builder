@@ -249,18 +249,14 @@ export class PDFParser extends BaseFileParser {
         );
 
         // Extract property name from repeated headers
-        /* c8 ignore next */
         console.log("DEBUG: About to call extractPropertyName");
         const propertyName = this.extractPropertyName(data.text);
-        /* c8 ignore next */
         console.log(`DEBUG: extractPropertyName result: ${propertyName}`);
 
         if (propertyName) {
-          /* c8 ignore next */
           console.log(`DEBUG: Property name found: ${propertyName}`);
           warnings.push(`Property identified: ${propertyName}`);
         } else {
-          /* c8 ignore next */
           console.log("DEBUG: No property name found");
           // Debug logging when property name extraction fails
           warnings.push(
@@ -325,6 +321,10 @@ export class PDFParser extends BaseFileParser {
     } catch (error) {
       // If real PDF parsing fails, try simulation as fallback
       try {
+        /* c8 ignore next */
+        console.log(
+          "DEBUG: Real PDF parsing failed, using simulation fallback",
+        );
         warnings.push("Real PDF parsing failed, using simulation");
         return this.simulatePDFParsing(buffer, config, warnings);
       } catch {
@@ -447,7 +447,6 @@ export class PDFParser extends BaseFileParser {
     console.log(`DEBUG: Found ${repeatedLines.length} repeated lines`);
 
     // Debug: Log the top repeated lines for analysis
-    /* c8 ignore next 4 */
     console.log(
       "DEBUG: Top repeated lines:",
       repeatedLines.slice(0, 5).map(([line, count]) => `${count}x: "${line}"`),
