@@ -313,21 +313,30 @@ export class PDFParser extends BaseFileParser {
         };
       } else {
         // Only allow fallback for obvious test data (small buffers with PDF header)
-        if (buffer.length < 100 && buffer.toString("latin1").startsWith("%PDF")) {
+        if (
+          buffer.length < 100 &&
+          buffer.toString("latin1").startsWith("%PDF")
+        ) {
           console.log("DEBUG: Using minimal test fallback for small test PDF");
           return await this.createMinimalTestPDFData(buffer, config, warnings);
         }
-        throw new Error("PDF file is not complex enough for real parsing - may be test data or corrupted");
+        throw new Error(
+          "PDF file is not complex enough for real parsing - may be test data or corrupted",
+        );
       }
     } catch (error) {
       // For test data only - real PDFs should fail clearly
       if (buffer.length < 100 && buffer.toString("latin1").startsWith("%PDF")) {
-        console.log("DEBUG: Real PDF parsing failed, using minimal test fallback");
+        console.log(
+          "DEBUG: Real PDF parsing failed, using minimal test fallback",
+        );
         warnings.push("Real PDF parsing failed, using test fallback");
         return await this.createMinimalTestPDFData(buffer, config, warnings);
       }
       // No fallback for real PDFs - fail clearly with the real error
-      throw new Error(`Failed to parse PDF with pdf-parse library: ${(error as Error).message}`);
+      throw new Error(
+        `Failed to parse PDF with pdf-parse library: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -350,7 +359,6 @@ export class PDFParser extends BaseFileParser {
     );
   }
 
-
   /**
    * Create minimal PDF data for test scenarios only
    * This is NOT a full simulation - just enough to make tests pass
@@ -361,36 +369,42 @@ export class PDFParser extends BaseFileParser {
     warnings: string[],
   ): Promise<PDFParsedData> {
     const options = config.parserOptions as PDFParserOptions;
-    
+
     // Respect timeout for test scenarios
     if (config.timeoutMs && config.timeoutMs < 10) {
       throw new Error("Operation timed out");
     }
-    
+
     // Extract text content from buffer (for simple test cases only)
     const content = buffer.toString("utf8").replace("%PDF-1.4\n", "");
-    
+
     warnings.push("Using minimal test fallback - not suitable for production");
-    
+
     // Add warnings that tests expect
     if (content.length < 100) {
-      warnings.push("PDF contains very little text - may be image-based or corrupted");
+      warnings.push(
+        "PDF contains very little text - may be image-based or corrupted",
+      );
     }
-    
+
     // Simulate page limit warning if needed
     const maxPages = options?.maxPages || 100;
     if (maxPages <= 1) {
-      warnings.push(`PDF has more than ${maxPages} pages, only first ${maxPages} processed`);
+      warnings.push(
+        `PDF has more than ${maxPages} pages, only first ${maxPages} processed`,
+      );
     }
-    
+
     return {
       text: content,
       pageCount: 1,
-      pages: [{
-        pageNumber: 1,
-        text: content,
-        metadata: { testData: true },
-      }],
+      pages: [
+        {
+          pageNumber: 1,
+          text: content,
+          metadata: { testData: true },
+        },
+      ],
       documentInfo: {
         title: "Test PDF",
         creator: "Test",
@@ -398,7 +412,9 @@ export class PDFParser extends BaseFileParser {
         creationDate: new Date(),
         modificationDate: new Date(),
       },
-      rawContent: config.includeRawContent ? buffer.toString("base64") : undefined,
+      rawContent: config.includeRawContent
+        ? buffer.toString("base64")
+        : undefined,
     };
   }
 
@@ -482,7 +498,6 @@ export class PDFParser extends BaseFileParser {
 
     return pages;
   }
-
 
   /**
    * Determine appropriate error code based on error type
