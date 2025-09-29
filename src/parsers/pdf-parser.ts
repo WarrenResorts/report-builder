@@ -6,7 +6,8 @@
  * and structures commonly found in property management documents.
  */
 
-// Import pdfjs-dist using dynamic import for Lambda compatibility
+// Import pdf-parse using static import for Lambda compatibility
+import pdf from "pdf-parse";
 import { BaseFileParser } from "./base/parser-interface";
 import {
   ParseResult,
@@ -218,7 +219,7 @@ export class PDFParser extends BaseFileParser {
   }
 
   /**
-   * Extract content from PDF buffer using pdfjs-dist library
+   * Extract content from PDF buffer using pdf-parse library
    */
   private async extractPDFContent(
     buffer: Buffer,
@@ -238,51 +239,18 @@ export class PDFParser extends BaseFileParser {
       if (isRealPDF) {
         /* c8 ignore next */
         console.log("DEBUG: Using real PDF parsing path");
-        // Use pdfjs-dist for real PDFs
-        /* c8 ignore next */
-        console.log("DEBUG: About to import pdfjs-dist");
-        const pdfjsLib = await import("pdfjs-dist");
-        /* c8 ignore next */
-        console.log("DEBUG: pdfjs-dist import successful");
 
-        // Load the PDF document
-        console.log("DEBUG: pdfjs-dist imported, about to parse buffer");
-        const loadingTask = pdfjsLib.getDocument({ data: buffer });
-        const pdfDocument = await loadingTask.promise;
+        // Use pdf-parse for real PDFs - direct static import approach
+        console.log("DEBUG: About to parse with pdf-parse");
+        const data = await pdf(buffer);
         /* c8 ignore next 3 */
         console.log(
-          `DEBUG: pdfjs-dist loaded - pages: ${pdfDocument.numPages}`,
+          `DEBUG: pdf-parse completed - pages: ${data.numpages}, text length: ${data.text.length}`,
         );
 
-        // Extract text from all pages
-        let allText = "";
-        const pages = [];
-
-        for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-          const page = await pdfDocument.getPage(pageNum);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str)
-            .join(" ");
-
-          allText += pageText + "\n\n";
-          pages.push({
-            pageNumber: pageNum,
-            text: pageText,
-            metadata: {
-              extractedFromPDF: true,
-            } as any,
-          });
-        }
-
-        /* c8 ignore next 3 */
-        console.log(
-          `DEBUG: pdfjs-dist text extraction complete - total text length: ${allText.length}`,
-        );
-
-        // Extract property name from repeated headers
+        // Extract property name from the text
         console.log("DEBUG: About to call extractPropertyName");
-        const propertyName = this.extractPropertyName(allText);
+        const propertyName = this.extractPropertyName(data.text);
         console.log(`DEBUG: extractPropertyName result: ${propertyName}`);
 
         if (propertyName) {
@@ -292,44 +260,55 @@ export class PDFParser extends BaseFileParser {
           console.log("DEBUG: No property name found");
           // Debug logging when property name extraction fails
           warnings.push(
-            `DEBUG: No property name found. Text length: ${allText.length}, First 200 chars: ${allText.substring(0, 200).replace(/\n/g, "\\n")}`,
+            `DEBUG: No property name found. Text length: ${data.text.length}, First 200 chars: ${data.text.substring(0, 200).replace(/\n/g, "\\n")}`,
           );
         }
 
-        // Pages already extracted above with pdfjs-dist
-        // Add propertyName to each page's metadata
-        pages.forEach((page) => {
-          page.metadata.propertyName = propertyName;
-        });
+        // Split text into pages (pdf-parse doesn't provide per-page text)
+        const pageTexts = this.splitTextIntoPages(data.text, data.numpages);
+        const pages = pageTexts.map((pageText, index) => ({
+          pageNumber: index + 1,
+          text: pageText,
+          metadata: {
+            extractedFromPDF: true,
+            propertyName,
+          } as any,
+        }));
 
-        // Extract document metadata (basic info from pdfjs-dist)
+        // Extract document metadata from pdf-parse info
         const documentInfo = {
-          title: "PDF Document",
-          creator: "pdfjs-dist",
-          producer: "Mozilla PDF.js",
-          creationDate: new Date(),
-          modificationDate: new Date(),
+          title: data.info?.Title || "PDF Document",
+          author: data.info?.Author,
+          subject: data.info?.Subject,
+          creator: data.info?.Creator || "pdf-parse",
+          producer: data.info?.Producer || "pdf-parse",
+          creationDate: data.info?.CreationDate
+            ? new Date(data.info.CreationDate)
+            : new Date(),
+          modificationDate: data.info?.ModDate
+            ? new Date(data.info.ModDate)
+            : new Date(),
         };
 
         // Add warnings for common issues
-        if (pdfDocument.numPages >= (options?.maxPages || 100)) {
+        if (data.numpages >= (options?.maxPages || 100)) {
           warnings.push(
             `PDF has more than ${options?.maxPages} pages, only first ${options?.maxPages} processed`,
           );
         }
 
-        if (allText.length < 100) {
+        if (data.text.length < 100) {
           warnings.push(
             "PDF contains very little text - may be image-based or corrupted",
           );
         }
 
         return {
-          text: allText,
-          pageCount: pdfDocument.numPages,
+          text: data.text,
+          pageCount: data.numpages,
           pages,
           documentInfo,
-          rawContent: options?.includeRawContent ? allText : undefined,
+          rawContent: options?.includeRawContent ? data.text : undefined,
           propertyName, // Add property name to parsed data
         };
       } else {
@@ -356,7 +335,7 @@ export class PDFParser extends BaseFileParser {
       }
       // No fallback for real PDFs - fail clearly with the real error
       throw new Error(
-        `Failed to parse PDF with pdfjs-dist library: ${(error as Error).message}`,
+        `Failed to parse PDF with pdf-parse library: ${(error as Error).message}`,
       );
     }
   }

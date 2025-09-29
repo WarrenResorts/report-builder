@@ -47,9 +47,10 @@
     "@aws-sdk/client-sqs": "^3.873.0",
     "@aws-sdk/client-ssm": "^3.873.0",
     "@types/aws-lambda": "^8.10.152",
+    "@types/pdf-parse": "^1.1.5",
     "exceljs": "^4.4.0",
     "mailparser": "^3.6.5",
-    "pdfjs-dist": "^5.4.149"
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@commitlint/config-conventional": "^19.8.1",
