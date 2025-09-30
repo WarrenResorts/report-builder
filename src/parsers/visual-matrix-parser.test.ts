@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { VisualMatrixParser } from "./visual-matrix-parser";
-import * as ExcelJS from "exceljs";
+import ExcelJS from "exceljs";
 
 describe("VisualMatrixParser", () => {
   let parser: VisualMatrixParser;

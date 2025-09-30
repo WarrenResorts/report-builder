@@ -3,7 +3,7 @@ import { handler, FileProcessingEvent, FileProcessor } from "./file-processor";
 import { EventBridgeEvent, Context } from "aws-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 import { ParameterStoreConfig } from "../config/parameter-store";
-import * as ExcelJS from "exceljs";
+import ExcelJS from "exceljs";
 
 // Import types for testing
 interface ConsolidatedReport {

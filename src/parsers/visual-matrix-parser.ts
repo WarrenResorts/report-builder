@@ -5,7 +5,7 @@
  * This replaces the generic ExcelMappingParser for the specific VisualMatrix format.
  */
 
-import * as ExcelJS from "exceljs";
+import ExcelJS from "exceljs";
 type Worksheet = ExcelJS.Worksheet;
 import { Readable } from "stream";
 import { BaseFileParser } from "./base/parser-interface";
