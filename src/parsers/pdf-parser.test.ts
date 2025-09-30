@@ -431,5 +431,24 @@ No property name here`;
 
       expect(propertyName).toBeUndefined();
     });
+
+    it("should extract property name from date-based header format", async () => {
+      const parser = new PDFParser() as any;
+
+      // Test the actual format from VisualMatrix PDFs
+      const testText = `THE BARD'S INN HOTEL 07/15/2025 04:19 Mbald
+Room Revenue Report
+Some content here
+
+THE BARD'S INN HOTEL 07/15/2025 04:19 Mbald
+Page 2 content
+
+THE BARD'S INN HOTEL 07/15/2025 04:19 Mbald
+Final page`;
+
+      const propertyName = parser.extractPropertyName(testText);
+
+      expect(propertyName).toBe("THE BARD'S INN HOTEL");
+    });
   });
 });

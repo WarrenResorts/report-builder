@@ -458,19 +458,32 @@ export class PDFParser extends BaseFileParser {
       repeatedLines.slice(0, 5).map(([line, count]) => `${count}x: "${line}"`),
     );
 
-    // Look for hotel/property name patterns in repeated lines
+    // Look for property name patterns in repeated lines (likely page headers)
     for (const [line] of repeatedLines) {
-      // Look for lines containing hotel/inn/resort and property-like patterns
-      if (
-        /\b(hotel|inn|resort|suites|lodge)\b/i.test(line) ||
-        /^[A-Z][a-z]+ [A-Z][a-z]+ (Inn|Hotel|Resort)/i.test(line)
-      ) {
-        // Extract just the property name part
-        const match = line.match(
-          /^([A-Z][a-z]+ [A-Z][a-z]+ (?:Inn|Hotel|Resort|Suites|Lodge))/i,
-        );
-        if (match) {
-          return match[1].trim();
+      // Look for lines that contain a date pattern (MM/DD/YYYY) - extract everything before it
+      // Format: "THE BARD'S INN HOTEL 07/15/2025 04:19 Mbald"
+      const dateMatch = line.match(/^(.+?)\s+\d{1,2}\/\d{1,2}\/\d{4}/);
+      if (dateMatch) {
+        const propertyName = dateMatch[1].trim();
+        // Validate it looks like a property name (has letters, reasonable length)
+        if (
+          propertyName.length > 5 &&
+          propertyName.length < 50 &&
+          /[A-Z]/.test(propertyName)
+        ) {
+          return propertyName;
+        }
+      }
+
+      // Fallback: look for lines containing hotel/inn/resort keywords
+      if (/\b(hotel|inn|resort|suites|lodge)\b/i.test(line)) {
+        const trimmed = line.trim();
+        if (
+          trimmed.length > 5 &&
+          trimmed.length < 50 &&
+          /^[A-Z]/.test(trimmed)
+        ) {
+          return trimmed;
         }
       }
     }
