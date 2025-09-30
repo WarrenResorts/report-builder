@@ -27,7 +27,7 @@ import { ParameterStoreConfig } from "../config/parameter-store";
 import { environmentConfig } from "../config/environment";
 import { retryS3Operation } from "../utils/retry";
 import { ParserFactory } from "../parsers/parser-factory";
-import { ExcelMappingParser } from "../parsers/excel-mapping-parser";
+import { VisualMatrixParser, type VisualMatrixData } from "../parsers/visual-matrix-parser";
 import { TransformationEngine } from "../transformation/transformation-engine";
 import type { SupportedFileType } from "../parsers/base/parser-types";
 import type { ExcelMappingData } from "../parsers/excel-mapping-parser";
@@ -87,6 +87,7 @@ interface FileProcessingResult {
     filesFound: number;
     propertiesProcessed: string[];
     processingTimeMs: number;
+    reportsGenerated: number;
   };
 }
 
@@ -119,7 +120,7 @@ interface OrganizedFiles {
  * - Organizes files by property and date
  * - Provides foundation for file parsing and transformation
  */
-class FileProcessor {
+export class FileProcessor {
   private s3Client: S3Client;
   private parameterStore: ParameterStoreConfig;
   private incomingBucket: string;
@@ -192,8 +193,8 @@ class FileProcessor {
         operation: "files_processed",
       });
 
-      // Step 4: Apply mapping transformations (Phase 3C)
-      const transformedData = await this.applyMappingTransformations(
+      // Step 4: Apply VisualMatrix account code mappings (Phase 3C)
+      const transformedData = await this.applyAccountCodeMappings(
         processedFiles,
         correlationId,
       );
@@ -228,6 +229,7 @@ class FileProcessor {
           filesFound: files.length,
           propertiesProcessed,
           processingTimeMs,
+          reportsGenerated: reports.length,
         },
       };
     } catch (error) {
@@ -245,6 +247,7 @@ class FileProcessor {
           filesFound: 0,
           propertiesProcessed: [],
           processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 0,
         },
       };
     }
@@ -575,58 +578,49 @@ class FileProcessor {
   }
 
   /**
-   * Step 4: Apply mapping transformations to processed files
+   * Step 4: Apply VisualMatrix account code mappings to processed files
    */
-  private async applyMappingTransformations(
+  private async applyAccountCodeMappings(
     processedFiles: ProcessedFileData[],
     correlationId: string,
   ): Promise<ConsolidatedReport[]> {
     const logger = createCorrelatedLogger(correlationId, {
-      operation: "apply_mapping_transformations",
+      operation: "apply_account_code_mappings",
     });
 
-    // Load Excel mapping file
-    const mappingData = await this.loadExcelMapping(correlationId);
+    // Load VisualMatrix mapping file
+    const visualMatrixData = await this.loadVisualMatrixMapping(correlationId);
+
+    if (!visualMatrixData) {
+      logger.error("No VisualMatrix mapping data available - cannot process files");
+      return [];
+    }
 
     const reportsByProperty: { [propertyId: string]: ConsolidatedReport } = {};
 
     for (const file of processedFiles) {
       if (file.errors.length > 0) {
-        continue; // Skip files that had parsing errors
+        logger.warn("Skipping file with parsing errors", {
+          fileKey: file.fileKey,
+          errors: file.errors,
+        });
+        continue;
       }
 
       try {
-        // Find property mapping
-        const propertyMapping = mappingData?.propertyMappings.find(
-          (pm) => pm.propertyId === file.propertyId,
-        );
+        logger.info("Processing file with VisualMatrix mappings", {
+          fileKey: file.fileKey,
+          propertyId: file.propertyId,
+        });
 
-        if (!propertyMapping) {
-          logger.warn("No property mapping found", {
-            propertyId: file.propertyId,
-            fileKey: file.fileKey,
-            operation: "mapping_not_found",
-          });
-          continue;
-        }
-
-        // Convert parsed content to structured data for transformation
-        const rawFileData = this.createRawFileData(
+        // Apply account code mappings to the file data
+        const mappedRecords = await this.applyVisualMatrixMappings(
           file,
-          propertyMapping.propertyId,
+          visualMatrixData,
+          correlationId,
         );
 
-        // Apply transformations using the full mapping data
-        const transformationResult =
-          await this.transformationEngine.transformData(
-            rawFileData,
-            mappingData!,
-            correlationId,
-          );
-
-        if (transformationResult && transformationResult.records) {
-          file.transformedData = transformationResult.records;
-
+        if (mappedRecords.length > 0) {
           // Initialize or update property report
           if (!reportsByProperty[file.propertyId]) {
             reportsByProperty[file.propertyId] = {
@@ -646,23 +640,19 @@ class FileProcessor {
 
           const report = reportsByProperty[file.propertyId];
           report.totalFiles++;
-          report.totalRecords += transformationResult.records.length;
-          report.data.push(...transformationResult.records);
+          report.totalRecords += mappedRecords.length;
+          report.data.push(...mappedRecords);
           report.summary.successfulFiles++;
           report.summary.processingTime += file.processingTime;
 
-          logger.info("File transformation completed", {
+          logger.info("File VisualMatrix mapping completed", {
             fileKey: file.fileKey,
             propertyId: file.propertyId,
-            recordsTransformed: transformationResult.records.length,
-            operation: "transformation_success",
+            recordsMapped: mappedRecords.length,
+            operation: "mapping_success",
           });
         } else {
-          file.errors.push(
-            ...(transformationResult?.metadata?.errors?.map(
-              (e) => e.message,
-            ) || ["Transformation failed"]),
-          );
+          file.errors.push("VisualMatrix mapping failed - no records produced");
 
           if (reportsByProperty[file.propertyId]) {
             reportsByProperty[file.propertyId].summary.failedFiles++;
@@ -671,11 +661,11 @@ class FileProcessor {
             );
           }
 
-          logger.warn("File transformation failed", {
+          logger.warn("File VisualMatrix mapping failed", {
             fileKey: file.fileKey,
             propertyId: file.propertyId,
             errors: file.errors,
-            operation: "transformation_error",
+            operation: "mapping_error",
           });
         }
       } catch (error) {
@@ -687,10 +677,10 @@ class FileProcessor {
           reportsByProperty[file.propertyId].summary.errors.push(errorMsg);
         }
 
-        logger.error("Transformation processing failed", error as Error, {
+        logger.error("VisualMatrix mapping processing failed", error as Error, {
           fileKey: file.fileKey,
           propertyId: file.propertyId,
-          operation: "transformation_process_error",
+          operation: "mapping_process_error",
         });
       }
     }
@@ -699,7 +689,108 @@ class FileProcessor {
   }
 
   /**
-   * Step 5: Generate consolidated reports and store them in S3
+   * Apply VisualMatrix account code mappings to a processed file
+   */
+  private async applyVisualMatrixMappings(
+    file: ProcessedFileData,
+    visualMatrixData: VisualMatrixData,
+    correlationId: string,
+  ): Promise<any[]> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "apply_visual_matrix_mappings",
+      fileKey: file.fileKey,
+      propertyId: file.propertyId,
+    });
+
+    const mappedRecords: any[] = [];
+
+    try {
+      // Check if the file has account line data (from PDF parsing)
+      const parsedData = JSON.parse(file.originalContent);
+      
+      if (parsedData.accountLines && Array.isArray(parsedData.accountLines)) {
+        logger.info("Processing account lines from PDF", {
+          accountLineCount: parsedData.accountLines.length,
+        });
+
+        // Process each account line
+        for (const accountLine of parsedData.accountLines) {
+          const mapping = VisualMatrixParser.findMappingBySourceCode(
+            visualMatrixData,
+            accountLine.sourceCode,
+            0, // Use global mappings for now (propertyId = 0)
+          );
+
+          if (mapping) {
+            const mappedRecord = {
+              sourceCode: accountLine.sourceCode,
+              sourceDescription: accountLine.description,
+              sourceAmount: accountLine.amount,
+              targetCode: mapping.acctCode,
+              targetDescription: mapping.acctName,
+              mappedAmount: accountLine.amount * mapping.multiplier,
+              paymentMethod: accountLine.paymentMethod,
+              originalLine: accountLine.originalLine,
+              propertyId: file.propertyId,
+              processingDate: new Date().toISOString(),
+            };
+
+            mappedRecords.push(mappedRecord);
+
+            logger.debug("Account line mapped", {
+              sourceCode: accountLine.sourceCode,
+              targetCode: mapping.acctCode,
+              amount: accountLine.amount,
+              mappedAmount: mappedRecord.mappedAmount,
+            });
+          } else {
+            logger.warn("No mapping found for source account code", {
+              sourceCode: accountLine.sourceCode,
+              description: accountLine.description,
+              amount: accountLine.amount,
+            });
+
+            // Still include unmapped records for visibility
+            const unmappedRecord = {
+              sourceCode: accountLine.sourceCode,
+              sourceDescription: accountLine.description,
+              sourceAmount: accountLine.amount,
+              targetCode: `UNMAPPED_${accountLine.sourceCode}`,
+              targetDescription: `Unmapped: ${accountLine.description}`,
+              mappedAmount: accountLine.amount,
+              paymentMethod: accountLine.paymentMethod,
+              originalLine: accountLine.originalLine,
+              propertyId: file.propertyId,
+              processingDate: new Date().toISOString(),
+              mappingStatus: 'UNMAPPED',
+            };
+
+            mappedRecords.push(unmappedRecord);
+          }
+        }
+      } else {
+        logger.warn("No account lines found in parsed data", {
+          parsedDataKeys: Object.keys(parsedData),
+        });
+      }
+
+      logger.info("VisualMatrix mapping completed", {
+        totalAccountLines: parsedData.accountLines?.length || 0,
+        mappedRecords: mappedRecords.length,
+        unmappedCount: mappedRecords.filter(r => r.mappingStatus === 'UNMAPPED').length,
+      });
+
+      return mappedRecords;
+    } catch (error) {
+      logger.error("Failed to apply VisualMatrix mappings", error as Error, {
+        fileContent: file.originalContent.substring(0, 200),
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Step 5: Generate one consolidated report with all properties and store it in S3
    */
   private async generateConsolidatedReports(
     transformedData: ConsolidatedReport[],
@@ -709,15 +800,16 @@ class FileProcessor {
       operation: "generate_consolidated_reports",
     });
 
-    const reportKeys: string[] = [];
-
-    for (const report of transformedData) {
+    // Always generate one consolidated report, even if empty
+    // This ensures consistent output format for downstream consumers
+    if (transformedData.length === 0) {
+      logger.info("No transformed data - generating empty consolidated report");
+      
       try {
-        // Generate CSV report
-        const csvContent = this.generateCSVReport(report);
-
-        // Store report in S3
-        const reportKey = `reports/${report.reportDate}/${report.propertyId}-consolidated-report.csv`;
+        // Create empty report with current date
+        const reportDate = new Date().toISOString().split('T')[0];
+        const reportKey = `reports/${reportDate}/daily-consolidated-report.csv`;
+        const csvContent = "No data available\n";
 
         await retryS3Operation(
           () =>
@@ -728,39 +820,93 @@ class FileProcessor {
                 Body: csvContent,
                 ContentType: "text/csv",
                 Metadata: {
-                  propertyId: report.propertyId,
-                  reportDate: report.reportDate,
-                  totalRecords: report.totalRecords.toString(),
+                  reportDate: reportDate,
+                  totalRecords: "0",
+                  totalFiles: "0",
+                  totalProperties: "0",
                   generatedAt: new Date().toISOString(),
                 },
               }),
             ),
           correlationId,
-          "put_consolidated_report",
+          "put_empty_consolidated_report",
           {
             maxRetries: 3,
             baseDelay: 1000,
           },
         );
 
-        reportKeys.push(reportKey);
-
-        logger.info("Consolidated report generated", {
-          propertyId: report.propertyId,
+        logger.info("Empty consolidated report generated", {
           reportKey,
-          totalRecords: report.totalRecords,
-          totalFiles: report.totalFiles,
-          operation: "report_generated",
+          reportDate,
         });
+
+        return [reportKey];
       } catch (error) {
-        logger.error("Failed to generate consolidated report", error as Error, {
-          propertyId: report.propertyId,
-          operation: "report_generation_error",
+        logger.error("Failed to upload empty consolidated report", error as Error, {
+          operation: "empty_report_upload_error",
         });
+        
+        // Return empty array to indicate no reports were generated
+        // but don't throw - this allows the Lambda to continue and return success
+        return [];
       }
     }
 
-    return reportKeys;
+    try {
+      // Generate one master CSV report with all properties
+      const csvContent = this.generateMasterCSVReport(transformedData);
+      
+      // Use the first report's date (they should all be the same date)
+      const reportDate = transformedData[0].reportDate;
+      const reportKey = `reports/${reportDate}/daily-consolidated-report.csv`;
+
+      // Calculate totals across all properties
+      const totalRecords = transformedData.reduce((sum, report) => sum + report.totalRecords, 0);
+      const totalFiles = transformedData.reduce((sum, report) => sum + report.totalFiles, 0);
+      const totalProperties = transformedData.length;
+
+      await retryS3Operation(
+        () =>
+          this.s3Client.send(
+            new PutObjectCommand({
+              Bucket: this.processedBucket,
+              Key: reportKey,
+              Body: csvContent,
+              ContentType: "text/csv",
+              Metadata: {
+                reportDate: reportDate,
+                totalRecords: totalRecords.toString(),
+                totalFiles: totalFiles.toString(),
+                totalProperties: totalProperties.toString(),
+                generatedAt: new Date().toISOString(),
+              },
+            }),
+          ),
+        correlationId,
+        "put_consolidated_report",
+        {
+          maxRetries: 3,
+          baseDelay: 1000,
+        },
+      );
+
+      logger.info("Master consolidated report generated", {
+        reportKey,
+        totalRecords,
+        totalFiles,
+        totalProperties,
+        properties: transformedData.map(r => r.propertyId),
+        operation: "master_report_generated",
+      });
+
+      return [reportKey];
+    } catch (error) {
+      logger.error("Failed to generate master consolidated report", error as Error, {
+        operation: "master_report_generation_error",
+      });
+      return [];
+    }
   }
 
   /**
@@ -919,13 +1065,13 @@ class FileProcessor {
   }
 
   /**
-   * Helper method to load Excel mapping configuration
+   * Helper method to load VisualMatrix mapping configuration
    */
-  private async loadExcelMapping(
+  private async loadVisualMatrixMapping(
     correlationId: string,
-  ): Promise<ExcelMappingData | null> {
+  ): Promise<VisualMatrixData | null> {
     try {
-      // Find the most recent Excel mapping file
+      // Find the most recent VisualMatrix mapping file
       const listResult = await retryS3Operation(
         () =>
           this.s3Client.send(
@@ -942,47 +1088,92 @@ class FileProcessor {
         },
       );
 
-      const excelFiles = (listResult.Contents || [])
+      const mappingFiles = (listResult.Contents || [])
         .filter(
           (obj) =>
             obj.Key?.toLowerCase().endsWith(".xlsx") ||
-            obj.Key?.toLowerCase().endsWith(".xls"),
+            obj.Key?.toLowerCase().endsWith(".xls") ||
+            obj.Key?.toLowerCase().endsWith(".csv"), // Also support CSV files that are actually Excel
         )
         .sort(
           (a, b) =>
             (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0),
         );
 
-      if (excelFiles.length === 0) {
+      if (mappingFiles.length === 0) {
+        const logger = createCorrelatedLogger(correlationId, {
+          operation: "load_visual_matrix_mapping",
+        });
+        logger.warn("No mapping files found in S3 bucket", {
+          bucket: this.mappingBucket,
+        });
         return null;
       }
 
-      // Download and parse the most recent Excel mapping file
+      // Download and parse the most recent VisualMatrix mapping file
       const mappingFileBuffer = await this.downloadFileFromS3(
-        excelFiles[0].Key!,
+        mappingFiles[0].Key!,
         correlationId,
         this.mappingBucket,
       );
 
-      const excelParser = new ExcelMappingParser();
-      const parseResult = await excelParser.parseFromBuffer(
+      const logger = createCorrelatedLogger(correlationId, {
+        operation: "load_visual_matrix_mapping",
+      });
+      
+      logger.info("Loading VisualMatrix mapping file", {
+        fileName: mappingFiles[0].Key,
+        fileSize: mappingFileBuffer.length,
+      });
+
+      const visualMatrixParser = new VisualMatrixParser();
+      const parseResult = await visualMatrixParser.parseFromBuffer(
         mappingFileBuffer,
-        excelFiles[0].Key!,
+        mappingFiles[0].Key!,
       );
 
       if (parseResult.success && parseResult.data) {
-        return parseResult.data as unknown as ExcelMappingData;
+        const data = parseResult.data as unknown as VisualMatrixData;
+        logger.info("Successfully loaded VisualMatrix mapping", {
+          totalMappings: data.metadata.totalMappings,
+          uniqueSourceCodes: data.metadata.uniqueSourceCodes,
+          uniqueTargetCodes: data.metadata.uniqueTargetCodes,
+          hasPropertySpecificMappings: data.metadata.hasPropertySpecificMappings,
+        });
+        return data;
       }
+
+      const errorMessage = parseResult.error?.message || "Unknown parsing error";
+      logger.error("Failed to parse VisualMatrix mapping file", new Error(errorMessage), {
+        fileName: mappingFiles[0].Key,
+        parseSuccess: parseResult.success,
+      });
 
       return null;
     } catch (error) {
       const logger = createCorrelatedLogger(correlationId, {
-        operation: "load_excel_mapping",
+        operation: "load_visual_matrix_mapping",
       });
 
-      logger.error("Failed to load Excel mapping", error as Error);
+      logger.error("Failed to load VisualMatrix mapping", error as Error);
       return null;
     }
+  }
+
+  /**
+   * Helper method to load Excel mapping configuration (legacy support)
+   */
+  private async loadExcelMapping(
+    correlationId: string,
+  ): Promise<ExcelMappingData | null> {
+    // For now, return null to force use of VisualMatrix mapping
+    // This method is kept for backward compatibility
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "load_excel_mapping",
+    });
+    
+    logger.info("Excel mapping deprecated - using VisualMatrix mapping instead");
+    return null;
   }
 
   /**
@@ -1003,7 +1194,65 @@ class FileProcessor {
   }
 
   /**
-   * Helper method to generate CSV report from consolidated data
+   * Helper method to generate master CSV report from all property data
+   */
+  private generateMasterCSVReport(reports: ConsolidatedReport[]): string {
+    if (reports.length === 0) {
+      return "No data available\n";
+    }
+
+    // Collect all data from all properties
+    const allData: any[] = [];
+    const allKeys = new Set<string>();
+
+    for (const report of reports) {
+      if (report.data && report.data.length > 0) {
+        for (const record of report.data) {
+          if (typeof record === "object" && record !== null) {
+            // Add property name to each record for identification
+            const enrichedRecord = {
+              propertyName: report.propertyId,
+              ...record,
+            };
+            allData.push(enrichedRecord);
+            
+            // Collect all unique keys
+            Object.keys(enrichedRecord).forEach((key) => allKeys.add(key));
+          }
+        }
+      }
+    }
+
+    if (allData.length === 0) {
+      return "No data available\n";
+    }
+
+    // Create headers with propertyName first for better readability
+    const headers = ['propertyName', ...Array.from(allKeys).filter(key => key !== 'propertyName')];
+    const csvLines = [headers.join(",")];
+
+    // Add data rows
+    allData.forEach((record) => {
+      const row = headers.map((header) => {
+        const value = record[header];
+        // Handle CSV escaping for values that contain commas or quotes
+        if (value !== undefined && value !== null) {
+          const stringValue = String(value);
+          if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+            return `"${stringValue.replace(/"/g, '""')}"`;
+          }
+          return stringValue;
+        }
+        return "";
+      });
+      csvLines.push(row.join(","));
+    });
+
+    return csvLines.join("\n");
+  }
+
+  /**
+   * Helper method to generate CSV report from consolidated data (legacy - kept for compatibility)
    */
   private generateCSVReport(report: ConsolidatedReport): string {
     if (report.data.length === 0) {
@@ -1104,6 +1353,7 @@ export const handler = async (
         filesFound: 0,
         propertiesProcessed: [],
         processingTimeMs: 0,
+        reportsGenerated: 0,
       },
     };
   }

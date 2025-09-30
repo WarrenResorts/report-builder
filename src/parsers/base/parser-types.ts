@@ -9,7 +9,7 @@
 /**
  * Supported file types for parsing
  */
-export type SupportedFileType = 'pdf' | 'csv' | 'txt' | 'excel-mapping';
+export type SupportedFileType = 'pdf' | 'csv' | 'txt' | 'excel-mapping' | 'xlsx';
 
 /**
  * Raw parsed data from a file - can be text, structured data, or mixed

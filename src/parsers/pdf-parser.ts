@@ -16,6 +16,7 @@ import {
   PDFParserOptions,
   ParserErrorCode,
 } from "./base/parser-types";
+import { AccountLineParser, type AccountLine } from "./account-line-parser";
 
 /**
  * PDF-specific parsed data structure
@@ -50,6 +51,18 @@ export interface PDFParsedData extends Record<string, unknown> {
 
   /** Extracted property name from headers */
   propertyName?: string;
+
+  /** Structured account line data */
+  accountLines?: AccountLine[];
+
+  /** Account line parsing statistics */
+  accountLineStats?: {
+    totalLines: number;
+    parsedLines: number;
+    paymentMethodLines: number;
+    totalAmount: number;
+    paymentMethodAmount: number;
+  };
 }
 
 /**
@@ -65,6 +78,18 @@ export class PDFParser extends BaseFileParser {
     name: "PDFParser",
     version: "1.0.0",
   };
+
+  private accountLineParser: AccountLineParser;
+
+  constructor() {
+    super();
+    this.accountLineParser = new AccountLineParser({
+      combinePaymentMethods: true,
+      paymentMethodGroups: {
+        'Credit Cards': ['VISA', 'MASTER', 'MASTERCARD', 'DISCOVER', 'AMEX'],
+      },
+    });
+  }
 
   /**
    * Parse PDF content from buffer
@@ -303,6 +328,10 @@ export class PDFParser extends BaseFileParser {
           );
         }
 
+        // Extract structured account line data
+        const accountLines = this.accountLineParser.getConsolidatedAccountLines(data.text);
+        const accountLineStats = this.accountLineParser.getParsingStats(data.text);
+
         return {
           text: data.text,
           pageCount: data.numpages,
@@ -310,6 +339,8 @@ export class PDFParser extends BaseFileParser {
           documentInfo,
           rawContent: options?.includeRawContent ? data.text : undefined,
           propertyName, // Add property name to parsed data
+          accountLines, // Add structured account data
+          accountLineStats, // Add parsing statistics
         };
       } else {
         // Only allow fallback for obvious test data (small buffers with PDF header)
