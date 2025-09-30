@@ -92,7 +92,8 @@ export class VisualMatrixParser extends BaseFileParser {
   public readonly parserInfo = {
     name: "VisualMatrixParser",
     version: "1.0.0",
-    description: "Parser for VisualMatrix Excel files containing account code mappings",
+    description:
+      "Parser for VisualMatrix Excel files containing account code mappings",
   };
 
   private customOptions?: Partial<VisualMatrixParserOptions>;
@@ -124,7 +125,7 @@ export class VisualMatrixParser extends BaseFileParser {
       includeEmptyMappings: false,
       propertyIdFilter: undefined,
     };
-    
+
     return { ...defaults, ...this.customOptions };
   }
 
@@ -152,17 +153,17 @@ export class VisualMatrixParser extends BaseFileParser {
   private isExcelBuffer(buffer: Buffer): boolean {
     // Excel files start with PK (ZIP signature) or specific OLE signatures
     const signature = buffer.subarray(0, 4);
-    
+
     // XLSX files (ZIP-based)
-    if (signature[0] === 0x50 && signature[1] === 0x4B) {
+    if (signature[0] === 0x50 && signature[1] === 0x4b) {
       return true;
     }
-    
+
     // XLS files (OLE-based)
-    if (signature[0] === 0xD0 && signature[1] === 0xCF) {
+    if (signature[0] === 0xd0 && signature[1] === 0xcf) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -239,7 +240,9 @@ export class VisualMatrixParser extends BaseFileParser {
     _filename: string,
     _config?: Partial<ParserConfig>,
   ): Promise<ParseResult> {
-    throw new Error("VisualMatrix parser does not support parsing from string - use parseFromBuffer instead");
+    throw new Error(
+      "VisualMatrix parser does not support parsing from string - use parseFromBuffer instead",
+    );
   }
 
   /**
@@ -266,13 +269,19 @@ export class VisualMatrixParser extends BaseFileParser {
           // Find the VisualMatrix sheet
           const sheetName = options.sheetName || "VisualMatrix";
           const worksheet = workbook.getWorksheet(sheetName);
-          
+
           if (!worksheet) {
-            throw new Error(`Sheet "${sheetName}" not found in Excel file. Available sheets: ${workbook.worksheets.map(ws => ws.name).join(', ')}`);
+            throw new Error(
+              `Sheet "${sheetName}" not found in Excel file. Available sheets: ${workbook.worksheets.map((ws) => ws.name).join(", ")}`,
+            );
           }
 
           // Parse mappings from the worksheet
-          const mappings = this.parseMappingsFromWorksheet(worksheet, options, warnings);
+          const mappings = this.parseMappingsFromWorksheet(
+            worksheet,
+            options,
+            warnings,
+          );
 
           // Create metadata
           const metadata = this.createMetadata(mappings);
@@ -316,38 +325,56 @@ export class VisualMatrixParser extends BaseFileParser {
     warnings: string[],
   ): VisualMatrixMapping[] {
     const mappings: VisualMatrixMapping[] = [];
-    
+
     // Expected headers based on the analysis
     const expectedHeaders = [
-      'Rec Id', 'Src Acct Code', 'Src Acct Desc', 'Xref Key', 'Acct Id',
-      'Property Id', 'Property Name', 'Acct Code', 'Acct Suffix', 
-      'Acct Name', 'Multiplier', 'Created', 'Updated'
+      "Rec Id",
+      "Src Acct Code",
+      "Src Acct Desc",
+      "Xref Key",
+      "Acct Id",
+      "Property Id",
+      "Property Name",
+      "Acct Code",
+      "Acct Suffix",
+      "Acct Name",
+      "Multiplier",
+      "Created",
+      "Updated",
     ];
 
     // Get header row (row 1)
     const headerRow = worksheet.getRow(1);
     const headers: string[] = [];
     headerRow.eachCell((cell, colNumber) => {
-      headers[colNumber - 1] = String(cell.value || '').trim();
+      headers[colNumber - 1] = String(cell.value || "").trim();
     });
 
     // Validate headers - must have critical columns
-    const criticalHeaders = ['Src Acct Code', 'Acct Code'];
-    const missingCritical = criticalHeaders.filter(expected => 
-      !headers.some(header => header.toLowerCase() === expected.toLowerCase())
+    const criticalHeaders = ["Src Acct Code", "Acct Code"];
+    const missingCritical = criticalHeaders.filter(
+      (expected) =>
+        !headers.some(
+          (header) => header.toLowerCase() === expected.toLowerCase(),
+        ),
     );
-    
+
     if (missingCritical.length > 0) {
-      throw new Error(`Missing required columns: ${missingCritical.join(', ')}`);
+      throw new Error(
+        `Missing required columns: ${missingCritical.join(", ")}`,
+      );
     }
 
     // Check for all expected headers and warn about missing ones
-    const missingHeaders = expectedHeaders.filter(expected => 
-      !headers.some(header => header.toLowerCase() === expected.toLowerCase())
+    const missingHeaders = expectedHeaders.filter(
+      (expected) =>
+        !headers.some(
+          (header) => header.toLowerCase() === expected.toLowerCase(),
+        ),
     );
-    
+
     if (missingHeaders.length > 0) {
-      warnings.push(`Missing optional columns: ${missingHeaders.join(', ')}`);
+      warnings.push(`Missing optional columns: ${missingHeaders.join(", ")}`);
     }
 
     // Track statistics for warnings
@@ -357,7 +384,7 @@ export class VisualMatrixParser extends BaseFileParser {
     // Parse data rows (starting from row 2)
     for (let rowNum = 2; rowNum <= worksheet.rowCount; rowNum++) {
       const row = worksheet.getRow(rowNum);
-      
+
       // Skip empty rows
       if (!row.hasValues) {
         continue;
@@ -365,7 +392,7 @@ export class VisualMatrixParser extends BaseFileParser {
 
       try {
         const mapping = this.parseRowToMapping(row, headers);
-        
+
         // Validate required fields
         if (!mapping.srcAcctCode || !mapping.acctCode) {
           if (!options.includeEmptyMappings) {
@@ -373,11 +400,14 @@ export class VisualMatrixParser extends BaseFileParser {
             continue;
           }
         }
-        
+
         // Apply property filter
-        if (options.propertyIdFilter !== undefined && 
-            mapping.propertyId !== options.propertyIdFilter && 
-            mapping.propertyId !== 0) { // 0 means global mapping
+        if (
+          options.propertyIdFilter !== undefined &&
+          mapping.propertyId !== options.propertyIdFilter &&
+          mapping.propertyId !== 0
+        ) {
+          // 0 means global mapping
           filteredRows++;
           continue;
         }
@@ -385,21 +415,27 @@ export class VisualMatrixParser extends BaseFileParser {
         mappings.push(mapping);
       } catch (error) {
         invalidRows++;
-        warnings.push(`Failed to parse row ${rowNum}: ${(error as Error).message}`);
+        warnings.push(
+          `Failed to parse row ${rowNum}: ${(error as Error).message}`,
+        );
       }
     }
 
     // Add summary warnings
     if (mappings.length === 0) {
-      warnings.push('No data rows found in VisualMatrix sheet');
+      warnings.push("No data rows found in VisualMatrix sheet");
     }
-    
+
     if (invalidRows > 0) {
-      warnings.push(`Skipped ${invalidRows} invalid rows (missing required fields)`);
+      warnings.push(
+        `Skipped ${invalidRows} invalid rows (missing required fields)`,
+      );
     }
-    
+
     if (filteredRows > 0) {
-      warnings.push(`Filtered out ${filteredRows} rows due to property ID filter`);
+      warnings.push(
+        `Filtered out ${filteredRows} rows due to property ID filter`,
+      );
     }
 
     return mappings;
@@ -408,31 +444,34 @@ export class VisualMatrixParser extends BaseFileParser {
   /**
    * Parse a single row into a VisualMatrixMapping
    */
-  private parseRowToMapping(row: ExcelJS.Row, headers: string[]): VisualMatrixMapping {
+  private parseRowToMapping(
+    row: ExcelJS.Row,
+    headers: string[],
+  ): VisualMatrixMapping {
     const getValue = (headerName: string): any => {
-      const headerIndex = headers.findIndex(h => 
-        h.toLowerCase() === headerName.toLowerCase()
+      const headerIndex = headers.findIndex(
+        (h) => h.toLowerCase() === headerName.toLowerCase(),
       );
-      if (headerIndex === -1) return '';
-      
+      if (headerIndex === -1) return "";
+
       const cell = row.getCell(headerIndex + 1);
       return cell.value;
     };
 
     return {
-      recId: this.parseNumber(getValue('Rec Id')) || 0,
-      srcAcctCode: String(getValue('Src Acct Code') || '').trim(),
-      srcAcctDesc: String(getValue('Src Acct Desc') || '').trim(),
-      xrefKey: String(getValue('Xref Key') || '').trim(),
-      acctId: this.parseNumber(getValue('Acct Id')) || 0,
-      propertyId: this.parseNumber(getValue('Property Id')) || 0,
-      propertyName: String(getValue('Property Name') || '').trim(),
-      acctCode: String(getValue('Acct Code') || '').trim(),
-      acctSuffix: String(getValue('Acct Suffix') || '').trim(),
-      acctName: String(getValue('Acct Name') || '').trim(),
-      multiplier: this.parseNumber(getValue('Multiplier')) || 1,
-      created: this.parseDate(getValue('Created')) || new Date(),
-      updated: this.parseDate(getValue('Updated')) || new Date(),
+      recId: this.parseNumber(getValue("Rec Id")) || 0,
+      srcAcctCode: String(getValue("Src Acct Code") || "").trim(),
+      srcAcctDesc: String(getValue("Src Acct Desc") || "").trim(),
+      xrefKey: String(getValue("Xref Key") || "").trim(),
+      acctId: this.parseNumber(getValue("Acct Id")) || 0,
+      propertyId: this.parseNumber(getValue("Property Id")) || 0,
+      propertyName: String(getValue("Property Name") || "").trim(),
+      acctCode: String(getValue("Acct Code") || "").trim(),
+      acctSuffix: String(getValue("Acct Suffix") || "").trim(),
+      acctName: String(getValue("Acct Name") || "").trim(),
+      multiplier: this.parseNumber(getValue("Multiplier")) || 1,
+      created: this.parseDate(getValue("Created")) || new Date(),
+      updated: this.parseDate(getValue("Updated")) || new Date(),
     };
   }
 
@@ -440,10 +479,10 @@ export class VisualMatrixParser extends BaseFileParser {
    * Parse number from Excel cell value
    */
   private parseNumber(value: any): number | null {
-    if (value === null || value === undefined || value === '') {
+    if (value === null || value === undefined || value === "") {
       return null;
     }
-    
+
     const num = Number(value);
     return isNaN(num) ? null : num;
   }
@@ -452,7 +491,7 @@ export class VisualMatrixParser extends BaseFileParser {
    * Parse date from Excel cell value
    */
   private parseDate(value: any): Date | null {
-    if (value === null || value === undefined || value === '') {
+    if (value === null || value === undefined || value === "") {
       return null;
     }
 
@@ -460,7 +499,7 @@ export class VisualMatrixParser extends BaseFileParser {
       return value;
     }
 
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       const parsed = new Date(value);
       return isNaN(parsed.getTime()) ? null : parsed;
     }
@@ -471,10 +510,14 @@ export class VisualMatrixParser extends BaseFileParser {
   /**
    * Create metadata from mappings
    */
-  private createMetadata(mappings: VisualMatrixMapping[]): VisualMatrixData['metadata'] {
-    const uniqueSourceCodes = new Set(mappings.map(m => m.srcAcctCode)).size;
-    const uniqueTargetCodes = new Set(mappings.map(m => m.acctCode).filter(Boolean)).size;
-    const hasPropertySpecificMappings = mappings.some(m => m.propertyId > 0);
+  private createMetadata(
+    mappings: VisualMatrixMapping[],
+  ): VisualMatrixData["metadata"] {
+    const uniqueSourceCodes = new Set(mappings.map((m) => m.srcAcctCode)).size;
+    const uniqueTargetCodes = new Set(
+      mappings.map((m) => m.acctCode).filter(Boolean),
+    ).size;
+    const hasPropertySpecificMappings = mappings.some((m) => m.propertyId > 0);
     const lastUpdated = mappings.reduce((latest, mapping) => {
       return mapping.updated > latest ? mapping.updated : latest;
     }, new Date(0));
@@ -499,7 +542,7 @@ export class VisualMatrixParser extends BaseFileParser {
     // First try property-specific mapping if propertyId is provided
     if (propertyId !== undefined) {
       const propertySpecificMapping = data.mappings.find(
-        m => m.srcAcctCode === sourceCode && m.propertyId === propertyId
+        (m) => m.srcAcctCode === sourceCode && m.propertyId === propertyId,
       );
       if (propertySpecificMapping) {
         return propertySpecificMapping;
@@ -508,7 +551,7 @@ export class VisualMatrixParser extends BaseFileParser {
 
     // Fall back to global mapping (propertyId = 0)
     return data.mappings.find(
-      m => m.srcAcctCode === sourceCode && m.propertyId === 0
+      (m) => m.srcAcctCode === sourceCode && m.propertyId === 0,
     );
   }
 
@@ -519,8 +562,8 @@ export class VisualMatrixParser extends BaseFileParser {
     data: VisualMatrixData,
     propertyId: number,
   ): VisualMatrixMapping[] {
-    return data.mappings.filter(m => 
-      m.propertyId === propertyId || m.propertyId === 0 // Include global mappings
+    return data.mappings.filter(
+      (m) => m.propertyId === propertyId || m.propertyId === 0, // Include global mappings
     );
   }
 }

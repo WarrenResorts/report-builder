@@ -3,7 +3,7 @@ import { handler, FileProcessingEvent, FileProcessor } from "./file-processor";
 import { EventBridgeEvent, Context } from "aws-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 import { ParameterStoreConfig } from "../config/parameter-store";
-import * as ExcelJS from 'exceljs';
+import * as ExcelJS from "exceljs";
 
 // Import types for testing
 interface ConsolidatedReport {
@@ -491,7 +491,7 @@ describe("File Processor Lambda", () => {
     it("should load VisualMatrix mapping file successfully", async () => {
       // Mock S3 to return a valid Excel file
       const mockExcelBuffer = Buffer.from("mock-excel-content");
-      
+
       mockRetryS3Operation
         .mockResolvedValueOnce({
           Contents: [
@@ -517,7 +517,7 @@ describe("File Processor Lambda", () => {
         expect.any(Function),
         expect.any(String),
         "list_mapping_files",
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -543,7 +543,7 @@ describe("File Processor Lambda", () => {
     it("should handle VisualMatrix parsing errors", async () => {
       // Mock S3 to return invalid Excel file
       const invalidBuffer = Buffer.from("invalid-excel-content");
-      
+
       mockRetryS3Operation
         .mockResolvedValueOnce({
           Contents: [
@@ -573,51 +573,89 @@ describe("File Processor Lambda", () => {
 
     it("should generate consolidated report with single file", async () => {
       const mockObjects = createMockS3Objects();
-      
+
       // Create a proper VisualMatrix mapping file
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('VisualMatrix');
-      
+      const worksheet = workbook.addWorksheet("VisualMatrix");
+
       worksheet.addRow([
-        'Rec Id', 'Src Acct Code', 'Src Acct Desc', 'Xref Key', 'Acct Id',
-        'Property Id', 'Property Name', 'Acct Code', 'Acct Suffix', 'Acct Name',
-        'Multiplier', 'Created', 'Updated'
+        "Rec Id",
+        "Src Acct Code",
+        "Src Acct Desc",
+        "Xref Key",
+        "Acct Id",
+        "Property Id",
+        "Property Name",
+        "Acct Code",
+        "Acct Suffix",
+        "Acct Name",
+        "Multiplier",
+        "Created",
+        "Updated",
       ]);
 
       // Add mapping data for the account codes that will be parsed
       worksheet.addRow([
-        1, '1001', 'Room Revenue', 'ROOM-REV', 101,
-        0, '', '4010', '', 'Room Revenue',
-        1, new Date('2024-01-01'), new Date('2024-01-01')
+        1,
+        "1001",
+        "Room Revenue",
+        "ROOM-REV",
+        101,
+        0,
+        "",
+        "4010",
+        "",
+        "Room Revenue",
+        1,
+        new Date("2024-01-01"),
+        new Date("2024-01-01"),
       ]);
       worksheet.addRow([
-        2, '2001', 'Visa Payment', 'VISA-PAY', 201,
-        0, '', '4020', '', 'Visa Payment',
-        1, new Date('2024-01-01'), new Date('2024-01-01')
+        2,
+        "2001",
+        "Visa Payment",
+        "VISA-PAY",
+        201,
+        0,
+        "",
+        "4020",
+        "",
+        "Visa Payment",
+        1,
+        new Date("2024-01-01"),
+        new Date("2024-01-01"),
       ]);
 
       const mappingBuffer = await workbook.xlsx.writeBuffer();
-      
+
       // Mock successful file processing with mapping file
       mockRetryS3Operation
         .mockResolvedValueOnce({
           Contents: mockObjects, // First call: get data files from incoming bucket
         })
         .mockResolvedValueOnce({
-          Body: Buffer.from("1001    ROOM CHARGE    150.00\n2001    VISA PAYMENT    100.00"), // Download first data file (will be parsed as PDF but fail, then as TXT)
+          Body: Buffer.from(
+            "1001    ROOM CHARGE    150.00\n2001    VISA PAYMENT    100.00",
+          ), // Download first data file (will be parsed as PDF but fail, then as TXT)
         })
         .mockResolvedValueOnce({
-          Body: Buffer.from("1001,ROOM CHARGE,150.00\n2001,VISA PAYMENT,100.00"), // Download second data file (CSV)
+          Body: Buffer.from(
+            "1001,ROOM CHARGE,150.00\n2001,VISA PAYMENT,100.00",
+          ), // Download second data file (CSV)
         })
         .mockResolvedValueOnce({
-          Body: Buffer.from("1001    ROOM CHARGE    150.00\n2001    VISA PAYMENT    100.00"), // Download third data file (TXT)
+          Body: Buffer.from(
+            "1001    ROOM CHARGE    150.00\n2001    VISA PAYMENT    100.00",
+          ), // Download third data file (TXT)
         })
         .mockResolvedValueOnce({
-          Contents: [{
-            Key: 'VMMapping092225.xlsx',
-            LastModified: new Date('2024-01-15T10:00:00Z'),
-            Size: mappingBuffer.byteLength,
-          }], // Query mapping files from mapping bucket
+          Contents: [
+            {
+              Key: "VMMapping092225.xlsx",
+              LastModified: new Date("2024-01-15T10:00:00Z"),
+              Size: mappingBuffer.byteLength,
+            },
+          ], // Query mapping files from mapping bucket
         })
         .mockResolvedValueOnce({
           Body: Buffer.from(mappingBuffer), // Download mapping file
@@ -630,7 +668,7 @@ describe("File Processor Lambda", () => {
 
       expect(result.statusCode).toBe(200);
       expect(result.processedFiles).toBe(3);
-      
+
       // Should generate consolidated report (single file combining all properties)
       // Always generates 1 report for consistent output, even if empty
       expect(result.summary.reportsGenerated).toBe(1);
@@ -875,7 +913,9 @@ describe("File Processor Lambda", () => {
   describe("Handler Error Scenarios", () => {
     it("should handle handler-level errors gracefully", async () => {
       // Mock retryS3Operation to throw an error that will bubble up to handler
-      mockRetryS3Operation.mockRejectedValueOnce(new Error("S3 service unavailable"));
+      mockRetryS3Operation.mockRejectedValueOnce(
+        new Error("S3 service unavailable"),
+      );
 
       const event = createMockEventBridgeEvent("daily-batch");
       const context = createMockLambdaContext();
@@ -901,8 +941,8 @@ describe("File Processor Lambda", () => {
           totalFiles: 1,
           totalRecords: 2,
           data: [
-            { accountCode: "1001", description: "Room Revenue", amount: 150.00 },
-            { accountCode: "2001", description: "Tax", amount: 12.00 }
+            { accountCode: "1001", description: "Room Revenue", amount: 150.0 },
+            { accountCode: "2001", description: "Tax", amount: 12.0 },
           ],
           summary: {
             processingTime: 100,
@@ -917,7 +957,7 @@ describe("File Processor Lambda", () => {
           totalFiles: 1,
           totalRecords: 1,
           data: [
-            { accountCode: "3001", description: "Food Revenue", amount: 75.00 }
+            { accountCode: "3001", description: "Food Revenue", amount: 75.0 },
           ],
           summary: {
             processingTime: 50,
@@ -925,7 +965,7 @@ describe("File Processor Lambda", () => {
             successfulFiles: 1,
             failedFiles: 0,
           },
-        }
+        },
       ];
 
       // Mock successful S3 operations for report generation
@@ -935,11 +975,15 @@ describe("File Processor Lambda", () => {
 
       // Create a FileProcessor instance and call generateConsolidatedReports
       const processor = new FileProcessor();
-      
+
       // Test the generateMasterCSVReport method directly
-      const csvContent = (processor as any).generateMasterCSVReport(testReports);
-      
-      expect(csvContent).toContain("propertyName,accountCode,description,amount");
+      const csvContent = (processor as any).generateMasterCSVReport(
+        testReports,
+      );
+
+      expect(csvContent).toContain(
+        "propertyName,accountCode,description,amount",
+      );
       expect(csvContent).toContain("PROP1,1001,Room Revenue,150");
       expect(csvContent).toContain("PROP1,2001,Tax,12");
       expect(csvContent).toContain("PROP2,3001,Food Revenue,75");
@@ -947,22 +991,36 @@ describe("File Processor Lambda", () => {
 
     it("should test private utility methods", async () => {
       const processor = new FileProcessor();
-      
+
       // Test getFileExtension
       expect((processor as any).getFileExtension("test.pdf")).toBe("pdf");
       expect((processor as any).getFileExtension("document.CSV")).toBe("csv");
       expect((processor as any).getFileExtension("report")).toBe("report");
-      
+
       // Test mapExtensionToSupportedType
       expect((processor as any).mapExtensionToSupportedType("pdf")).toBe("pdf");
       expect((processor as any).mapExtensionToSupportedType("csv")).toBe("csv");
       expect((processor as any).mapExtensionToSupportedType("txt")).toBe("txt");
-      expect((processor as any).mapExtensionToSupportedType("unknown")).toBe("txt");
-      
+      expect((processor as any).mapExtensionToSupportedType("unknown")).toBe(
+        "txt",
+      );
+
       // Test getFileTypeFromKey
-      expect((processor as any).getFileTypeFromKey("daily-files/prop/2024-01-15/report.pdf")).toBe("pdf");
-      expect((processor as any).getFileTypeFromKey("daily-files/prop/2024-01-15/data.csv")).toBe("csv");
-      expect((processor as any).getFileTypeFromKey("daily-files/prop/2024-01-15/log.txt")).toBe("txt");
+      expect(
+        (processor as any).getFileTypeFromKey(
+          "daily-files/prop/2024-01-15/report.pdf",
+        ),
+      ).toBe("pdf");
+      expect(
+        (processor as any).getFileTypeFromKey(
+          "daily-files/prop/2024-01-15/data.csv",
+        ),
+      ).toBe("csv");
+      expect(
+        (processor as any).getFileTypeFromKey(
+          "daily-files/prop/2024-01-15/log.txt",
+        ),
+      ).toBe("txt");
     });
   });
 });

@@ -55,7 +55,7 @@ export interface AccountLineParserConfig {
 
 /**
  * Account Line Parser
- * 
+ *
  * Parses raw PDF text to extract structured account line data
  */
 export class AccountLineParser {
@@ -80,7 +80,7 @@ export class AccountLineParser {
     this.config = {
       combinePaymentMethods: true,
       paymentMethodGroups: {
-        'Credit Cards': ['VISA', 'MASTER', 'MASTERCARD', 'DISCOVER', 'AMEX'],
+        "Credit Cards": ["VISA", "MASTER", "MASTERCARD", "DISCOVER", "AMEX"],
       },
       minimumAmount: 0.01,
       includeZeroAmounts: false,
@@ -92,12 +92,12 @@ export class AccountLineParser {
    * Parse PDF text content into structured account lines
    */
   parseAccountLines(pdfText: string): AccountLine[] {
-    const lines = pdfText.split('\n');
+    const lines = pdfText.split("\n");
     const accountLines: AccountLine[] = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      
+
       if (!line || line.length < 3) {
         continue; // Skip empty or very short lines
       }
@@ -114,7 +114,10 @@ export class AccountLineParser {
   /**
    * Parse a single line to extract account information
    */
-  private parseAccountLine(line: string, lineNumber: number): AccountLine | null {
+  private parseAccountLine(
+    line: string,
+    lineNumber: number,
+  ): AccountLine | null {
     // Try to match account code pattern - must have account code, description, and amount
     const match = line.match(this.patterns.accountCode);
     if (!match) {
@@ -122,12 +125,15 @@ export class AccountLineParser {
     }
 
     const [, sourceCode, description, amountStr] = match;
-    
+
     // Parse the amount (guaranteed to exist due to regex)
     const amount = this.parseAmount(amountStr);
 
     // Skip if amount is below threshold (unless zero amounts are explicitly included)
-    if (Math.abs(amount) < (this.config.minimumAmount || 0.01) && !this.config.includeZeroAmounts) {
+    if (
+      Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+      !this.config.includeZeroAmounts
+    ) {
       return null;
     }
 
@@ -149,15 +155,15 @@ export class AccountLineParser {
    */
   private parseAmount(amountStr: string): number {
     // Remove currency symbols and commas
-    let cleanAmount = amountStr.replace(/[$,]/g, '');
-    
-      // Handle negative amounts (could be prefixed with - or in parentheses)
-      if (cleanAmount.includes('(') && cleanAmount.includes(')')) {
-        cleanAmount = cleanAmount.replace(/[()]/g, '');
-        const parsed = parseFloat(cleanAmount);
-        return isNaN(parsed) ? 0 : -parsed;
-      }
-    
+    let cleanAmount = amountStr.replace(/[$,]/g, "");
+
+    // Handle negative amounts (could be prefixed with - or in parentheses)
+    if (cleanAmount.includes("(") && cleanAmount.includes(")")) {
+      cleanAmount = cleanAmount.replace(/[()]/g, "");
+      const parsed = parseFloat(cleanAmount);
+      return isNaN(parsed) ? 0 : -parsed;
+    }
+
     const parsed = parseFloat(cleanAmount);
     return isNaN(parsed) ? 0 : parsed;
   }
@@ -166,10 +172,10 @@ export class AccountLineParser {
    * Detect payment method from line content
    */
   private detectPaymentMethod(line: string): string | undefined {
-    if (this.patterns.visa.test(line)) return 'VISA';
-    if (this.patterns.mastercard.test(line)) return 'MASTER';
-    if (this.patterns.discover.test(line)) return 'DISCOVER';
-    if (this.patterns.amex.test(line)) return 'AMEX';
+    if (this.patterns.visa.test(line)) return "VISA";
+    if (this.patterns.mastercard.test(line)) return "MASTER";
+    if (this.patterns.discover.test(line)) return "DISCOVER";
+    if (this.patterns.amex.test(line)) return "AMEX";
     return undefined;
   }
 
@@ -189,12 +195,17 @@ export class AccountLineParser {
       if (line.paymentMethod) {
         // Find which group this payment method belongs to
         let groupName = line.paymentMethod; // Default to payment method name
-        
-        for (const [configGroupName, methods] of Object.entries(this.config.paymentMethodGroups || {})) {
-          if (methods.some(method => 
-            method.toUpperCase() === line.paymentMethod?.toUpperCase() ||
-            line.description.toUpperCase().includes(method.toUpperCase())
-          )) {
+
+        for (const [configGroupName, methods] of Object.entries(
+          this.config.paymentMethodGroups || {},
+        )) {
+          if (
+            methods.some(
+              (method) =>
+                method.toUpperCase() === line.paymentMethod?.toUpperCase() ||
+                line.description.toUpperCase().includes(method.toUpperCase()),
+            )
+          ) {
             groupName = configGroupName;
             break;
           }
@@ -225,24 +236,24 @@ export class AccountLineParser {
    */
   getConsolidatedAccountLines(pdfText: string): AccountLine[] {
     const originalLines = this.parseAccountLines(pdfText);
-    
+
     if (!this.config.combinePaymentMethods) {
       return originalLines;
     }
 
     const paymentGroups = this.groupPaymentMethods(originalLines);
-    const nonPaymentLines = originalLines.filter(line => !line.paymentMethod);
+    const nonPaymentLines = originalLines.filter((line) => !line.paymentMethod);
     const consolidatedLines: AccountLine[] = [...nonPaymentLines];
 
     // Add combined payment method lines
     for (const group of paymentGroups) {
       consolidatedLines.push({
-        sourceCode: 'CC', // Combined credit card code
+        sourceCode: "CC", // Combined credit card code
         description: group.groupName,
         amount: group.totalAmount,
         paymentMethod: group.groupName,
-        originalLine: `Combined: ${group.accountLines.map(l => l.originalLine).join(' | ')}`,
-        lineNumber: Math.min(...group.accountLines.map(l => l.lineNumber)),
+        originalLine: `Combined: ${group.accountLines.map((l) => l.originalLine).join(" | ")}`,
+        lineNumber: Math.min(...group.accountLines.map((l) => l.lineNumber)),
       });
     }
 
@@ -259,16 +270,19 @@ export class AccountLineParser {
     totalAmount: number;
     paymentMethodAmount: number;
   } {
-    const lines = pdfText.split('\n');
+    const lines = pdfText.split("\n");
     const accountLines = this.parseAccountLines(pdfText);
-    const paymentLines = accountLines.filter(line => line.paymentMethod);
-    
+    const paymentLines = accountLines.filter((line) => line.paymentMethod);
+
     return {
       totalLines: lines.length,
       parsedLines: accountLines.length,
       paymentMethodLines: paymentLines.length,
       totalAmount: accountLines.reduce((sum, line) => sum + line.amount, 0),
-      paymentMethodAmount: paymentLines.reduce((sum, line) => sum + line.amount, 0),
+      paymentMethodAmount: paymentLines.reduce(
+        (sum, line) => sum + line.amount,
+        0,
+      ),
     };
   }
 }

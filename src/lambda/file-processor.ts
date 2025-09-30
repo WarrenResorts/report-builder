@@ -27,7 +27,10 @@ import { ParameterStoreConfig } from "../config/parameter-store";
 import { environmentConfig } from "../config/environment";
 import { retryS3Operation } from "../utils/retry";
 import { ParserFactory } from "../parsers/parser-factory";
-import { VisualMatrixParser, type VisualMatrixData } from "../parsers/visual-matrix-parser";
+import {
+  VisualMatrixParser,
+  type VisualMatrixData,
+} from "../parsers/visual-matrix-parser";
 import { TransformationEngine } from "../transformation/transformation-engine";
 import type { SupportedFileType } from "../parsers/base/parser-types";
 import type { ExcelMappingData } from "../parsers/excel-mapping-parser";
@@ -592,7 +595,9 @@ export class FileProcessor {
     const visualMatrixData = await this.loadVisualMatrixMapping(correlationId);
 
     if (!visualMatrixData) {
-      logger.error("No VisualMatrix mapping data available - cannot process files");
+      logger.error(
+        "No VisualMatrix mapping data available - cannot process files",
+      );
       return [];
     }
 
@@ -707,7 +712,7 @@ export class FileProcessor {
     try {
       // Check if the file has account line data (from PDF parsing)
       const parsedData = JSON.parse(file.originalContent);
-      
+
       if (parsedData.accountLines && Array.isArray(parsedData.accountLines)) {
         logger.info("Processing account lines from PDF", {
           accountLineCount: parsedData.accountLines.length,
@@ -762,7 +767,7 @@ export class FileProcessor {
               originalLine: accountLine.originalLine,
               propertyId: file.propertyId,
               processingDate: new Date().toISOString(),
-              mappingStatus: 'UNMAPPED',
+              mappingStatus: "UNMAPPED",
             };
 
             mappedRecords.push(unmappedRecord);
@@ -777,7 +782,9 @@ export class FileProcessor {
       logger.info("VisualMatrix mapping completed", {
         totalAccountLines: parsedData.accountLines?.length || 0,
         mappedRecords: mappedRecords.length,
-        unmappedCount: mappedRecords.filter(r => r.mappingStatus === 'UNMAPPED').length,
+        unmappedCount: mappedRecords.filter(
+          (r) => r.mappingStatus === "UNMAPPED",
+        ).length,
       });
 
       return mappedRecords;
@@ -804,10 +811,10 @@ export class FileProcessor {
     // This ensures consistent output format for downstream consumers
     if (transformedData.length === 0) {
       logger.info("No transformed data - generating empty consolidated report");
-      
+
       try {
         // Create empty report with current date
-        const reportDate = new Date().toISOString().split('T')[0];
+        const reportDate = new Date().toISOString().split("T")[0];
         const reportKey = `reports/${reportDate}/daily-consolidated-report.csv`;
         const csvContent = "No data available\n";
 
@@ -843,10 +850,14 @@ export class FileProcessor {
 
         return [reportKey];
       } catch (error) {
-        logger.error("Failed to upload empty consolidated report", error as Error, {
-          operation: "empty_report_upload_error",
-        });
-        
+        logger.error(
+          "Failed to upload empty consolidated report",
+          error as Error,
+          {
+            operation: "empty_report_upload_error",
+          },
+        );
+
         // Return empty array to indicate no reports were generated
         // but don't throw - this allows the Lambda to continue and return success
         return [];
@@ -856,14 +867,20 @@ export class FileProcessor {
     try {
       // Generate one master CSV report with all properties
       const csvContent = this.generateMasterCSVReport(transformedData);
-      
+
       // Use the first report's date (they should all be the same date)
       const reportDate = transformedData[0].reportDate;
       const reportKey = `reports/${reportDate}/daily-consolidated-report.csv`;
 
       // Calculate totals across all properties
-      const totalRecords = transformedData.reduce((sum, report) => sum + report.totalRecords, 0);
-      const totalFiles = transformedData.reduce((sum, report) => sum + report.totalFiles, 0);
+      const totalRecords = transformedData.reduce(
+        (sum, report) => sum + report.totalRecords,
+        0,
+      );
+      const totalFiles = transformedData.reduce(
+        (sum, report) => sum + report.totalFiles,
+        0,
+      );
       const totalProperties = transformedData.length;
 
       await retryS3Operation(
@@ -896,15 +913,19 @@ export class FileProcessor {
         totalRecords,
         totalFiles,
         totalProperties,
-        properties: transformedData.map(r => r.propertyId),
+        properties: transformedData.map((r) => r.propertyId),
         operation: "master_report_generated",
       });
 
       return [reportKey];
     } catch (error) {
-      logger.error("Failed to generate master consolidated report", error as Error, {
-        operation: "master_report_generation_error",
-      });
+      logger.error(
+        "Failed to generate master consolidated report",
+        error as Error,
+        {
+          operation: "master_report_generation_error",
+        },
+      );
       return [];
     }
   }
@@ -1120,7 +1141,7 @@ export class FileProcessor {
       const logger = createCorrelatedLogger(correlationId, {
         operation: "load_visual_matrix_mapping",
       });
-      
+
       logger.info("Loading VisualMatrix mapping file", {
         fileName: mappingFiles[0].Key,
         fileSize: mappingFileBuffer.length,
@@ -1138,16 +1159,22 @@ export class FileProcessor {
           totalMappings: data.metadata.totalMappings,
           uniqueSourceCodes: data.metadata.uniqueSourceCodes,
           uniqueTargetCodes: data.metadata.uniqueTargetCodes,
-          hasPropertySpecificMappings: data.metadata.hasPropertySpecificMappings,
+          hasPropertySpecificMappings:
+            data.metadata.hasPropertySpecificMappings,
         });
         return data;
       }
 
-      const errorMessage = parseResult.error?.message || "Unknown parsing error";
-      logger.error("Failed to parse VisualMatrix mapping file", new Error(errorMessage), {
-        fileName: mappingFiles[0].Key,
-        parseSuccess: parseResult.success,
-      });
+      const errorMessage =
+        parseResult.error?.message || "Unknown parsing error";
+      logger.error(
+        "Failed to parse VisualMatrix mapping file",
+        new Error(errorMessage),
+        {
+          fileName: mappingFiles[0].Key,
+          parseSuccess: parseResult.success,
+        },
+      );
 
       return null;
     } catch (error) {
@@ -1171,8 +1198,10 @@ export class FileProcessor {
     const logger = createCorrelatedLogger(correlationId, {
       operation: "load_excel_mapping",
     });
-    
-    logger.info("Excel mapping deprecated - using VisualMatrix mapping instead");
+
+    logger.info(
+      "Excel mapping deprecated - using VisualMatrix mapping instead",
+    );
     return null;
   }
 
@@ -1215,7 +1244,7 @@ export class FileProcessor {
               ...record,
             };
             allData.push(enrichedRecord);
-            
+
             // Collect all unique keys
             Object.keys(enrichedRecord).forEach((key) => allKeys.add(key));
           }
@@ -1228,7 +1257,10 @@ export class FileProcessor {
     }
 
     // Create headers with propertyName first for better readability
-    const headers = ['propertyName', ...Array.from(allKeys).filter(key => key !== 'propertyName')];
+    const headers = [
+      "propertyName",
+      ...Array.from(allKeys).filter((key) => key !== "propertyName"),
+    ];
     const csvLines = [headers.join(",")];
 
     // Add data rows
@@ -1238,7 +1270,11 @@ export class FileProcessor {
         // Handle CSV escaping for values that contain commas or quotes
         if (value !== undefined && value !== null) {
           const stringValue = String(value);
-          if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+          if (
+            stringValue.includes(",") ||
+            stringValue.includes('"') ||
+            stringValue.includes("\n")
+          ) {
             return `"${stringValue.replace(/"/g, '""')}"`;
           }
           return stringValue;

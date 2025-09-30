@@ -86,7 +86,7 @@ export class PDFParser extends BaseFileParser {
     this.accountLineParser = new AccountLineParser({
       combinePaymentMethods: true,
       paymentMethodGroups: {
-        'Credit Cards': ['VISA', 'MASTER', 'MASTERCARD', 'DISCOVER', 'AMEX'],
+        "Credit Cards": ["VISA", "MASTER", "MASTERCARD", "DISCOVER", "AMEX"],
       },
     });
   }
@@ -329,8 +329,12 @@ export class PDFParser extends BaseFileParser {
         }
 
         // Extract structured account line data
-        const accountLines = this.accountLineParser.getConsolidatedAccountLines(data.text);
-        const accountLineStats = this.accountLineParser.getParsingStats(data.text);
+        const accountLines = this.accountLineParser.getConsolidatedAccountLines(
+          data.text,
+        );
+        const accountLineStats = this.accountLineParser.getParsingStats(
+          data.text,
+        );
 
         return {
           text: data.text,
