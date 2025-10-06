@@ -63,24 +63,42 @@ export class AccountLineParser {
 
   // Common patterns for detecting account lines
   private readonly patterns = {
-    // Account code patterns - must have account code, description, and something that looks like an amount
-    accountCode: /^([A-Z0-9]{1,4})\s+(.+?)\s+(\S+)$/,
+    // Hotel PDF format: "GL ROOM REV60$9,949.23..." or "GL CASH & CHECKS REVCHPAYMENT CASH0$0.00..."
+    glClAccountCode:
+      /^(GL\s+[A-Z\s&]+(?:\s+REV)?|CL\s+[A-Z\s&]+)([A-Z0-9]+)([^$]*?)(\$[\d,.-]+|\([\d,.-]+\))/,
+    // Payment method lines: "VISA/MASTER($13,616.46)" or "AMEX($2,486.57)" - may have multiple amounts
+    paymentMethodLine:
+      /^(VISA\/MASTER|VISA|MASTER|MASTERCARD|AMEX|DISCOVER|CASH|CHECKS)(\$[\d,.-]+|\(\$[\d,.-]+\))/,
+    // Summary lines: "Total Rm Rev$9,949.23" or "ADR$216.29"
+    summaryLine:
+      /^(Total\s+[A-Z\s]+|ADR|RevPar|Occupancy\s*%?|DEPOSIT\s+TOTAL)(\$[\d,.-]+|\([\d,.-]+\))/i,
+    // Ledger lines: "GUEST LEDGER$21,084.73" or "CITY LEDGER$9,014.85"
+    ledgerLine:
+      /^(GUEST\s+LEDGER|CITY\s+LEDGER|ADVANCE\s+DEPOSITS)(\$[\d,.-]+|\([\d,.-]+\))/i,
+    // Statistical lines: "Occupied461,02689714.38" (number followed by amounts)
+    statisticalLine:
+      /^(Occupied|No\s+Show|Late\s+C\/I|Early\s+C\/O|Total\s+Rooms|Out\s+of\s+Service|Comps)(\d+)/i,
+    // Embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "AXPAYMENT AMEX6($2,486.57)"
+    // More flexible to capture malformed amounts too
+    embeddedTransactionCode:
+      /^([A-Z0-9]{1,2})([A-Z][A-Z\s]+.*?)(\d+)(\$[^$\s]+|\(\$[^)]+\))/,
     // Amount patterns - more strict, must be complete numbers
     amount: /([-$]?[\d,]+\.?\d*|\([\d,]+\.?\d*\))/g,
     // Payment method patterns
-    visa: /\b(VISA|VISA\s*CARD)\b/i,
-    mastercard: /\b(MASTER|MASTERCARD|MASTER\s*CARD|MC)\b/i,
-    discover: /\b(DISCOVER|DISC)\b/i,
-    amex: /\b(AMEX|AMERICAN\s*EXPRESS)\b/i,
-    // Line that likely contains account information
-    accountLine: /^[A-Z0-9]{1,4}\s+.+/,
+    visa: /(?:^|\s)(VISA|VISA\s*CARD|VISA\/MC)(?:\s|\d|$)/i,
+    mastercard: /(?:^|\s)(MASTER|MASTERCARD|MASTER\s*CARD|MC)(?:\s|\d|$)/i,
+    discover: /(?:^|\s)(DISCOVER)(?:\s|\d|$)/i,
+    amex: /(?:^|\s)(AMEX|AMERICAN\s*EXPRESS)(?:\s|\d|$)/i,
+    // Line that likely contains account information - expanded to include all types
+    accountLine:
+      /^(GL|CL|VISA|MASTER|AMEX|DISCOVER|CASH|CHECKS|Total|ADR|RevPar|GUEST|CITY|ADVANCE|Occupied)/i,
   };
 
   constructor(config: Partial<AccountLineParserConfig> = {}) {
     this.config = {
       combinePaymentMethods: true,
       paymentMethodGroups: {
-        "Credit Cards": ["VISA", "MASTER", "MASTERCARD", "DISCOVER", "AMEX"],
+        "Credit Cards": ["VISA/MASTER", "AMEX"],
       },
       minimumAmount: 0.01,
       includeZeroAmounts: false,
@@ -118,36 +136,146 @@ export class AccountLineParser {
     line: string,
     lineNumber: number,
   ): AccountLine | null {
-    // Try to match account code pattern - must have account code, description, and amount
-    const match = line.match(this.patterns.accountCode);
-    if (!match) {
-      return null;
+    // Try GL/CL account lines first: "GL ROOM REV60$9,949.23$228,339.12..."
+    const glClMatch = line.match(this.patterns.glClAccountCode);
+    if (glClMatch) {
+      const [, category, code, description, firstAmountStr] = glClMatch;
+      const sourceCode = `${category.trim()}${code}`;
+      const amount = this.parseAmount(firstAmountStr);
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode: sourceCode.trim(),
+        description: description.trim(),
+        amount,
+        paymentMethod: this.detectPaymentMethod(line),
+        originalLine: line,
+        lineNumber,
+      };
     }
 
-    const [, sourceCode, description, amountStr] = match;
+    // Try payment method lines: "VISA/MASTER($13,616.46)"
+    const paymentMatch = line.match(this.patterns.paymentMethodLine);
+    if (paymentMatch) {
+      const [, paymentType, amountStr] = paymentMatch;
+      const amount = this.parseAmount(amountStr);
 
-    // Parse the amount (guaranteed to exist due to regex)
-    const amount = this.parseAmount(amountStr);
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
 
-    // Skip if amount is below threshold (unless zero amounts are explicitly included)
-    if (
-      Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
-      !this.config.includeZeroAmounts
-    ) {
-      return null;
+      return {
+        sourceCode: paymentType,
+        description: "Payment Method Total",
+        amount,
+        paymentMethod: paymentType,
+        originalLine: line,
+        lineNumber,
+      };
     }
 
-    // Detect payment method
-    const paymentMethod = this.detectPaymentMethod(line);
+    // Try summary lines: "Total Rm Rev$9,949.23" or "ADR$216.29"
+    const summaryMatch = line.match(this.patterns.summaryLine);
+    if (summaryMatch) {
+      const [, summaryType, amountStr] = summaryMatch;
+      const amount = this.parseAmount(amountStr);
 
-    return {
-      sourceCode: sourceCode.trim(),
-      description: description.trim(),
-      amount,
-      paymentMethod,
-      originalLine: line,
-      lineNumber,
-    };
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode: summaryType.trim(),
+        description: "Summary Total",
+        amount,
+        paymentMethod: undefined,
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    // Try ledger lines: "GUEST LEDGER$21,084.73"
+    const ledgerMatch = line.match(this.patterns.ledgerLine);
+    if (ledgerMatch) {
+      const [, ledgerType, amountStr] = ledgerMatch;
+      const amount = this.parseAmount(amountStr);
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode: ledgerType.trim(),
+        description: "Ledger Balance",
+        amount,
+        paymentMethod: undefined,
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    // Try statistical lines: "Occupied461,026"
+    const statMatch = line.match(this.patterns.statisticalLine);
+    if (statMatch) {
+      const [, statType, valueStr] = statMatch;
+      const amount = parseFloat(valueStr.replace(/,/g, ""));
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode: statType.trim(),
+        description: "Statistical Data",
+        amount,
+        paymentMethod: undefined,
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    // Try embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15"
+    const embeddedMatch = line.match(this.patterns.embeddedTransactionCode);
+    if (embeddedMatch) {
+      const [, code, description, , amountStr] = embeddedMatch;
+      const amount = this.parseAmount(amountStr);
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode: code.trim(),
+        description: description.trim(),
+        amount,
+        paymentMethod: this.detectPaymentMethod(line),
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    return null;
   }
 
   /**
@@ -245,17 +373,38 @@ export class AccountLineParser {
     const nonPaymentLines = originalLines.filter((line) => !line.paymentMethod);
     const consolidatedLines: AccountLine[] = [...nonPaymentLines];
 
-    // Add combined payment method lines
+    // Separate configured groups from individual payment methods
+    const configuredGroupNames = Object.keys(
+      this.config.paymentMethodGroups || {},
+    );
+    const groupedPaymentMethods = new Set<string>();
+
+    // Add combined payment method lines for configured groups only
     for (const group of paymentGroups) {
-      consolidatedLines.push({
-        sourceCode: "CC", // Combined credit card code
-        description: group.groupName,
-        amount: group.totalAmount,
-        paymentMethod: group.groupName,
-        originalLine: `Combined: ${group.accountLines.map((l) => l.originalLine).join(" | ")}`,
-        lineNumber: Math.min(...group.accountLines.map((l) => l.lineNumber)),
-      });
+      if (configuredGroupNames.includes(group.groupName)) {
+        // This is a configured group - combine it
+        consolidatedLines.push({
+          sourceCode: "CC", // Combined credit card code
+          description: group.groupName,
+          amount: group.totalAmount,
+          paymentMethod: group.groupName,
+          originalLine: `Combined: ${group.accountLines.map((l) => l.originalLine).join(" | ")}`,
+          lineNumber: Math.min(...group.accountLines.map((l) => l.lineNumber)),
+        });
+
+        // Track which payment methods were grouped
+        group.accountLines.forEach((line) =>
+          groupedPaymentMethods.add(line.sourceCode),
+        );
+      }
     }
+
+    // Add individual payment method lines that weren't grouped
+    const ungroupedPaymentLines = originalLines.filter(
+      (line) =>
+        line.paymentMethod && !groupedPaymentMethods.has(line.sourceCode),
+    );
+    consolidatedLines.push(...ungroupedPaymentLines);
 
     return consolidatedLines;
   }

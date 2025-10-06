@@ -2,75 +2,169 @@ import { describe, it, expect } from "vitest";
 import { AccountLineParser } from "./account-line-parser";
 
 describe("AccountLineParser", () => {
-  describe("Basic Account Line Parsing", () => {
-    it("should parse simple account lines with amounts", () => {
+  describe("Embedded Transaction Code Parsing", () => {
+    it("should extract embedded transaction codes from hotel PDF lines", () => {
       const parser = new AccountLineParser();
       const pdfText = `
-1    RM CHG   tax%    150.00
-2    FOOD SALES      200.50
-3    BEVERAGE        75.25
+RCROOM CHRG REVENUE50$10,107.15$231,259.82$202,397.53
+RDRATE DISCOUNT REV10($157.92)($2,920.70)($3,218.80)
+AXPAYMENT AMEX6($2,486.57)($19,441.87)($22,920.91)
       `;
 
       const result = parser.parseAccountLines(pdfText);
 
       expect(result).toHaveLength(3);
       expect(result[0]).toEqual({
-        sourceCode: "1",
-        description: "RM CHG   tax%",
-        amount: 150.0,
+        sourceCode: "RC",
+        description: "ROOM CHRG REVENUE",
+        amount: 10107.15,
         paymentMethod: undefined,
-        originalLine: "1    RM CHG   tax%    150.00",
+        originalLine: "RCROOM CHRG REVENUE50$10,107.15$231,259.82$202,397.53",
         lineNumber: 2,
       });
       expect(result[1]).toEqual({
-        sourceCode: "2",
-        description: "FOOD SALES",
-        amount: 200.5,
+        sourceCode: "RD",
+        description: "RATE DISCOUNT REV",
+        amount: -157.92,
         paymentMethod: undefined,
-        originalLine: "2    FOOD SALES      200.50",
+        originalLine: "RDRATE DISCOUNT REV10($157.92)($2,920.70)($3,218.80)",
         lineNumber: 3,
+      });
+      expect(result[2]).toEqual({
+        sourceCode: "AX",
+        description: "PAYMENT AMEX",
+        amount: -2486.57,
+        paymentMethod: "AMEX",
+        originalLine: "AXPAYMENT AMEX6($2,486.57)($19,441.87)($22,920.91)",
+        lineNumber: 4,
       });
     });
 
-    it("should handle negative amounts in parentheses", () => {
+    it("should handle various embedded code formats", () => {
+      const parser = new AccountLineParser({ includeZeroAmounts: true });
+      const pdfText = `
+6DBAL FWD TRANS DEBIT0$0.00$0.00$0.00
+7AADV DEP AMEX0$0.00($775.20)($728.32)
+72ADV DEP CONTROL1$1,056.00$30,534.99
+MSMISC. CHARGE0$0.00$27.25$28.75
+91STATE LODGING TAX49$147.20$3,002.56
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(5);
+      expect(result[0].sourceCode).toBe("6D");
+      expect(result[1].sourceCode).toBe("7A");
+      expect(result[2].sourceCode).toBe("72");
+      expect(result[3].sourceCode).toBe("MS");
+      expect(result[4].sourceCode).toBe("91");
+    });
+
+    it("should handle GL/CL account lines", () => {
       const parser = new AccountLineParser();
       const pdfText = `
-1    REFUND    (50.00)
-2    DISCOUNT  (25.75)
+GL ROOM REV60$9,949.23$228,339.12$199,178.73
+CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)$0.00
       `;
 
       const result = parser.parseAccountLines(pdfText);
 
       expect(result).toHaveLength(2);
-      expect(result[0].amount).toBe(-50.0);
-      expect(result[1].amount).toBe(-25.75);
+      expect(result[0].sourceCode).toBe("GL ROOM REV60");
+      expect(result[1].sourceCode).toBe("CL ADV DEP CTRL71ADV");
     });
+  });
 
-    it("should handle amounts with currency symbols and commas", () => {
-      const parser = new AccountLineParser();
+  describe("Payment Method Line Parsing", () => {
+    it("should parse payment method lines with parentheses amounts", () => {
+      const parser = new AccountLineParser({ includeZeroAmounts: true });
       const pdfText = `
-1    SALES    $1,250.75
-2    TAX      $125.50
+VISA/MASTER($13,616.46)($216,739.79)
+AMEX($2,486.57)($20,217.07)
+CASH$0.00($1,291.75)
+DISCOVER$0.00($1,321.26)
       `;
 
       const result = parser.parseAccountLines(pdfText);
 
-      expect(result).toHaveLength(2);
-      expect(result[0].amount).toBe(1250.75);
-      expect(result[1].amount).toBe(125.5);
+      expect(result).toHaveLength(4);
+      expect(result[0]).toEqual({
+        sourceCode: "VISA/MASTER",
+        description: "Payment Method Total",
+        amount: -13616.46,
+        paymentMethod: "VISA/MASTER",
+        originalLine: "VISA/MASTER($13,616.46)($216,739.79)",
+        lineNumber: 2,
+      });
+      expect(result[1].sourceCode).toBe("AMEX");
+      expect(result[2].sourceCode).toBe("CASH");
+      expect(result[3].sourceCode).toBe("DISCOVER");
     });
+  });
 
+  describe("Summary Line Parsing", () => {
+    it("should parse summary lines", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+Total Rm Rev$9,949.23$228,339.12
+ADR$216.29$221.90$222.55
+RevPar$110.55$181.22$158.00
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(3);
+      expect(result[0]).toEqual({
+        sourceCode: "Total Rm Rev",
+        description: "Summary Total",
+        amount: 9949.23,
+        paymentMethod: undefined,
+        originalLine: "Total Rm Rev$9,949.23$228,339.12",
+        lineNumber: 2,
+      });
+      expect(result[1].sourceCode).toBe("ADR");
+      expect(result[2].sourceCode).toBe("RevPar");
+    });
+  });
+
+  describe("Statistical Line Parsing", () => {
+    it("should parse statistical lines", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+Occupied461,02689714.38
+No Show0200.00218
+Comps013-66.67235
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(3);
+      expect(result[0]).toEqual({
+        sourceCode: "Occupied",
+        description: "Statistical Data",
+        amount: 461,
+        paymentMethod: undefined,
+        originalLine: "Occupied461,02689714.38",
+        lineNumber: 2,
+      });
+      expect(result[1].sourceCode).toBe("No Show");
+      expect(result[2].sourceCode).toBe("Comps");
+    });
+  });
+
+  describe("Configuration Options", () => {
     it("should skip lines below minimum amount threshold", () => {
-      const parser = new AccountLineParser({ minimumAmount: 10.0 });
+      const parser = new AccountLineParser({ minimumAmount: 100.0 });
       const pdfText = `
-1    SMALL CHARGE    5.00
-2    LARGE CHARGE    50.00
+RCROOM CHRG REVENUE1$50.00$100.00
+RDRATE DISCOUNT REV2($200.00)($300.00)
       `;
 
       const result = parser.parseAccountLines(pdfText);
 
       expect(result).toHaveLength(1);
-      expect(result[0].amount).toBe(50.0);
+      expect(result[0].sourceCode).toBe("RD");
+      expect(result[0].amount).toBe(-200.0);
     });
 
     it("should include zero amounts when configured", () => {
@@ -79,8 +173,8 @@ describe("AccountLineParser", () => {
         minimumAmount: 0,
       });
       const pdfText = `
-1    ZERO CHARGE    0.00
-2    NORMAL CHARGE  50.00
+6DBAL FWD TRANS DEBIT0$0.00$0.00
+RCROOM CHRG REVENUE1$50.00$100.00
       `;
 
       const result = parser.parseAccountLines(pdfText);
@@ -92,153 +186,20 @@ describe("AccountLineParser", () => {
   });
 
   describe("Payment Method Detection", () => {
-    it("should detect VISA payments", () => {
-      const parser = new AccountLineParser();
+    it("should detect payment methods in embedded codes", () => {
+      const parser = new AccountLineParser({ includeZeroAmounts: true });
       const pdfText = `
-1    VISA PAYMENT    100.00
-2    VISA CARD       200.00
+AXPAYMENT AMEX6($2,486.57)
+VSPAYMENT VISA/MC27($11,818.16)
+DCPAYMENT DISCOVER0$0.00
       `;
 
       const result = parser.parseAccountLines(pdfText);
 
-      expect(result).toHaveLength(2);
-      expect(result[0].paymentMethod).toBe("VISA");
-      expect(result[1].paymentMethod).toBe("VISA");
-    });
-
-    it("should detect MASTERCARD payments", () => {
-      const parser = new AccountLineParser();
-      const pdfText = `
-1    MASTER PAYMENT    100.00
-2    MASTERCARD        200.00
-3    MASTER CARD       300.00
-4    MC PAYMENT        400.00
-      `;
-
-      const result = parser.parseAccountLines(pdfText);
-
-      expect(result).toHaveLength(4);
-      expect(result[0].paymentMethod).toBe("MASTER");
-      expect(result[1].paymentMethod).toBe("MASTER");
-      expect(result[2].paymentMethod).toBe("MASTER");
-      expect(result[3].paymentMethod).toBe("MASTER");
-    });
-
-    it("should detect DISCOVER and AMEX payments", () => {
-      const parser = new AccountLineParser();
-      const pdfText = `
-1    DISCOVER PAYMENT    100.00
-2    DISC CARD           200.00
-3    AMEX PAYMENT        300.00
-4    AMERICAN EXPRESS    400.00
-      `;
-
-      const result = parser.parseAccountLines(pdfText);
-
-      expect(result).toHaveLength(4);
-      expect(result[0].paymentMethod).toBe("DISCOVER");
-      expect(result[1].paymentMethod).toBe("DISCOVER");
-      expect(result[2].paymentMethod).toBe("AMEX");
-      expect(result[3].paymentMethod).toBe("AMEX");
-    });
-  });
-
-  describe("Payment Method Grouping", () => {
-    it("should group payment methods when enabled", () => {
-      const parser = new AccountLineParser({ combinePaymentMethods: true });
-      const pdfText = `
-1    VISA PAYMENT      100.00
-2    MASTER PAYMENT    200.00
-3    DISCOVER PAYMENT  300.00
-4    AMEX PAYMENT      400.00
-5    CASH PAYMENT      500.00
-      `;
-
-      const accountLines = parser.parseAccountLines(pdfText);
-      const groups = parser.groupPaymentMethods(accountLines);
-
-      expect(groups).toHaveLength(1); // All should be grouped into "Credit Cards"
-      expect(groups[0].groupName).toBe("Credit Cards");
-      expect(groups[0].totalAmount).toBe(1000.0); // VISA + MASTER + DISCOVER + AMEX
-      expect(groups[0].paymentMethods).toEqual([
-        "VISA",
-        "MASTER",
-        "DISCOVER",
-        "AMEX",
-      ]);
-    });
-
-    it("should return consolidated account lines with combined payments", () => {
-      const parser = new AccountLineParser({ combinePaymentMethods: true });
-      const pdfText = `
-1    ROOM CHARGE       150.00
-2    VISA PAYMENT      100.00
-3    MASTER PAYMENT    200.00
-4    CASH PAYMENT      50.00
-      `;
-
-      const result = parser.getConsolidatedAccountLines(pdfText);
-
-      // Should have: Room charge + Cash payment + Combined credit cards
       expect(result).toHaveLength(3);
-
-      const roomCharge = result.find((r) => r.sourceCode === "1");
-      const cashPayment = result.find((r) => r.sourceCode === "4");
-      const creditCards = result.find((r) => r.sourceCode === "CC");
-
-      expect(roomCharge).toBeDefined();
-      expect(roomCharge?.amount).toBe(150.0);
-
-      expect(cashPayment).toBeDefined();
-      expect(cashPayment?.amount).toBe(50.0);
-
-      expect(creditCards).toBeDefined();
-      expect(creditCards?.amount).toBe(300.0); // VISA + MASTER
-      expect(creditCards?.description).toBe("Credit Cards");
-    });
-
-    it("should not combine payments when disabled", () => {
-      const parser = new AccountLineParser({ combinePaymentMethods: false });
-      const pdfText = `
-1    VISA PAYMENT      100.00
-2    MASTER PAYMENT    200.00
-      `;
-
-      const result = parser.getConsolidatedAccountLines(pdfText);
-
-      expect(result).toHaveLength(2);
-      expect(result[0].paymentMethod).toBe("VISA");
-      expect(result[1].paymentMethod).toBe("MASTER");
-    });
-  });
-
-  describe("Custom Payment Method Groups", () => {
-    it("should use custom payment method groupings", () => {
-      const parser = new AccountLineParser({
-        combinePaymentMethods: true,
-        paymentMethodGroups: {
-          "Major Cards": ["VISA", "MASTER"],
-          "Other Cards": ["DISCOVER", "AMEX"],
-        },
-      });
-
-      const pdfText = `
-1    VISA PAYMENT      100.00
-2    MASTER PAYMENT    200.00
-3    DISCOVER PAYMENT  300.00
-4    AMEX PAYMENT      400.00
-      `;
-
-      const accountLines = parser.parseAccountLines(pdfText);
-      const groups = parser.groupPaymentMethods(accountLines);
-
-      expect(groups).toHaveLength(2);
-
-      const majorCards = groups.find((g) => g.groupName === "Major Cards");
-      const otherCards = groups.find((g) => g.groupName === "Other Cards");
-
-      expect(majorCards?.totalAmount).toBe(300.0);
-      expect(otherCards?.totalAmount).toBe(700.0);
+      expect(result[0].paymentMethod).toBe("AMEX");
+      expect(result[1].paymentMethod).toBe("VISA");
+      expect(result[2].paymentMethod).toBe("DISCOVER");
     });
   });
 
@@ -263,23 +224,11 @@ Just some narrative content
       expect(result).toHaveLength(0);
     });
 
-    it("should handle lines without amounts", () => {
-      const parser = new AccountLineParser();
-      const pdfText = `
-1    DESCRIPTION ONLY
-2    ANOTHER LINE
-      `;
-
-      const result = parser.parseAccountLines(pdfText);
-
-      expect(result).toHaveLength(0); // Should be filtered out due to no amounts
-    });
-
     it("should handle malformed amounts gracefully", () => {
       const parser = new AccountLineParser({ includeZeroAmounts: true });
       const pdfText = `
-1    BAD AMOUNT    abc.def
-2    GOOD AMOUNT   100.00
+RCROOM CHRG REVENUE1$abc.def$100.00
+RDRATE DISCOUNT REV2$100.00$200.00
       `;
 
       const result = parser.parseAccountLines(pdfText);
@@ -290,75 +239,165 @@ Just some narrative content
     });
   });
 
-  describe("Parsing Statistics", () => {
-    it("should provide accurate parsing statistics", () => {
-      const parser = new AccountLineParser();
-      const pdfText = `Header line
-1    ROOM CHARGE       150.00
-2    VISA PAYMENT      100.00
-3    FOOD SALES        200.00
-Footer line
-
-Another line`;
-
-      const stats = parser.getParsingStats(pdfText);
-
-      expect(stats.totalLines).toBeGreaterThan(0); // Should count all lines
-      expect(stats.parsedLines).toBe(3); // Only valid account lines
-      expect(stats.paymentMethodLines).toBe(1); // Only VISA
-      expect(stats.totalAmount).toBe(450.0);
-      expect(stats.paymentMethodAmount).toBe(100.0);
-    });
-
-    it("should handle statistics for empty input", () => {
-      const parser = new AccountLineParser();
-      const stats = parser.getParsingStats("");
-
-      expect(stats.totalLines).toBeGreaterThanOrEqual(0); // Should handle empty gracefully
-      expect(stats.parsedLines).toBe(0);
-      expect(stats.paymentMethodLines).toBe(0);
-      expect(stats.totalAmount).toBe(0);
-      expect(stats.paymentMethodAmount).toBe(0);
-    });
-  });
-
-  describe("Configuration Options", () => {
-    it("should use default configuration when none provided", () => {
-      const parser = new AccountLineParser();
-
-      // Test that defaults are applied by checking behavior
+  describe("Comprehensive Integration Test", () => {
+    it("should handle mixed line types from real PDF content", () => {
+      const parser = new AccountLineParser({ includeZeroAmounts: true });
       const pdfText = `
-1    SMALL CHARGE    0.005
-2    VISA PAYMENT    100.00
+RCROOM CHRG REVENUE50$10,107.15$231,259.82
+RDRATE DISCOUNT REV10($157.92)($2,920.70)
+VISA/MASTER($13,616.46)($216,739.79)
+AMEX($2,486.57)($20,217.07)
+Total Rm Rev$9,949.23$228,339.12
+ADR$216.29$221.90$222.55
+Occupied461,02689714.38
+GL ROOM REV60$9,949.23$228,339.12
+CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)
       `;
 
       const result = parser.parseAccountLines(pdfText);
 
-      // Should filter out small charge due to default minimum amount
-      expect(result).toHaveLength(1);
-      expect(result[0].amount).toBe(100.0);
+      expect(result.length).toBeGreaterThan(8);
+
+      // Check we have embedded codes
+      const embeddedCodes = result.filter((r) =>
+        /^[A-Z0-9]{1,2}$/.test(r.sourceCode),
+      );
+      expect(embeddedCodes.length).toBeGreaterThan(0);
+
+      // Check we have payment methods
+      const paymentMethods = result.filter(
+        (r) => r.description === "Payment Method Total",
+      );
+      expect(paymentMethods.length).toBeGreaterThan(0);
+
+      // Check we have summaries
+      const summaries = result.filter((r) => r.description === "Summary Total");
+      expect(summaries.length).toBeGreaterThan(0);
+
+      // Check we have GL/CL lines
+      const glClLines = result.filter(
+        (r) => r.sourceCode.startsWith("GL ") || r.sourceCode.startsWith("CL "),
+      );
+      expect(glClLines.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Utility Functions", () => {
+    it("should provide parsing statistics", () => {
+      const parser = new AccountLineParser({ includeZeroAmounts: true });
+      const pdfText = `
+RCROOM CHRG REVENUE50$10,107.15$231,259.82
+VISA/MASTER($13,616.46)($216,739.79)
+AMEX($2,486.57)($20,217.07)
+Total Rm Rev$9,949.23$228,339.12
+Some random text that won't parse
+Another unparseable line
+      `;
+
+      const stats = parser.getParsingStats(pdfText);
+
+      expect(stats.totalLines).toBe(8); // Including empty lines
+      expect(stats.parsedLines).toBe(4); // Only valid account lines
+      expect(stats.paymentMethodLines).toBe(2); // VISA/MASTER and AMEX
+      expect(stats.totalAmount).toBeCloseTo(3953.35); // Sum of all amounts: 10107.15 + (-13616.46) + (-2486.57) + 9949.23
+      expect(stats.paymentMethodAmount).toBeCloseTo(-16103.03); // Sum of payment amounts: -13616.46 + (-2486.57)
     });
 
-    it("should override default configuration", () => {
+    it("should group payment methods correctly", () => {
       const parser = new AccountLineParser({
-        combinePaymentMethods: false,
-        minimumAmount: 0,
-        includeZeroAmounts: true,
+        combinePaymentMethods: true,
+        paymentMethodGroups: {
+          "Credit Cards": ["VISA/MASTER", "AMEX"],
+          Other: ["DISCOVER"],
+        },
+      });
+
+      const accountLines = [
+        {
+          sourceCode: "VISA/MASTER",
+          description: "Payment Method Total",
+          amount: -1000,
+          paymentMethod: "VISA/MASTER",
+          originalLine: "VISA/MASTER($1000)",
+          lineNumber: 1,
+        },
+        {
+          sourceCode: "AMEX",
+          description: "Payment Method Total",
+          amount: -500,
+          paymentMethod: "AMEX",
+          originalLine: "AMEX($500)",
+          lineNumber: 2,
+        },
+        {
+          sourceCode: "DISCOVER",
+          description: "Payment Method Total",
+          amount: -200,
+          paymentMethod: "DISCOVER",
+          originalLine: "DISCOVER($200)",
+          lineNumber: 3,
+        },
+        {
+          sourceCode: "CASH",
+          description: "Payment Method Total",
+          amount: -100,
+          paymentMethod: "CASH",
+          originalLine: "CASH($100)",
+          lineNumber: 4,
+        },
+      ];
+
+      const groups = parser.groupPaymentMethods(accountLines);
+
+      expect(groups).toHaveLength(3); // Credit Cards, Other, CASH
+
+      const creditCardGroup = groups.find(
+        (g) => g.groupName === "Credit Cards",
+      );
+      expect(creditCardGroup).toBeDefined();
+      expect(creditCardGroup!.totalAmount).toBe(-1500);
+      expect(creditCardGroup!.accountLines).toHaveLength(2);
+
+      const otherGroup = groups.find((g) => g.groupName === "Other");
+      expect(otherGroup).toBeDefined();
+      expect(otherGroup!.totalAmount).toBe(-200);
+
+      const cashGroup = groups.find((g) => g.groupName === "CASH");
+      expect(cashGroup).toBeDefined();
+      expect(cashGroup!.totalAmount).toBe(-100);
+    });
+
+    it("should handle consolidation with no payment method grouping", () => {
+      const parser = new AccountLineParser({ combinePaymentMethods: false });
+      const pdfText = `
+RCROOM CHRG REVENUE50$10,107.15
+VISA/MASTER($13,616.46)
+AMEX($2,486.57)
+      `;
+
+      const consolidated = parser.getConsolidatedAccountLines(pdfText);
+      const individual = parser.parseAccountLines(pdfText);
+
+      // Should be the same when consolidation is disabled
+      expect(consolidated).toEqual(individual);
+    });
+
+    it("should handle empty payment method groups configuration", () => {
+      const parser = new AccountLineParser({
+        combinePaymentMethods: true,
+        paymentMethodGroups: {},
       });
 
       const pdfText = `
-1    ZERO CHARGE     0.00
-2    VISA PAYMENT    100.00
-3    MASTER PAYMENT  200.00
+VISA/MASTER($13,616.46)
+AMEX($2,486.57)
       `;
 
-      const result = parser.getConsolidatedAccountLines(pdfText);
+      const consolidated = parser.getConsolidatedAccountLines(pdfText);
+      const individual = parser.parseAccountLines(pdfText);
 
-      // Should include zero amount and not combine payments
-      expect(result).toHaveLength(3);
-      expect(result[0].amount).toBe(0.0);
-      expect(result.find((r) => r.paymentMethod === "VISA")).toBeDefined();
-      expect(result.find((r) => r.paymentMethod === "MASTER")).toBeDefined();
+      // Should keep individual lines when no groups are configured
+      expect(consolidated).toEqual(individual);
     });
   });
 });

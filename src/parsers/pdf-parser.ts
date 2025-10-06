@@ -86,7 +86,7 @@ export class PDFParser extends BaseFileParser {
     this.accountLineParser = new AccountLineParser({
       combinePaymentMethods: true,
       paymentMethodGroups: {
-        "Credit Cards": ["VISA", "MASTER", "MASTERCARD", "DISCOVER", "AMEX"],
+        "Credit Cards": ["VISA/MASTER", "AMEX"],
       },
     });
   }

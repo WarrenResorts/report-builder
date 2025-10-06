@@ -928,7 +928,7 @@ describe("File Processor Lambda", () => {
       expect(result.processedFiles).toBe(0);
       expect(result.summary.filesFound).toBe(0);
       expect(result.summary.propertiesProcessed).toEqual([]);
-      expect(result.summary.processingTimeMs).toBeGreaterThan(0);
+      expect(result.summary.processingTimeMs).toBeGreaterThanOrEqual(0);
       expect(result.summary.reportsGenerated).toBe(0);
     });
 

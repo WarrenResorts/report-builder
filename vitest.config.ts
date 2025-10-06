@@ -26,6 +26,13 @@ export default defineConfig({
         '.husky/',
         'tests/**',  // Exclude all test files and helpers
         'src/types/**',  // Exclude type definitions
+        '*.js',  // Exclude temporary debug files in root
+        'test-*.js',  // Exclude test scripts
+        'debug-*.js',  // Exclude debug scripts
+        'analyze-*.js',  // Exclude analysis scripts
+        'examine-*.js',  // Exclude examination scripts
+        'trace-*.js',  // Exclude trace scripts
+        'extract-*.js',  // Exclude extraction scripts
       ],
       thresholds: {
         lines: 85,
