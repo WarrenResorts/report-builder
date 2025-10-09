@@ -941,21 +941,21 @@ describe("File Processor Lambda", () => {
           totalFiles: 1,
           totalRecords: 2,
           data: [
-            { 
-              sourceCode: "40110", 
-              sourceDescription: "Room Revenue", 
+            {
+              sourceCode: "40110",
+              sourceDescription: "Room Revenue",
               sourceAmount: 150.0,
               targetCode: "40110-634",
               targetDescription: "Revenue - Direct Booking",
-              mappedAmount: 150.0
+              mappedAmount: 150.0,
             },
-            { 
-              sourceCode: "90001", 
-              sourceDescription: "ADR", 
+            {
+              sourceCode: "90001",
+              sourceDescription: "ADR",
               sourceAmount: 200.0,
               targetCode: "90001-418",
               targetDescription: "ADR",
-              mappedAmount: 200.0
+              mappedAmount: 200.0,
             },
           ],
           summary: {
@@ -982,8 +982,10 @@ describe("File Processor Lambda", () => {
 
       // Should contain JE header
       expect(csvContent).toContain('"Entry","Date","Sub Name","Subsidiary"');
-      // Should contain StatJE header  
-      expect(csvContent).toContain('"Transaction ID","Date","Subsidiary","Unit of Measure Type"');
+      // Should contain StatJE header
+      expect(csvContent).toContain(
+        '"Transaction ID","Date","Subsidiary","Unit of Measure Type"',
+      );
       // Should contain property data
       expect(csvContent).toContain("Revenue - Direct Booking");
       expect(csvContent).toContain("ADR");

@@ -1,6 +1,6 @@
 /**
  * @fileoverview JE/StatJE CSV Generator
- * 
+ *
  * Generates combined Journal Entry and Statistical Journal Entry CSV files
  * in the format required for NetSuite import.
  */
@@ -67,7 +67,7 @@ export class JEStatCSVGenerator {
     correlationId: string,
   ): Promise<string> {
     const csvLines: string[] = [];
-    
+
     this.logger.info("Starting combined JE/StatJE CSV generation", {
       correlationId,
       propertiesCount: allTransformedData.length,
@@ -81,7 +81,7 @@ export class JEStatCSVGenerator {
 
       // Separate financial and statistical records
       const { financialRecords, statisticalRecords } = this.separateRecordTypes(
-        transformedData.records
+        transformedData.records,
       );
 
       // Generate Journal Entry section for this property
@@ -89,7 +89,7 @@ export class JEStatCSVGenerator {
         const jeLines = this.generateJournalEntrySection(
           financialRecords,
           transformedData,
-          correlationId
+          correlationId,
         );
         csvLines.push(...jeLines);
       }
@@ -99,14 +99,14 @@ export class JEStatCSVGenerator {
         const statLines = this.generateStatisticalSection(
           statisticalRecords,
           transformedData,
-          correlationId
+          correlationId,
         );
         csvLines.push(...statLines);
       }
     }
 
-    const csvContent = csvLines.join('\n');
-    
+    const csvContent = csvLines.join("\n");
+
     this.logger.info("Combined JE/StatJE CSV generation completed", {
       correlationId,
       totalLines: csvLines.length,
@@ -142,23 +142,25 @@ export class JEStatCSVGenerator {
    * Check if a record is statistical based on account code
    */
   private isStatisticalRecord(record: AnyTransformedRecord): boolean {
-    const accountCode = record.targetCode || record.sourceCode || '';
-    
+    const accountCode = record.targetCode || record.sourceCode || "";
+
     // Statistical accounts start with 90xxx
-    if (accountCode.startsWith('90')) {
+    if (accountCode.startsWith("90")) {
       return true;
     }
 
     // Also check source description for statistical indicators
-    const description = (record.sourceDescription || '').toLowerCase();
-    return description.includes('adr') || 
-           description.includes('revpar') || 
-           description.includes('occupied') || 
-           description.includes('rooms sold') || 
-           description.includes('comps') || 
-           description.includes('oos') || 
-           description.includes('out of service') ||
-           description.includes('statistical');
+    const description = (record.sourceDescription || "").toLowerCase();
+    return (
+      description.includes("adr") ||
+      description.includes("revpar") ||
+      description.includes("occupied") ||
+      description.includes("rooms sold") ||
+      description.includes("comps") ||
+      description.includes("oos") ||
+      description.includes("out of service") ||
+      description.includes("statistical")
+    );
   }
 
   /**
@@ -167,10 +169,10 @@ export class JEStatCSVGenerator {
   private generateJournalEntrySection(
     records: AnyTransformedRecord[],
     transformedData: AnyTransformedData,
-    _correlationId: string
+    _correlationId: string,
   ): string[] {
     const lines: string[] = [];
-    
+
     // Add JE header if this is the first section
     lines.push(this.generateJEHeader());
 
@@ -184,7 +186,7 @@ export class JEStatCSVGenerator {
         entryId,
         date,
         location,
-        transformedData.propertyId
+        transformedData.propertyId,
       );
       lines.push(this.formatJERecord(jeRecord));
     }
@@ -198,14 +200,16 @@ export class JEStatCSVGenerator {
   private generateStatisticalSection(
     records: AnyTransformedRecord[],
     transformedData: AnyTransformedData,
-    _correlationId: string
+    _correlationId: string,
   ): string[] {
     const lines: string[] = [];
-    
+
     // Add StatJE header
     lines.push(this.generateStatJEHeader());
 
-    const transactionId = this.generateTransactionId(transformedData.propertyId);
+    const transactionId = this.generateTransactionId(
+      transformedData.propertyId,
+    );
     const date = this.formatDate(new Date());
     const location = this.getLocationId(transformedData.propertyId);
 
@@ -215,7 +219,7 @@ export class JEStatCSVGenerator {
         transactionId,
         date,
         location,
-        transformedData.propertyId
+        transformedData.propertyId,
       );
       lines.push(this.formatStatJERecord(statRecord));
     }
@@ -245,24 +249,29 @@ export class JEStatCSVGenerator {
     entryId: string,
     date: string,
     location: string,
-    _propertyId: string
+    _propertyId: string,
   ): JournalEntryRecord {
     const amount = Math.abs(record.mappedAmount || record.sourceAmount || 0);
     const isCredit = (record.mappedAmount || record.sourceAmount || 0) < 0;
-    
+
     return {
       entry: entryId,
       date: date,
-      subName: "Parent Company : Warren Family Hotels : Warren Resort Hotels, Inc.",
+      subName:
+        "Parent Company : Warren Family Hotels : Warren Resort Hotels, Inc.",
       subsidiary: "5",
-      acctnumber: this.extractAccountNumber(record.targetCode || record.sourceCode || ''),
-      internalId: this.extractInternalId(record.targetCode || record.sourceCode || ''),
+      acctnumber: this.extractAccountNumber(
+        record.targetCode || record.sourceCode || "",
+      ),
+      internalId: this.extractInternalId(
+        record.targetCode || record.sourceCode || "",
+      ),
       location: location,
-      accountName: record.targetDescription || record.sourceDescription || '',
-      debit: isCredit ? '' : amount.toFixed(2),
-      credit: isCredit ? amount.toFixed(2) : '',
+      accountName: record.targetDescription || record.sourceDescription || "",
+      debit: isCredit ? "" : amount.toFixed(2),
+      credit: isCredit ? amount.toFixed(2) : "",
       comment: this.generateComment(record),
-      paymentType: record.paymentMethod || '',
+      paymentType: record.paymentMethod || "",
     };
   }
 
@@ -274,19 +283,24 @@ export class JEStatCSVGenerator {
     transactionId: string,
     date: string,
     location: string,
-    _propertyId: string
+    _propertyId: string,
   ): StatisticalJournalEntryRecord {
     const amount = Math.abs(record.mappedAmount || record.sourceAmount || 0);
-    
+
     return {
       transactionId: transactionId,
       date: date,
-      subsidiary: "Parent Company : Warren Family Hotels : Warren Resort Hotels, Inc.",
+      subsidiary:
+        "Parent Company : Warren Family Hotels : Warren Resort Hotels, Inc.",
       unitOfMeasureType: "statistical",
       unitOfMeasure: "Each",
-      acctNumber: this.extractAccountNumber(record.targetCode || record.sourceCode || ''),
-      internalId: this.extractInternalId(record.targetCode || record.sourceCode || ''),
-      accountName: record.targetDescription || record.sourceDescription || '',
+      acctNumber: this.extractAccountNumber(
+        record.targetCode || record.sourceCode || "",
+      ),
+      internalId: this.extractInternalId(
+        record.targetCode || record.sourceCode || "",
+      ),
+      accountName: record.targetDescription || record.sourceDescription || "",
       departmentId: "1",
       location: location,
       amount: amount.toFixed(2),
@@ -311,7 +325,7 @@ export class JEStatCSVGenerator {
       `"${record.credit}"`,
       `"${record.comment}"`,
       `"${record.paymentType}"`,
-    ].join(',');
+    ].join(",");
   }
 
   /**
@@ -331,7 +345,7 @@ export class JEStatCSVGenerator {
       `"${record.location}"`,
       `"${record.amount}"`,
       `"${record.lineUnits}"`,
-    ].join(',');
+    ].join(",");
   }
 
   /**
@@ -347,7 +361,7 @@ export class JEStatCSVGenerator {
    */
   private extractInternalId(code: string): string {
     const match = code.match(/-(\d+)$/);
-    return match ? match[1] : '';
+    return match ? match[1] : "";
   }
 
   /**
@@ -355,7 +369,7 @@ export class JEStatCSVGenerator {
    */
   private generateEntryId(_propertyId: string): string {
     const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
     return `WR${dateStr}`;
   }
 
@@ -364,7 +378,7 @@ export class JEStatCSVGenerator {
    */
   private generateTransactionId(_propertyId: string): string {
     const date = new Date();
-    const dateStr = date.toISOString().slice(5, 10).replace('-', '/');
+    const dateStr = date.toISOString().slice(5, 10).replace("-", "/");
     return `${dateStr}/${date.getFullYear()} WRH`;
   }
 
@@ -378,7 +392,7 @@ export class JEStatCSVGenerator {
       "Crown City Inn": "4",
       "test-property": "4",
     };
-    
+
     return locationMap[propertyId] || "4";
   }
 
@@ -386,8 +400,8 @@ export class JEStatCSVGenerator {
    * Format date as MM/DD/YYYY
    */
   private formatDate(date: Date): string {
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
     const year = date.getFullYear();
     return `${month}/${day}/${year}`;
   }
@@ -397,8 +411,8 @@ export class JEStatCSVGenerator {
    */
   private generateComment(record: AnyTransformedRecord): string {
     if (record.paymentMethod) {
-      return record.sourceDescription || '';
+      return record.sourceDescription || "";
     }
-    return record.sourceDescription || '';
+    return record.sourceDescription || "";
   }
 }

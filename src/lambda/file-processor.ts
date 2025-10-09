@@ -1226,7 +1226,9 @@ export class FileProcessor {
   /**
    * Helper method to generate master CSV report from all property data
    */
-  private async generateMasterCSVReport(reports: ConsolidatedReport[]): Promise<string> {
+  private async generateMasterCSVReport(
+    reports: ConsolidatedReport[],
+  ): Promise<string> {
     if (reports.length === 0) {
       return "No data available\n";
     }
@@ -1239,16 +1241,16 @@ export class FileProcessor {
         const transformedData = {
           propertyId: report.propertyId,
           records: report.data.map((record: any) => ({
-            sourceCode: record.sourceCode || '',
-            sourceDescription: record.sourceDescription || '',
+            sourceCode: record.sourceCode || "",
+            sourceDescription: record.sourceDescription || "",
             sourceAmount: record.sourceAmount || 0,
-            targetCode: record.targetCode || '',
-            targetDescription: record.targetDescription || '',
+            targetCode: record.targetCode || "",
+            targetDescription: record.targetDescription || "",
             mappedAmount: record.mappedAmount || record.sourceAmount || 0,
-            paymentMethod: record.paymentMethod || '',
-            originalLine: record.originalLine || '',
+            paymentMethod: record.paymentMethod || "",
+            originalLine: record.originalLine || "",
             processingDate: record.processingDate || new Date().toISOString(),
-            mappingStatus: record.mappingStatus || 'MAPPED',
+            mappingStatus: record.mappingStatus || "MAPPED",
           })),
           processingDate: report.reportDate,
           totalRecords: report.totalRecords,
@@ -1264,11 +1266,11 @@ export class FileProcessor {
     // Use the new JE/StatJE CSV generator
     const csvGenerator = new JEStatCSVGenerator();
     const correlationId = generateCorrelationId();
-    
+
     try {
       const csvContent = await csvGenerator.generateCombinedCSV(
         transformedDataArray,
-        correlationId
+        correlationId,
       );
       return csvContent;
     } catch (error) {
