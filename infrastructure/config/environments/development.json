@@ -32,15 +32,15 @@
   },
   "scheduling": {
     "dailyProcessing": {
-      "cronExpression": "cron(0 */6 * * ? *)",
-      "description": "Every 6 hours for development testing"
+      "cronExpression": "cron(0 20 * * ? *)",
+      "description": "Daily at 12 PM Pacific Time (8 PM UTC) - processes previous 24 hours"
     },
     "weeklyReporting": {
       "cronExpression": "cron(0 12 ? * MON *)",
       "description": "Weekly on Monday at 12 PM UTC for testing"
     },
     "eventRetention": {
-      "maxEventAgeHours": 12,
+      "maxEventAgeHours": 24,
       "retryAttempts": 2
     }
   },

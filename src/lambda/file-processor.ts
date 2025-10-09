@@ -32,6 +32,7 @@ import {
   type VisualMatrixData,
 } from "../parsers/visual-matrix-parser";
 import { TransformationEngine } from "../transformation/transformation-engine";
+import { JEStatCSVGenerator } from "../output/je-stat-csv-generator";
 import type { SupportedFileType } from "../parsers/base/parser-types";
 import type { ExcelMappingData } from "../parsers/excel-mapping-parser";
 import type {
@@ -866,7 +867,7 @@ export class FileProcessor {
 
     try {
       // Generate one master CSV report with all properties
-      const csvContent = this.generateMasterCSVReport(transformedData);
+      const csvContent = await this.generateMasterCSVReport(transformedData);
 
       // Use the first report's date (they should all be the same date)
       const reportDate = transformedData[0].reportDate;
@@ -1225,66 +1226,59 @@ export class FileProcessor {
   /**
    * Helper method to generate master CSV report from all property data
    */
-  private generateMasterCSVReport(reports: ConsolidatedReport[]): string {
+  private async generateMasterCSVReport(reports: ConsolidatedReport[]): Promise<string> {
     if (reports.length === 0) {
       return "No data available\n";
     }
 
-    // Collect all data from all properties
-    const allData: any[] = [];
-    const allKeys = new Set<string>();
+    // Convert ConsolidatedReport[] to TransformedData[] format expected by JEStatCSVGenerator
+    const transformedDataArray: any[] = [];
 
     for (const report of reports) {
       if (report.data && report.data.length > 0) {
-        for (const record of report.data) {
-          if (typeof record === "object" && record !== null) {
-            // Add property name to each record for identification
-            const enrichedRecord = {
-              propertyName: report.propertyId,
-              ...record,
-            };
-            allData.push(enrichedRecord);
-
-            // Collect all unique keys
-            Object.keys(enrichedRecord).forEach((key) => allKeys.add(key));
-          }
-        }
+        const transformedData = {
+          propertyId: report.propertyId,
+          records: report.data.map((record: any) => ({
+            sourceCode: record.sourceCode || '',
+            sourceDescription: record.sourceDescription || '',
+            sourceAmount: record.sourceAmount || 0,
+            targetCode: record.targetCode || '',
+            targetDescription: record.targetDescription || '',
+            mappedAmount: record.mappedAmount || record.sourceAmount || 0,
+            paymentMethod: record.paymentMethod || '',
+            originalLine: record.originalLine || '',
+            processingDate: record.processingDate || new Date().toISOString(),
+            mappingStatus: record.mappingStatus || 'MAPPED',
+          })),
+          processingDate: report.reportDate,
+          totalRecords: report.totalRecords,
+        };
+        transformedDataArray.push(transformedData);
       }
     }
 
-    if (allData.length === 0) {
+    if (transformedDataArray.length === 0) {
       return "No data available\n";
     }
 
-    // Create headers with propertyName first for better readability
-    const headers = [
-      "propertyName",
-      ...Array.from(allKeys).filter((key) => key !== "propertyName"),
-    ];
-    const csvLines = [headers.join(",")];
-
-    // Add data rows
-    allData.forEach((record) => {
-      const row = headers.map((header) => {
-        const value = record[header];
-        // Handle CSV escaping for values that contain commas or quotes
-        if (value !== undefined && value !== null) {
-          const stringValue = String(value);
-          if (
-            stringValue.includes(",") ||
-            stringValue.includes('"') ||
-            stringValue.includes("\n")
-          ) {
-            return `"${stringValue.replace(/"/g, '""')}"`;
-          }
-          return stringValue;
-        }
-        return "";
+    // Use the new JE/StatJE CSV generator
+    const csvGenerator = new JEStatCSVGenerator();
+    const correlationId = generateCorrelationId();
+    
+    try {
+      const csvContent = await csvGenerator.generateCombinedCSV(
+        transformedDataArray,
+        correlationId
+      );
+      return csvContent;
+    } catch (error) {
+      const logger = createCorrelatedLogger(correlationId);
+      logger.error("Failed to generate JE/StatJE CSV", error as Error, {
+        correlationId,
+        reportCount: reports.length,
       });
-      csvLines.push(row.join(","));
-    });
-
-    return csvLines.join("\n");
+      return "Error generating CSV report\n";
+    }
   }
 
   /**

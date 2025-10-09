@@ -941,26 +941,25 @@ describe("File Processor Lambda", () => {
           totalFiles: 1,
           totalRecords: 2,
           data: [
-            { accountCode: "1001", description: "Room Revenue", amount: 150.0 },
-            { accountCode: "2001", description: "Tax", amount: 12.0 },
+            { 
+              sourceCode: "40110", 
+              sourceDescription: "Room Revenue", 
+              sourceAmount: 150.0,
+              targetCode: "40110-634",
+              targetDescription: "Revenue - Direct Booking",
+              mappedAmount: 150.0
+            },
+            { 
+              sourceCode: "90001", 
+              sourceDescription: "ADR", 
+              sourceAmount: 200.0,
+              targetCode: "90001-418",
+              targetDescription: "ADR",
+              mappedAmount: 200.0
+            },
           ],
           summary: {
             processingTime: 100,
-            errors: [],
-            successfulFiles: 1,
-            failedFiles: 0,
-          },
-        },
-        {
-          propertyId: "PROP2",
-          reportDate: "2024-01-15",
-          totalFiles: 1,
-          totalRecords: 1,
-          data: [
-            { accountCode: "3001", description: "Food Revenue", amount: 75.0 },
-          ],
-          summary: {
-            processingTime: 50,
             errors: [],
             successfulFiles: 1,
             failedFiles: 0,
@@ -976,17 +975,18 @@ describe("File Processor Lambda", () => {
       // Create a FileProcessor instance and call generateConsolidatedReports
       const processor = new FileProcessor();
 
-      // Test the generateMasterCSVReport method directly
-      const csvContent = (processor as any).generateMasterCSVReport(
+      // Test the generateMasterCSVReport method directly (now async)
+      const csvContent = await (processor as any).generateMasterCSVReport(
         testReports,
       );
 
-      expect(csvContent).toContain(
-        "propertyName,accountCode,description,amount",
-      );
-      expect(csvContent).toContain("PROP1,1001,Room Revenue,150");
-      expect(csvContent).toContain("PROP1,2001,Tax,12");
-      expect(csvContent).toContain("PROP2,3001,Food Revenue,75");
+      // Should contain JE header
+      expect(csvContent).toContain('"Entry","Date","Sub Name","Subsidiary"');
+      // Should contain StatJE header  
+      expect(csvContent).toContain('"Transaction ID","Date","Subsidiary","Unit of Measure Type"');
+      // Should contain property data
+      expect(csvContent).toContain("Revenue - Direct Booking");
+      expect(csvContent).toContain("ADR");
     });
 
     it("should test private utility methods", async () => {
