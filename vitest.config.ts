@@ -27,8 +27,14 @@ export default defineConfig({
         'tests/**',  // Exclude all test files and helpers
         'src/types/**',  // Exclude type definitions
         '*.js',  // Exclude temporary debug files in root
+        '*.cjs',  // Exclude CommonJS debug files in root
+        '*.mjs',  // Exclude ES module debug files in root
         'test-*.js',  // Exclude test scripts
+        'test-*.cjs',  // Exclude test scripts (CommonJS)
+        'test-*.mjs',  // Exclude test scripts (ES modules)
         'debug-*.js',  // Exclude debug scripts
+        'debug-*.cjs',  // Exclude debug scripts (CommonJS)
+        'debug-*.mjs',  // Exclude debug scripts (ES modules)
         'analyze-*.js',  // Exclude analysis scripts
         'examine-*.js',  // Exclude examination scripts
         'trace-*.js',  // Exclude trace scripts
