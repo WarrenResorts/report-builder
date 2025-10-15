@@ -16,11 +16,15 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],
       exclude: [
-        'node_modules/',
-        'dist/',
-        'coverage/',
+        'node_modules/**',  // Exclude all node_modules
+        '**/node_modules/**',  // Exclude nested node_modules
+        'dist/**',
+        'coverage/**',
+        'cdk.out/**',  // Exclude CDK build output
+        '**/cdk.out/**',  // Exclude nested CDK outputs
         '**/*.d.ts',
-        'infrastructure/',
+        'infrastructure/**/*.ts',  // Exclude infrastructure TypeScript files
+        'infrastructure/**/*.js',  // Exclude infrastructure JavaScript files
         '**/*.config.*',
         '**/*.eslintrc.*',
         '.husky/',
