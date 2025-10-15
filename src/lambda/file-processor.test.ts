@@ -932,18 +932,19 @@ describe("File Processor Lambda", () => {
       expect(result.summary.reportsGenerated).toBe(0);
     });
 
-    it("should test generateMasterCSVReport method", async () => {
-      // Create test data that will trigger generateMasterCSVReport
+    it("should test generateSeparateCSVReports method", async () => {
+      // Create test data that will trigger generateSeparateCSVReports
       const testReports: ConsolidatedReport[] = [
         {
           propertyId: "PROP1",
-          reportDate: "2024-01-15",
+          propertyName: "THE BARD'S INN HOTEL",
+          reportDate: "2025-07-14",
           totalFiles: 1,
           totalRecords: 2,
           data: [
             {
               sourceCode: "40110",
-              sourceDescription: "Room Revenue",
+              sourceDescription: "ROOM CHRG REVENUE",
               sourceAmount: 150.0,
               targetCode: "40110-634",
               targetDescription: "Revenue - Direct Booking",
@@ -972,23 +973,26 @@ describe("File Processor Lambda", () => {
         Contents: [], // Empty S3 query result
       });
 
-      // Create a FileProcessor instance and call generateConsolidatedReports
+      // Create a FileProcessor instance
       const processor = new FileProcessor();
 
-      // Test the generateMasterCSVReport method directly (now async)
-      const csvContent = await (processor as any).generateMasterCSVReport(
-        testReports,
-      );
+      // Test the generateSeparateCSVReports method directly (now returns {jeContent, statJEContent})
+      const correlationId = "test-correlation-id";
+      const { jeContent, statJEContent } = await (
+        processor as any
+      ).generateSeparateCSVReports(testReports, correlationId);
 
-      // Should contain JE header
-      expect(csvContent).toContain('"Entry","Date","Sub Name","Subsidiary"');
-      // Should contain StatJE header
-      expect(csvContent).toContain(
+      // JE file should contain JE header and financial record
+      expect(jeContent).toContain('"Entry","Date","Sub Name","Subsidiary"');
+      expect(jeContent).toContain("Revenue - Direct Booking");
+      expect(jeContent).toContain("WR2420250714"); // Entry ID with location 24
+
+      // StatJE file should contain StatJE header and statistical record
+      expect(statJEContent).toContain(
         '"Transaction ID","Date","Subsidiary","Unit of Measure Type"',
       );
-      // Should contain property data
-      expect(csvContent).toContain("Revenue - Direct Booking");
-      expect(csvContent).toContain("ADR");
+      expect(statJEContent).toContain("ADR");
+      expect(statJEContent).toContain("07/14/2025 WRH"); // Transaction ID format
     });
 
     it("should test private utility methods", async () => {

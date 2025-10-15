@@ -92,7 +92,7 @@ DISCOVER$0.00($1,321.26)
         sourceCode: "VISA/MASTER",
         description: "Payment Method Total",
         amount: -13616.46,
-        paymentMethod: "VISA/MASTER",
+        paymentMethod: undefined, // Summary lines don't have paymentMethod to avoid double-counting
         originalLine: "VISA/MASTER($13,616.46)($216,739.79)",
         lineNumber: 2,
       });
@@ -298,9 +298,9 @@ Another unparseable line
 
       expect(stats.totalLines).toBe(8); // Including empty lines
       expect(stats.parsedLines).toBe(4); // Only valid account lines
-      expect(stats.paymentMethodLines).toBe(2); // VISA/MASTER and AMEX
+      expect(stats.paymentMethodLines).toBe(0); // Summary lines no longer have paymentMethod set
       expect(stats.totalAmount).toBeCloseTo(3953.35); // Sum of all amounts: 10107.15 + (-13616.46) + (-2486.57) + 9949.23
-      expect(stats.paymentMethodAmount).toBeCloseTo(-16103.03); // Sum of payment amounts: -13616.46 + (-2486.57)
+      expect(stats.paymentMethodAmount).toBeCloseTo(0); // No payment method lines since summaries don't have paymentMethod
     });
 
     it("should group payment methods correctly", () => {

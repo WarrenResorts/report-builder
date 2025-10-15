@@ -32,7 +32,10 @@ import {
   type VisualMatrixData,
 } from "../parsers/visual-matrix-parser";
 import { TransformationEngine } from "../transformation/transformation-engine";
-import { JEStatCSVGenerator } from "../output/je-stat-csv-generator";
+import { JournalEntryGenerator } from "../output/journal-entry-generator";
+import { StatisticalEntryGenerator } from "../output/statistical-entry-generator";
+import { CreditCardProcessor } from "../processors/credit-card-processor";
+import { getPropertyConfigService } from "../config/property-config";
 import type { SupportedFileType } from "../parsers/base/parser-types";
 import type { ExcelMappingData } from "../parsers/excel-mapping-parser";
 import type {
@@ -67,6 +70,7 @@ interface ProcessedFileData {
  */
 interface ConsolidatedReport {
   propertyId: string;
+  propertyName?: string; // Extracted from PDF
   reportDate: string;
   totalFiles: number;
   totalRecords: number;
@@ -620,10 +624,33 @@ export class FileProcessor {
         });
 
         // Apply account code mappings to the file data
-        const mappedRecords = await this.applyVisualMatrixMappings(
+        let mappedRecords = await this.applyVisualMatrixMappings(
           file,
           visualMatrixData,
           correlationId,
+        );
+
+        // Apply credit card processing to combine deposits properly
+        // Extract property name from the parsed data
+        let propertyName = file.propertyId; // Default fallback
+        try {
+          const parsedData = JSON.parse(file.originalContent);
+          if (parsedData.propertyName) {
+            propertyName = parsedData.propertyName;
+          }
+        } catch {
+          // Continue with fallback
+        }
+
+        // Get property config and process credit cards
+        const propertyConfigService = getPropertyConfigService();
+        const propertyConfig =
+          propertyConfigService.getPropertyConfigOrDefault(propertyName);
+        const creditCardProcessor = new CreditCardProcessor();
+
+        mappedRecords = creditCardProcessor.processCreditCards(
+          mappedRecords,
+          propertyConfig,
         );
 
         if (mappedRecords.length > 0) {
@@ -631,6 +658,7 @@ export class FileProcessor {
           if (!reportsByProperty[file.propertyId]) {
             reportsByProperty[file.propertyId] = {
               propertyId: file.propertyId,
+              propertyName: propertyName, // Store property name
               reportDate: new Date().toISOString().split("T")[0],
               totalFiles: 0,
               totalRecords: 0,
@@ -695,6 +723,33 @@ export class FileProcessor {
   }
 
   /**
+   * Find mapping for a property, trying property-specific first, then global
+   */
+  private findMappingForProperty(
+    visualMatrixData: VisualMatrixData,
+    sourceCode: string,
+    propertyName: string,
+  ): VisualMatrixMapping | undefined {
+    // First, try to find property-specific mapping by property name
+    const propertySpecificMapping = visualMatrixData.mappings.find(
+      (m) =>
+        m.srcAcctCode === sourceCode &&
+        m.propertyName &&
+        m.propertyName.toUpperCase().trim() ===
+          propertyName.toUpperCase().trim(),
+    );
+
+    if (propertySpecificMapping) {
+      return propertySpecificMapping;
+    }
+
+    // Fall back to global mapping (propertyId = 0)
+    return visualMatrixData.mappings.find(
+      (m) => m.srcAcctCode === sourceCode && m.propertyId === 0,
+    );
+  }
+
+  /**
    * Apply VisualMatrix account code mappings to a processed file
    */
   private async applyVisualMatrixMappings(
@@ -719,12 +774,19 @@ export class FileProcessor {
           accountLineCount: parsedData.accountLines.length,
         });
 
+        // Extract property name for property-specific mapping lookup
+        const propertyName = parsedData.propertyName || file.propertyId;
+
         // Process each account line
         for (const accountLine of parsedData.accountLines) {
-          const mapping = VisualMatrixParser.findMappingBySourceCode(
+          // Try to find mapping using property name first, then fall back to global
+          // The VisualMatrix parser will:
+          // 1. Look for property-specific mapping by name
+          // 2. Fall back to global mapping (propertyId = 0)
+          const mapping = this.findMappingForProperty(
             visualMatrixData,
             accountLine.sourceCode,
-            0, // Use global mappings for now (propertyId = 0)
+            propertyName,
           );
 
           if (mapping) {
@@ -748,30 +810,20 @@ export class FileProcessor {
               targetCode: mapping.acctCode,
               amount: accountLine.amount,
               mappedAmount: mappedRecord.mappedAmount,
+              propertySpecific: mapping.propertyId > 0,
             });
           } else {
-            logger.warn("No mapping found for source account code", {
-              sourceCode: accountLine.sourceCode,
-              description: accountLine.description,
-              amount: accountLine.amount,
-            });
-
-            // Still include unmapped records for visibility
-            const unmappedRecord = {
-              sourceCode: accountLine.sourceCode,
-              sourceDescription: accountLine.description,
-              sourceAmount: accountLine.amount,
-              targetCode: `UNMAPPED_${accountLine.sourceCode}`,
-              targetDescription: `Unmapped: ${accountLine.description}`,
-              mappedAmount: accountLine.amount,
-              paymentMethod: accountLine.paymentMethod,
-              originalLine: accountLine.originalLine,
-              propertyId: file.propertyId,
-              processingDate: new Date().toISOString(),
-              mappingStatus: "UNMAPPED",
-            };
-
-            mappedRecords.push(unmappedRecord);
+            // Per hotel requirements: If no mapping found, skip the record (don't include in report)
+            logger.warn(
+              "No mapping found for account code - skipping record per hotel requirements",
+              {
+                sourceCode: accountLine.sourceCode,
+                description: accountLine.description,
+                amount: accountLine.amount,
+                propertyName,
+              },
+            );
+            // Record is NOT added to mappedRecords (skipped as requested)
           }
         }
       } else {
@@ -808,15 +860,20 @@ export class FileProcessor {
       operation: "generate_consolidated_reports",
     });
 
+    // Calculate previous day's date (since we process data from the previous 24 hours)
+    const previousDay = new Date();
+    previousDay.setDate(previousDay.getDate() - 1);
+    const previousDayStr = previousDay.toISOString().split("T")[0];
+
     // Always generate one consolidated report, even if empty
     // This ensures consistent output format for downstream consumers
     if (transformedData.length === 0) {
       logger.info("No transformed data - generating empty consolidated report");
 
       try {
-        // Create empty report with current date
+        // Create empty report with current date for folder, previous day in filename
         const reportDate = new Date().toISOString().split("T")[0];
-        const reportKey = `reports/${reportDate}/daily-consolidated-report.csv`;
+        const reportKey = `reports/${reportDate}/daily-consolidated-report-${previousDayStr}.csv`;
         const csvContent = "No data available\n";
 
         await retryS3Operation(
@@ -829,6 +886,7 @@ export class FileProcessor {
                 ContentType: "text/csv",
                 Metadata: {
                   reportDate: reportDate,
+                  processingDate: previousDayStr,
                   totalRecords: "0",
                   totalFiles: "0",
                   totalProperties: "0",
@@ -847,6 +905,7 @@ export class FileProcessor {
         logger.info("Empty consolidated report generated", {
           reportKey,
           reportDate,
+          processingDate: previousDayStr,
         });
 
         return [reportKey];
@@ -866,12 +925,14 @@ export class FileProcessor {
     }
 
     try {
-      // Generate one master CSV report with all properties
-      const csvContent = await this.generateMasterCSVReport(transformedData);
+      // Generate TWO separate CSV files: JE and StatJE
+      const { jeContent, statJEContent } =
+        await this.generateSeparateCSVReports(transformedData, correlationId);
 
       // Use the first report's date (they should all be the same date)
       const reportDate = transformedData[0].reportDate;
-      const reportKey = `reports/${reportDate}/daily-consolidated-report.csv`;
+      const jeReportKey = `reports/${reportDate}/${previousDayStr}_JE.csv`;
+      const statJEReportKey = `reports/${reportDate}/${previousDayStr}_StatJE.csv`;
 
       // Calculate totals across all properties
       const totalRecords = transformedData.reduce(
@@ -884,47 +945,74 @@ export class FileProcessor {
       );
       const totalProperties = transformedData.length;
 
+      const metadata = {
+        reportDate: reportDate,
+        processingDate: previousDayStr,
+        totalRecords: totalRecords.toString(),
+        totalFiles: totalFiles.toString(),
+        totalProperties: totalProperties.toString(),
+        generatedAt: new Date().toISOString(),
+      };
+
+      // Upload JE file
       await retryS3Operation(
         () =>
           this.s3Client.send(
             new PutObjectCommand({
               Bucket: this.processedBucket,
-              Key: reportKey,
-              Body: csvContent,
+              Key: jeReportKey,
+              Body: jeContent,
               ContentType: "text/csv",
-              Metadata: {
-                reportDate: reportDate,
-                totalRecords: totalRecords.toString(),
-                totalFiles: totalFiles.toString(),
-                totalProperties: totalProperties.toString(),
-                generatedAt: new Date().toISOString(),
-              },
+              Metadata: metadata,
             }),
           ),
         correlationId,
-        "put_consolidated_report",
+        "put_je_report",
         {
           maxRetries: 3,
           baseDelay: 1000,
         },
       );
 
-      logger.info("Master consolidated report generated", {
-        reportKey,
+      // Upload StatJE file
+      await retryS3Operation(
+        () =>
+          this.s3Client.send(
+            new PutObjectCommand({
+              Bucket: this.processedBucket,
+              Key: statJEReportKey,
+              Body: statJEContent,
+              ContentType: "text/csv",
+              Metadata: metadata,
+            }),
+          ),
+        correlationId,
+        "put_statje_report",
+        {
+          maxRetries: 3,
+          baseDelay: 1000,
+        },
+      );
+
+      logger.info("Separate JE and StatJE reports generated", {
+        jeReportKey,
+        statJEReportKey,
+        reportDate,
+        processingDate: previousDayStr,
         totalRecords,
         totalFiles,
         totalProperties,
         properties: transformedData.map((r) => r.propertyId),
-        operation: "master_report_generated",
+        operation: "separate_reports_generated",
       });
 
-      return [reportKey];
+      return [jeReportKey, statJEReportKey];
     } catch (error) {
       logger.error(
-        "Failed to generate master consolidated report",
+        "Failed to generate separate JE/StatJE reports",
         error as Error,
         {
-          operation: "master_report_generation_error",
+          operation: "separate_report_generation_error",
         },
       );
       return [];
@@ -1224,22 +1312,28 @@ export class FileProcessor {
   }
 
   /**
-   * Helper method to generate master CSV report from all property data
+   * Helper method to generate separate JE and StatJE CSV reports from all property data
    */
-  private async generateMasterCSVReport(
+  private async generateSeparateCSVReports(
     reports: ConsolidatedReport[],
-  ): Promise<string> {
+    correlationId: string,
+  ): Promise<{ jeContent: string; statJEContent: string }> {
     if (reports.length === 0) {
-      return "No data available\n";
+      return {
+        jeContent: "No data available\n",
+        statJEContent: "No data available\n",
+      };
     }
 
-    // Convert ConsolidatedReport[] to TransformedData[] format expected by JEStatCSVGenerator
+    // Convert ConsolidatedReport[] to TransformedData[] format expected by generators
     const transformedDataArray: any[] = [];
 
     for (const report of reports) {
       if (report.data && report.data.length > 0) {
         const transformedData = {
           propertyId: report.propertyId,
+          propertyName: report.propertyName || report.propertyId, // Use extracted property name
+          reportDate: report.reportDate,
           records: report.data.map((record: any) => ({
             sourceCode: record.sourceCode || "",
             sourceDescription: record.sourceDescription || "",
@@ -1249,37 +1343,48 @@ export class FileProcessor {
             mappedAmount: record.mappedAmount || record.sourceAmount || 0,
             paymentMethod: record.paymentMethod || "",
             originalLine: record.originalLine || "",
-            processingDate: record.processingDate || new Date().toISOString(),
-            mappingStatus: record.mappingStatus || "MAPPED",
           })),
-          processingDate: report.reportDate,
-          totalRecords: report.totalRecords,
         };
         transformedDataArray.push(transformedData);
       }
     }
 
     if (transformedDataArray.length === 0) {
-      return "No data available\n";
+      return {
+        jeContent: "No data available\n",
+        statJEContent: "No data available\n",
+      };
     }
 
-    // Use the new JE/StatJE CSV generator
-    const csvGenerator = new JEStatCSVGenerator();
-    const correlationId = generateCorrelationId();
+    // Use the new separate generators
+    const jeGenerator = new JournalEntryGenerator();
+    const statJEGenerator = new StatisticalEntryGenerator();
 
     try {
-      const csvContent = await csvGenerator.generateCombinedCSV(
+      const jeContent = await jeGenerator.generateJournalEntryCSV(
         transformedDataArray,
         correlationId,
       );
-      return csvContent;
+      const statJEContent = await statJEGenerator.generateStatisticalEntryCSV(
+        transformedDataArray,
+        correlationId,
+      );
+
+      return { jeContent, statJEContent };
     } catch (error) {
       const logger = createCorrelatedLogger(correlationId);
-      logger.error("Failed to generate JE/StatJE CSV", error as Error, {
-        correlationId,
-        reportCount: reports.length,
-      });
-      return "Error generating CSV report\n";
+      logger.error(
+        "Failed to generate separate JE/StatJE CSV",
+        error as Error,
+        {
+          correlationId,
+          reportCount: reports.length,
+        },
+      );
+      return {
+        jeContent: "Error generating JE CSV report\n",
+        statJEContent: "Error generating StatJE CSV report\n",
+      };
     }
   }
 

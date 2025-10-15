@@ -161,6 +161,8 @@ export class AccountLineParser {
     }
 
     // Try payment method lines: "VISA/MASTER($13,616.46)"
+    // These are SUMMARY lines, not individual transactions
+    // Do NOT set paymentMethod to avoid double-counting in consolidation
     const paymentMatch = line.match(this.patterns.paymentMethodLine);
     if (paymentMatch) {
       const [, paymentType, amountStr] = paymentMatch;
@@ -177,7 +179,7 @@ export class AccountLineParser {
         sourceCode: paymentType,
         description: "Payment Method Total",
         amount,
-        paymentMethod: paymentType,
+        paymentMethod: undefined, // Don't set payment method on summary lines
         originalLine: line,
         lineNumber,
       };
