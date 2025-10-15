@@ -30,6 +30,7 @@ import { ParserFactory } from "../parsers/parser-factory";
 import {
   VisualMatrixParser,
   type VisualMatrixData,
+  type VisualMatrixMapping,
 } from "../parsers/visual-matrix-parser";
 import { TransformationEngine } from "../transformation/transformation-engine";
 import { JournalEntryGenerator } from "../output/journal-entry-generator";
