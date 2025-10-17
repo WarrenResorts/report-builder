@@ -624,18 +624,11 @@ export class FileProcessor {
           propertyId: file.propertyId,
         });
 
-        // Apply account code mappings to the file data
-        let mappedRecords = await this.applyVisualMatrixMappings(
-          file,
-          visualMatrixData,
-          correlationId,
-        );
-
-        // Apply credit card processing to combine deposits properly
         // Extract property name from the parsed data
         let propertyName = file.propertyId; // Default fallback
+        let parsedData;
         try {
-          const parsedData = JSON.parse(file.originalContent);
+          parsedData = JSON.parse(file.originalContent);
           if (parsedData.propertyName) {
             propertyName = parsedData.propertyName;
           }
@@ -643,16 +636,42 @@ export class FileProcessor {
           // Continue with fallback
         }
 
-        // Get property config and process credit cards
+        // Get property config
         const propertyConfigService = getPropertyConfigService();
         const propertyConfig =
           propertyConfigService.getPropertyConfigOrDefault(propertyName);
-        const creditCardProcessor = new CreditCardProcessor();
 
-        mappedRecords = creditCardProcessor.processCreditCards(
-          mappedRecords,
+        // IMPORTANT: Extract credit card totals BEFORE mapping
+        // This is because VISA/MASTER, AMEX summary lines won't have mappings
+        // and will be filtered out during the mapping process
+        const creditCardProcessor = new CreditCardProcessor();
+        let creditCardTotals = { visaMaster: 0, amex: 0, discover: 0 };
+
+        if (parsedData && parsedData.accountLines) {
+          // Extract totals from the raw parsed account lines
+          creditCardTotals = creditCardProcessor.extractCreditCardTotals(
+            parsedData.accountLines.map((line: any) => ({
+              sourceCode: line.sourceCode,
+              sourceAmount: line.amount,
+            })),
+          );
+        }
+
+        // Apply account code mappings to the file data
+        const mappedRecords = await this.applyVisualMatrixMappings(
+          file,
+          visualMatrixData,
+          correlationId,
+        );
+
+        // Generate credit card deposit records from the extracted totals
+        const creditCardDeposits = creditCardProcessor.generateDepositRecords(
+          creditCardTotals,
           propertyConfig,
         );
+
+        // Add credit card deposits to mapped records
+        mappedRecords.push(...creditCardDeposits);
 
         if (mappedRecords.length > 0) {
           // Initialize or update property report

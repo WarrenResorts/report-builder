@@ -72,16 +72,18 @@ export class AccountLineParser {
     // Summary lines: "Total Rm Rev$9,949.23" or "ADR$216.29"
     summaryLine:
       /^(Total\s+[A-Z\s]+|ADR|RevPar|Occupancy\s*%?|DEPOSIT\s+TOTAL)(\$[\d,.-]+|\([\d,.-]+\))/i,
-    // Ledger lines: "GUEST LEDGER$21,084.73" or "CITY LEDGER$9,014.85"
+    // Ledger lines: "GUEST LEDGER$21,084.73" or "CITY LEDGER$9,014.85" or "ADVANCE DEPOSITS($7,095.60)"
+    // Also matches lines from Ledger Summary section with multiple amounts
     ledgerLine:
-      /^(GUEST\s+LEDGER|CITY\s+LEDGER|ADVANCE\s+DEPOSITS)(\$[\d,.-]+|\([\d,.-]+\))/i,
+      /^(GUEST\s+LEDGER|CITY\s+LEDGER|ADVANCE\s+DEPOSITS)[\s\w]*(\$[\d,.-]+|\([$]?[\d,.-]+\))/i,
     // Statistical lines: "Occupied461,02689714.38" (number followed by amounts)
     statisticalLine:
       /^(Occupied|No\s+Show|Late\s+C\/I|Early\s+C\/O|Total\s+Rooms|Out\s+of\s+Service|Comps)(\d+)/i,
     // Embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "AXPAYMENT AMEX6($2,486.57)"
+    // Must NOT start with "GL " or "CL " to avoid conflicting with GL/CL pattern
     // More flexible to capture malformed amounts too
     embeddedTransactionCode:
-      /^([A-Z0-9]{1,2})([A-Z][A-Z\s]+.*?)(\d+)(\$[^$\s]+|\(\$[^)]+\))/,
+      /^(?!GL |CL )([A-Z0-9]{1,2})([A-Z][A-Z\s]+.*?)(\d+)(\$[^$\s]+|\(\$[^)]+\))/,
     // Amount patterns - more strict, must be complete numbers
     amount: /([-$]?[\d,]+\.?\d*|\([\d,]+\.?\d*\))/g,
     // Payment method patterns
@@ -136,12 +138,11 @@ export class AccountLineParser {
     line: string,
     lineNumber: number,
   ): AccountLine | null {
-    // Try GL/CL account lines first: "GL ROOM REV60$9,949.23$228,339.12..."
-    const glClMatch = line.match(this.patterns.glClAccountCode);
-    if (glClMatch) {
-      const [, category, code, description, firstAmountStr] = glClMatch;
-      const sourceCode = `${category.trim()}${code}`;
-      const amount = this.parseAmount(firstAmountStr);
+    // Try ledger lines FIRST (most specific): "GUEST LEDGER$21,084.73"
+    const ledgerMatch = line.match(this.patterns.ledgerLine);
+    if (ledgerMatch) {
+      const [, ledgerType, amountStr] = ledgerMatch;
+      const amount = this.parseAmount(amountStr);
 
       if (
         Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
@@ -151,10 +152,10 @@ export class AccountLineParser {
       }
 
       return {
-        sourceCode: sourceCode.trim(),
-        description: description.trim(),
+        sourceCode: ledgerType.trim(),
+        description: "Ledger Balance",
         amount,
-        paymentMethod: this.detectPaymentMethod(line),
+        paymentMethod: undefined,
         originalLine: line,
         lineNumber,
       };
@@ -208,10 +209,11 @@ export class AccountLineParser {
       };
     }
 
-    // Try ledger lines: "GUEST LEDGER$21,084.73"
-    const ledgerMatch = line.match(this.patterns.ledgerLine);
-    if (ledgerMatch) {
-      const [, ledgerType, amountStr] = ledgerMatch;
+    // Try embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "9CITY LODGING TAX49$980.63"
+    // This is more specific than GL/CL pattern and should be checked before GL/CL to avoid over-matching
+    const embeddedMatch = line.match(this.patterns.embeddedTransactionCode);
+    if (embeddedMatch) {
+      const [, code, description, , amountStr] = embeddedMatch;
       const amount = this.parseAmount(amountStr);
 
       if (
@@ -222,10 +224,34 @@ export class AccountLineParser {
       }
 
       return {
-        sourceCode: ledgerType.trim(),
-        description: "Ledger Balance",
+        sourceCode: code.trim(),
+        description: description.trim(),
         amount,
-        paymentMethod: undefined,
+        paymentMethod: this.detectPaymentMethod(line),
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    // Try GL/CL account lines: "GL ROOM REV60$9,949.23$228,339.12..."
+    const glClMatch = line.match(this.patterns.glClAccountCode);
+    if (glClMatch) {
+      const [, category, code, description, firstAmountStr] = glClMatch;
+      const sourceCode = `${category.trim()}${code}`;
+      const amount = this.parseAmount(firstAmountStr);
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode: sourceCode.trim(),
+        description: description.trim(),
+        amount,
+        paymentMethod: this.detectPaymentMethod(line),
         originalLine: line,
         lineNumber,
       };
@@ -254,29 +280,7 @@ export class AccountLineParser {
       };
     }
 
-    // Try embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15"
-    const embeddedMatch = line.match(this.patterns.embeddedTransactionCode);
-    if (embeddedMatch) {
-      const [, code, description, , amountStr] = embeddedMatch;
-      const amount = this.parseAmount(amountStr);
-
-      if (
-        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
-        !this.config.includeZeroAmounts
-      ) {
-        return null;
-      }
-
-      return {
-        sourceCode: code.trim(),
-        description: description.trim(),
-        amount,
-        paymentMethod: this.detectPaymentMethod(line),
-        originalLine: line,
-        lineNumber,
-      };
-    }
-
+    // No pattern matched
     return null;
   }
 
