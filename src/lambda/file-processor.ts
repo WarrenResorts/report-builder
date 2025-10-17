@@ -750,10 +750,13 @@ export class FileProcessor {
     sourceCode: string,
     propertyName: string,
   ): VisualMatrixMapping | undefined {
+    // Normalize source code for case-insensitive comparison
+    const normalizedSourceCode = sourceCode.toUpperCase().trim();
+
     // First, try to find property-specific mapping by property name
     const propertySpecificMapping = visualMatrixData.mappings.find(
       (m) =>
-        m.srcAcctCode === sourceCode &&
+        m.srcAcctCode.toUpperCase().trim() === normalizedSourceCode &&
         m.propertyName &&
         m.propertyName.toUpperCase().trim() ===
           propertyName.toUpperCase().trim(),
@@ -765,7 +768,9 @@ export class FileProcessor {
 
     // Fall back to global mapping (propertyId = 0)
     return visualMatrixData.mappings.find(
-      (m) => m.srcAcctCode === sourceCode && m.propertyId === 0,
+      (m) =>
+        m.srcAcctCode.toUpperCase().trim() === normalizedSourceCode &&
+        m.propertyId === 0,
     );
   }
 
