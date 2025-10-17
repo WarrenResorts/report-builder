@@ -350,6 +350,11 @@ export class VisualMatrixParser extends BaseFileParser {
       headers[colNumber - 1] = String(cell.value || "").trim();
     });
 
+    /* c8 ignore next */
+    console.log(
+      `DEBUG VISUAL MATRIX PARSER: Headers found: ${JSON.stringify(headers)}`,
+    );
+
     // Validate headers - must have critical columns
     const criticalHeaders = ["Src Acct Code", "Acct Code"];
     const missingCritical = criticalHeaders.filter(
@@ -458,9 +463,20 @@ export class VisualMatrixParser extends BaseFileParser {
       return cell.value;
     };
 
+    const recId = this.parseNumber(getValue("Rec Id")) || 0;
+    const srcAcctCode = String(getValue("Src Acct Code") || "").trim();
+
+    /* c8 ignore next */
+    if (recId <= 10) {
+      /* c8 ignore next */
+      console.log(
+        `DEBUG VISUAL MATRIX PARSER: Row ${recId} - Rec Id=${recId}, Src Acct Code="${srcAcctCode}"`,
+      );
+    }
+
     return {
-      recId: this.parseNumber(getValue("Rec Id")) || 0,
-      srcAcctCode: String(getValue("Src Acct Code") || "").trim(),
+      recId,
+      srcAcctCode,
       srcAcctDesc: String(getValue("Src Acct Desc") || "").trim(),
       xrefKey: String(getValue("Xref Key") || "").trim(),
       acctId: this.parseNumber(getValue("Acct Id")) || 0,
