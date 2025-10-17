@@ -753,6 +753,15 @@ export class FileProcessor {
     // Normalize source code for case-insensitive comparison
     const normalizedSourceCode = sourceCode.toUpperCase().trim();
 
+    /* c8 ignore next */
+    console.log(
+      `DEBUG MAPPING LOOKUP: Looking for sourceCode="${normalizedSourceCode}", propertyName="${propertyName}"`,
+    );
+    /* c8 ignore next */
+    console.log(
+      `DEBUG MAPPING LOOKUP: Total mappings available: ${visualMatrixData.mappings.length}`,
+    );
+
     // First, try to find property-specific mapping by property name
     const propertySpecificMapping = visualMatrixData.mappings.find(
       (m) =>
@@ -763,15 +772,40 @@ export class FileProcessor {
     );
 
     if (propertySpecificMapping) {
+      /* c8 ignore next */
+      console.log(
+        `DEBUG MAPPING LOOKUP: Found property-specific mapping for "${normalizedSourceCode}"`,
+      );
       return propertySpecificMapping;
     }
 
     // Fall back to global mapping (propertyId = 0)
-    return visualMatrixData.mappings.find(
+    const globalMapping = visualMatrixData.mappings.find(
       (m) =>
         m.srcAcctCode.toUpperCase().trim() === normalizedSourceCode &&
         m.propertyId === 0,
     );
+
+    if (globalMapping) {
+      /* c8 ignore next */
+      console.log(
+        `DEBUG MAPPING LOOKUP: Found global mapping for "${normalizedSourceCode}"`,
+      );
+    } else {
+      /* c8 ignore next */
+      console.log(
+        `DEBUG MAPPING LOOKUP: NO MAPPING FOUND for "${normalizedSourceCode}". Checking first 10 mappings:`,
+      );
+      /* c8 ignore next */
+      console.log(
+        visualMatrixData.mappings
+          .slice(0, 10)
+          .map((m) => `  - srcAcctCode="${m.srcAcctCode}", propertyId=${m.propertyId}`)
+          .join("\n"),
+      );
+    }
+
+    return globalMapping;
   }
 
   /**
