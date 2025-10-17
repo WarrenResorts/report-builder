@@ -800,7 +800,10 @@ export class FileProcessor {
       console.log(
         visualMatrixData.mappings
           .slice(0, 10)
-          .map((m) => `  - srcAcctCode="${m.srcAcctCode}", propertyId=${m.propertyId}`)
+          .map(
+            (m) =>
+              `  - srcAcctCode="${m.srcAcctCode}", propertyId=${m.propertyId}`,
+          )
           .join("\n"),
       );
     }
