@@ -70,8 +70,11 @@ CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)$0.00
       const result = parser.parseAccountLines(pdfText);
 
       expect(result).toHaveLength(2);
-      expect(result[0].sourceCode).toBe("GL ROOM REV60");
-      expect(result[1].sourceCode).toBe("CL ADV DEP CTRL71ADV");
+      // Should extract just the account code, not the full category + code
+      expect(result[0].sourceCode).toBe("60");
+      expect(result[0].description).toContain("GL ROOM REV");
+      expect(result[1].sourceCode).toBe("71ADV");
+      expect(result[1].description).toContain("CL ADV DEP CTRL");
     });
   });
 
@@ -274,9 +277,9 @@ CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)
       const summaries = result.filter((r) => r.description === "Summary Total");
       expect(summaries.length).toBeGreaterThan(0);
 
-      // Check we have GL/CL lines
+      // Check we have GL/CL lines (now returns just the code, with category in description)
       const glClLines = result.filter(
-        (r) => r.sourceCode.startsWith("GL ") || r.sourceCode.startsWith("CL "),
+        (r) => r.description.includes("GL ") || r.description.includes("CL "),
       );
       expect(glClLines.length).toBeGreaterThan(0);
     });

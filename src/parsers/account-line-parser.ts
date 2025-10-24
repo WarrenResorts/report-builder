@@ -274,7 +274,8 @@ export class AccountLineParser {
     const glClMatch = line.match(this.patterns.glClAccountCode);
     if (glClMatch) {
       const [, category, code, description, firstAmountStr] = glClMatch;
-      const sourceCode = `${category.trim()}${code}`;
+      // Use only the code (group 2), not concatenated with category
+      const sourceCode = code;
       const amount = this.parseAmount(firstAmountStr);
 
       if (
@@ -286,7 +287,7 @@ export class AccountLineParser {
 
       return {
         sourceCode: sourceCode.trim(),
-        description: description.trim(),
+        description: `${category.trim()} ${description.trim()}`.trim(),
         amount,
         paymentMethod: this.detectPaymentMethod(line),
         originalLine: line,
