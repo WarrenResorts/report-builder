@@ -102,7 +102,8 @@ Daily Schedule: EventBridge → Lambda → Process 24hr files → S3 (output) �
 ### Phase 5: Email Delivery
 - [ ] SES email sending configuration
 - [ ] Email template system
-- [ ] Attachment handling for outbound emails
+- [ ] Email body with file processing summary (count of files per property)
+- [ ] Attachment handling for outbound emails (JE and StatJE CSV files)
 - [ ] Delivery confirmation
 
 ### Phase 6: Day-to-Day Comparison Engine

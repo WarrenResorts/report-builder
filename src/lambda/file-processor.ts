@@ -122,6 +122,15 @@ interface OrganizedFiles {
 }
 
 /**
+ * Interface for duplicate detection results
+ */
+interface DuplicateDetectionResult {
+  uniqueFiles: S3FileInfo[];
+  duplicatesFound: number;
+  duplicatesRemoved: S3FileInfo[];
+}
+
+/**
  * FileProcessor handles batch processing of accumulated files from S3.
  *
  * This class encapsulates the core file processing logic:
@@ -181,8 +190,23 @@ export class FileProcessor {
         operation: "files_retrieved",
       });
 
-      // Step 2: Organize files by property and date
-      const organizedFiles = this.organizeFilesByPropertyAndDate(files);
+      // Step 1.5: Detect and remove duplicates
+      const deduplicationResult = await this.detectAndRemoveDuplicates(
+        files,
+        correlationId,
+      );
+
+      logger.info("Duplicate detection completed", {
+        originalFileCount: files.length,
+        uniqueFileCount: deduplicationResult.uniqueFiles.length,
+        duplicatesRemoved: deduplicationResult.duplicatesFound,
+        operation: "deduplication_complete",
+      });
+
+      // Step 2: Organize files by property and date (using deduplicated files)
+      const organizedFiles = this.organizeFilesByPropertyAndDate(
+        deduplicationResult.uniqueFiles,
+      );
 
       const propertiesProcessed = Object.keys(organizedFiles);
       logger.info("Files organized by property", {
@@ -383,6 +407,162 @@ export class FileProcessor {
     }
 
     return organized;
+  }
+
+  /**
+   * Detect and handle duplicate files before processing
+   *
+   * Identifies duplicates by:
+   * 1. Property ID + filename + size (exact match)
+   * 2. Keeps the most recently uploaded file
+   * 3. Moves duplicates to duplicates/ folder for audit
+   */
+  private async detectAndRemoveDuplicates(
+    files: S3FileInfo[],
+    correlationId: string,
+  ): Promise<DuplicateDetectionResult> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "duplicate_detection",
+    });
+
+    logger.info("Starting duplicate detection", {
+      totalFiles: files.length,
+    });
+
+    // Group files by property + filename + size
+    // Key format: "{propertyId}|{filename}|{size}"
+    const fileGroups = new Map<string, S3FileInfo[]>();
+
+    for (const file of files) {
+      const key = `${file.propertyId}|${file.filename}|${file.size}`;
+
+      if (!fileGroups.has(key)) {
+        fileGroups.set(key, []);
+      }
+
+      fileGroups.get(key)!.push(file);
+    }
+
+    // Identify duplicates and keep only the most recent
+    const uniqueFiles: S3FileInfo[] = [];
+    const duplicatesToRemove: S3FileInfo[] = [];
+
+    for (const [groupKey, groupFiles] of fileGroups.entries()) {
+      if (groupFiles.length === 1) {
+        // No duplicates, keep the file
+        uniqueFiles.push(groupFiles[0]);
+      } else {
+        // Found duplicates - sort by lastModified (most recent first)
+        const sorted = groupFiles.sort(
+          (a, b) => b.lastModified.getTime() - a.lastModified.getTime(),
+        );
+
+        // Keep the most recent
+        const fileToKeep = sorted[0];
+        uniqueFiles.push(fileToKeep);
+
+        // Mark the rest as duplicates
+        const duplicates = sorted.slice(1);
+        duplicatesToRemove.push(...duplicates);
+
+        logger.info("Duplicate files detected", {
+          groupKey,
+          totalCount: groupFiles.length,
+          keepingFile: fileToKeep.key,
+          keepingTimestamp: fileToKeep.lastModified.toISOString(),
+          duplicateCount: duplicates.length,
+          duplicateKeys: duplicates.map((d) => d.key),
+        });
+      }
+    }
+
+    // Move duplicates to duplicates/ folder (don't delete, keep for audit)
+    if (duplicatesToRemove.length > 0) {
+      logger.info("Moving duplicate files to archive", {
+        duplicateCount: duplicatesToRemove.length,
+      });
+
+      for (const duplicate of duplicatesToRemove) {
+        try {
+          // Copy to duplicates/ folder with timestamp
+          const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+          const duplicateKey = `duplicates/${duplicate.propertyId}/${duplicate.date}/${timestamp}_${duplicate.filename}`;
+
+          // Copy the file
+          await retryS3Operation(
+            async () => {
+              const getCommand = new GetObjectCommand({
+                Bucket: this.incomingBucket,
+                Key: duplicate.key,
+              });
+              const { Body } = await this.s3Client.send(getCommand);
+
+              if (!Body) {
+                throw new Error(`No content retrieved for ${duplicate.key}`);
+              }
+
+              const bodyBytes = await Body.transformToByteArray();
+
+              const putCommand = new PutObjectCommand({
+                Bucket: this.incomingBucket,
+                Key: duplicateKey,
+                Body: bodyBytes,
+                Metadata: {
+                  originalKey: duplicate.key,
+                  originalLastModified: duplicate.lastModified.toISOString(),
+                  markedAsDuplicate: new Date().toISOString(),
+                  reason: "duplicate_file_detected",
+                },
+              });
+
+              return this.s3Client.send(putCommand);
+            },
+            correlationId,
+            "copy_duplicate",
+          );
+
+          // Delete the original (using DeleteObjectCommand imported at the top)
+          await retryS3Operation(
+            () =>
+              this.s3Client.send(
+                new PutObjectCommand({
+                  Bucket: this.incomingBucket,
+                  Key: duplicate.key,
+                  Body: Buffer.from(""),
+                  Metadata: {
+                    deleted: "true",
+                    reason: "duplicate",
+                  },
+                }),
+              ),
+            correlationId,
+            "mark_duplicate",
+          );
+
+          logger.info("Duplicate file archived", {
+            originalKey: duplicate.key,
+            archiveKey: duplicateKey,
+          });
+        } catch (error) {
+          logger.error("Failed to archive duplicate file", error as Error, {
+            fileKey: duplicate.key,
+          });
+          // Continue processing even if archiving fails
+        }
+      }
+    }
+
+    logger.info("Duplicate detection completed", {
+      totalFiles: files.length,
+      uniqueFiles: uniqueFiles.length,
+      duplicatesFound: duplicatesToRemove.length,
+    });
+
+    return {
+      uniqueFiles,
+      duplicatesFound: duplicatesToRemove.length,
+      duplicatesRemoved: duplicatesToRemove,
+    };
   }
 
   /**
@@ -624,17 +804,38 @@ export class FileProcessor {
           propertyId: file.propertyId,
         });
 
-        // Extract property name from the parsed data
+        // Extract property name and business date from the parsed data
         let propertyName = file.propertyId; // Default fallback
+        let businessDate: string | undefined;
         let parsedData;
         try {
           parsedData = JSON.parse(file.originalContent);
           if (parsedData.propertyName) {
             propertyName = parsedData.propertyName;
           }
+          if (parsedData.businessDate) {
+            businessDate = parsedData.businessDate;
+          }
         } catch {
           // Continue with fallback
         }
+
+        // Use business date from PDF, or fall back to yesterday's date
+        // (since reports are typically for the previous business day)
+        const reportDate =
+          businessDate ||
+          (() => {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            return yesterday.toISOString().split("T")[0];
+          })();
+
+        logger.info("Extracted report date", {
+          fileKey: file.fileKey,
+          businessDate,
+          reportDate,
+          usedFallback: !businessDate,
+        });
 
         // Get property config
         const propertyConfigService = getPropertyConfigService();
@@ -679,7 +880,7 @@ export class FileProcessor {
             reportsByProperty[file.propertyId] = {
               propertyId: file.propertyId,
               propertyName: propertyName, // Store property name
-              reportDate: new Date().toISOString().split("T")[0],
+              reportDate: reportDate, // Use extracted business date
               totalFiles: 0,
               totalRecords: 0,
               data: [],

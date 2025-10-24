@@ -115,6 +115,18 @@ export class AccountLineParser {
     const lines = pdfText.split("\n");
     const accountLines: AccountLine[] = [];
 
+    /* c8 ignore next 8 */
+    console.log("\n========================================");
+    console.log("STARTING ACCOUNT LINE PARSING");
+    console.log(`Total lines in PDF: ${lines.length}`);
+    console.log("Active regex patterns:");
+    Object.keys(this.patterns).forEach((key) => {
+      console.log(
+        `  ${key}: ${this.patterns[key as keyof typeof this.patterns]}`,
+      );
+    });
+    console.log("========================================\n");
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
 
@@ -128,6 +140,11 @@ export class AccountLineParser {
       }
     }
 
+    /* c8 ignore next 3 */
+    console.log("\n========================================");
+    console.log(`PARSING COMPLETE: Found ${accountLines.length} account lines`);
+    console.log("========================================\n");
+
     return accountLines;
   }
 
@@ -138,8 +155,24 @@ export class AccountLineParser {
     line: string,
     lineNumber: number,
   ): AccountLine | null {
+    /* c8 ignore next 5 */
+    // DEBUG: Log every line we're trying to parse
+    console.log(`\n=== PARSING LINE ${lineNumber} ===`);
+    console.log(`Raw text: "${line}"`);
+    console.log(`Length: ${line.length}, Has tabs: ${line.includes("\t")}`);
+    console.log(
+      `Character codes: ${line
+        .split("")
+        .map((c) => c.charCodeAt(0))
+        .join(",")}`,
+    );
+
     // Try ledger lines FIRST (most specific): "GUEST LEDGER$21,084.73"
     const ledgerMatch = line.match(this.patterns.ledgerLine);
+    /* c8 ignore next 3 */
+    if (ledgerMatch) {
+      console.log(`✓ Matched ledgerLine pattern:`, ledgerMatch);
+    }
     if (ledgerMatch) {
       const [, ledgerType, amountStr] = ledgerMatch;
       const amount = this.parseAmount(amountStr);
@@ -165,6 +198,10 @@ export class AccountLineParser {
     // These are SUMMARY lines, not individual transactions
     // Do NOT set paymentMethod to avoid double-counting in consolidation
     const paymentMatch = line.match(this.patterns.paymentMethodLine);
+    /* c8 ignore next 3 */
+    if (paymentMatch) {
+      console.log(`✓ Matched paymentMethodLine pattern:`, paymentMatch);
+    }
     if (paymentMatch) {
       const [, paymentType, amountStr] = paymentMatch;
       const amount = this.parseAmount(amountStr);
@@ -281,6 +318,16 @@ export class AccountLineParser {
     }
 
     // No pattern matched
+    /* c8 ignore next 6 */
+    console.log(`✗ NO PATTERN MATCHED for line ${lineNumber}`);
+    console.log(
+      `  Tried patterns: ledgerLine, paymentMethodLine, summaryLine, embeddedTransactionCode, glClAccountCode, statisticalLine`,
+    );
+    console.log(`  Line length: ${line.length}`);
+    console.log(`  First 50 chars: "${line.substring(0, 50)}"`);
+    console.log(
+      `  Last 50 chars: "${line.substring(Math.max(0, line.length - 50))}"`,
+    );
     return null;
   }
 

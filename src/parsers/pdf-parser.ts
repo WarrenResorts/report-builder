@@ -52,6 +52,9 @@ export interface PDFParsedData extends Record<string, unknown> {
   /** Extracted property name from headers */
   propertyName?: string;
 
+  /** Extracted business date from report (in YYYY-MM-DD format) */
+  businessDate?: string;
+
   /** Structured account line data */
   accountLines?: AccountLine[];
 
@@ -289,6 +292,19 @@ export class PDFParser extends BaseFileParser {
           );
         }
 
+        // Extract business date from PDF
+        console.log("DEBUG: About to call extractBusinessDate");
+        const businessDate = this.extractBusinessDate(data.text);
+        console.log(`DEBUG: extractBusinessDate result: ${businessDate}`);
+
+        if (businessDate) {
+          console.log(`DEBUG: Business date found: ${businessDate}`);
+          warnings.push(`Business date identified: ${businessDate}`);
+        } else {
+          console.log("DEBUG: No business date found");
+          warnings.push("DEBUG: No business date found in PDF");
+        }
+
         // Split text into pages (pdf-parse doesn't provide per-page text)
         const pageTexts = this.splitTextIntoPages(data.text, data.numpages);
         const pages = pageTexts.map((pageText, index) => ({
@@ -343,6 +359,7 @@ export class PDFParser extends BaseFileParser {
           documentInfo,
           rawContent: options?.includeRawContent ? data.text : undefined,
           propertyName, // Add property name to parsed data
+          businessDate, // Add business date to parsed data
           accountLines, // Add structured account data
           accountLineStats, // Add parsing statistics
         };
@@ -523,6 +540,40 @@ export class PDFParser extends BaseFileParser {
       }
     }
 
+    return undefined;
+  }
+
+  /**
+   * Extract business date from PDF text
+   * Looks for "Business Date:" pattern in the text
+   */
+  private extractBusinessDate(text: string): string | undefined {
+    /* c8 ignore next */
+    console.log(
+      `DEBUG: extractBusinessDate called with text length: ${text.length}`,
+    );
+
+    // Look for "Business Date:" pattern followed by a date
+    // Format can be: "Business Date: 07/14/2025" or "Business Date:07/14/2025"
+    const businessDateMatch = text.match(
+      /Business Date:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    );
+    if (businessDateMatch) {
+      const dateStr = businessDateMatch[1];
+      /* c8 ignore next */
+      console.log(`DEBUG: Found Business Date: ${dateStr}`);
+
+      // Convert MM/DD/YYYY to YYYY-MM-DD
+      const [month, day, year] = dateStr.split("/");
+      const isoDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+
+      /* c8 ignore next */
+      console.log(`DEBUG: Converted to ISO date: ${isoDate}`);
+      return isoDate;
+    }
+
+    /* c8 ignore next */
+    console.log("DEBUG: No Business Date found, will use current date");
     return undefined;
   }
 
