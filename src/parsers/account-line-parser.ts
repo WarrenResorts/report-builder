@@ -140,6 +140,7 @@ export class AccountLineParser {
       }
 
       // Detect section headers to determine parsing mode
+      // Check for "Detail Listing Summary" first (more specific)
       if (line.match(/Detail\s+Listing\s+Summary/i)) {
         currentSection = "detail-listing-summary";
         /* c8 ignore next */
@@ -147,7 +148,8 @@ export class AccountLineParser {
           `  → Entering section: DETAIL LISTING SUMMARY (use full category)`,
         );
         continue;
-      } else if (line.match(/Detail\s+Listing/i)) {
+      } else if (line.match(/^Detail\s+Listing\s*$/i)) {
+        // Match "Detail Listing" ONLY when it's alone on a line (not followed by "Summary")
         currentSection = "detail-listing";
         /* c8 ignore next */
         console.log(
@@ -316,12 +318,13 @@ export class AccountLineParser {
           `  → GL/CL in SUMMARY section: using full category "${sourceCode}"`,
         );
       } else {
-        // Pages 2-6 format: Extract the short posting code
+        // Pages 2-6 format OR unknown: Extract the short posting code
+        // (Default to extracting posting code since Detail Listing pages come first)
         sourceCode = code.trim();
         descriptionText = `${category.trim()} ${description.trim()}`.trim();
         /* c8 ignore next */
         console.log(
-          `  → GL/CL in DETAIL section: using posting code "${sourceCode}"`,
+          `  → GL/CL in DETAIL section (or unknown): using posting code "${sourceCode}"`,
         );
       }
 
