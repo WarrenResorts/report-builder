@@ -72,10 +72,11 @@ export class AccountLineParser {
     // Summary lines: "Total Rm Rev$9,949.23" or "ADR$216.29"
     summaryLine:
       /^(Total\s+[A-Z\s]+|ADR|RevPar|Occupancy\s*%?|DEPOSIT\s+TOTAL)(\$[\d,.-]+|\([\d,.-]+\))/i,
-    // Ledger lines: "GUEST LEDGER$21,084.73" or "CITY LEDGER$9,014.85" or "ADVANCE DEPOSITS($7,095.60)"
+    // Ledger lines: "GUEST LEDGER TOTAL$21,084.73" or "CITY LEDGER$9,014.85" or "ADVANCE DEPOSITS($7,095.60)"
     // Also matches lines from Ledger Summary section with multiple amounts
+    // Captures the full ledger name including "TOTAL" if present
     ledgerLine:
-      /^(GUEST\s+LEDGER|CITY\s+LEDGER|ADVANCE\s+DEPOSITS)[\s\w]*(\$[\d,.-]+|\([$]?[\d,.-]+\))/i,
+      /^((?:GUEST\s+LEDGER|CITY\s+LEDGER|ADVANCE\s+DEPOSITS)(?:\s+TOTAL)?)[\s\w]*?(\$[\d,.-]+|\([$]?[\d,.-]+\))/i,
     // Statistical lines: "Occupied461,02689714.38" (number followed by amounts)
     statisticalLine:
       /^(Occupied|No\s+Show|Late\s+C\/I|Early\s+C\/O|Total\s+Rooms|Out\s+of\s+Service|Comps)(\d+)/i,
@@ -114,6 +115,10 @@ export class AccountLineParser {
   parseAccountLines(pdfText: string): AccountLine[] {
     const lines = pdfText.split("\n");
     const accountLines: AccountLine[] = [];
+    let currentSection:
+      | "detail-listing"
+      | "detail-listing-summary"
+      | "unknown" = "unknown";
 
     /* c8 ignore next 8 */
     console.log("\n========================================");
@@ -134,7 +139,24 @@ export class AccountLineParser {
         continue; // Skip empty or very short lines
       }
 
-      const accountLine = this.parseAccountLine(line, i + 1);
+      // Detect section headers to determine parsing mode
+      if (line.match(/Detail\s+Listing\s+Summary/i)) {
+        currentSection = "detail-listing-summary";
+        /* c8 ignore next */
+        console.log(
+          `  → Entering section: DETAIL LISTING SUMMARY (use full category)`,
+        );
+        continue;
+      } else if (line.match(/Detail\s+Listing/i)) {
+        currentSection = "detail-listing";
+        /* c8 ignore next */
+        console.log(
+          `  → Entering section: DETAIL LISTING (extract posting code)`,
+        );
+        continue;
+      }
+
+      const accountLine = this.parseAccountLine(line, i + 1, currentSection);
       if (accountLine) {
         accountLines.push(accountLine);
       }
@@ -154,6 +176,10 @@ export class AccountLineParser {
   private parseAccountLine(
     line: string,
     lineNumber: number,
+    section:
+      | "detail-listing"
+      | "detail-listing-summary"
+      | "unknown" = "unknown",
   ): AccountLine | null {
     /* c8 ignore next 5 */
     // DEBUG: Log every line we're trying to parse
@@ -274,8 +300,31 @@ export class AccountLineParser {
     const glClMatch = line.match(this.patterns.glClAccountCode);
     if (glClMatch) {
       const [, category, code, description, firstAmountStr] = glClMatch;
-      // Use only the code (group 2), not concatenated with category
-      const sourceCode = code;
+
+      // Determine source code based on section:
+      // - "detail-listing": Use only the posting code (group 2)
+      // - "detail-listing-summary": Use the full category (group 1) - the "code" is just transaction count
+      let sourceCode: string;
+      let descriptionText: string;
+
+      if (section === "detail-listing-summary") {
+        // Page 7 format: Category is the account code, "code" is just # Trans
+        sourceCode = category.trim();
+        descriptionText = description.trim();
+        /* c8 ignore next */
+        console.log(
+          `  → GL/CL in SUMMARY section: using full category "${sourceCode}"`,
+        );
+      } else {
+        // Pages 2-6 format: Extract the short posting code
+        sourceCode = code.trim();
+        descriptionText = `${category.trim()} ${description.trim()}`.trim();
+        /* c8 ignore next */
+        console.log(
+          `  → GL/CL in DETAIL section: using posting code "${sourceCode}"`,
+        );
+      }
+
       const amount = this.parseAmount(firstAmountStr);
 
       if (
@@ -286,8 +335,8 @@ export class AccountLineParser {
       }
 
       return {
-        sourceCode: sourceCode.trim(),
-        description: `${category.trim()} ${description.trim()}`.trim(),
+        sourceCode,
+        description: descriptionText,
         amount,
         paymentMethod: this.detectPaymentMethod(line),
         originalLine: line,
