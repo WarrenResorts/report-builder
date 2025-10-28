@@ -70,10 +70,10 @@ CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)$0.00
       const result = parser.parseAccountLines(pdfText);
 
       expect(result).toHaveLength(2);
-      // Should extract just the account code, not the full category + code
+      // Should extract just the short posting code (1-3 chars), not the full category + code
       expect(result[0].sourceCode).toBe("60");
       expect(result[0].description).toContain("GL ROOM REV");
-      expect(result[1].sourceCode).toBe("71ADV");
+      expect(result[1].sourceCode).toBe("71");
       expect(result[1].description).toContain("CL ADV DEP CTRL");
     });
   });

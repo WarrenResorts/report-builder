@@ -64,8 +64,10 @@ export class AccountLineParser {
   // Common patterns for detecting account lines
   private readonly patterns = {
     // Hotel PDF format: "GL ROOM REV60$9,949.23..." or "GL CASH & CHECKS REVCHPAYMENT CASH0$0.00..."
+    // Posting code (group 2) is limited to 1-2 characters to avoid capturing description text
+    // Most posting codes are 1-2 chars: "9", "91", "RC", "RD", "P", "A"
     glClAccountCode:
-      /^(GL\s+[A-Z\s&]+(?:\s+REV)?|CL\s+[A-Z\s&]+)([A-Z0-9]+)([^$]*?)(\$[\d,.-]+|\([\d,.-]+\))/,
+      /^(GL\s+[A-Z\s&]+(?:\s+REV)?|CL\s+[A-Z\s&]+)([A-Z0-9]{1,2})([^$]*?)(\$[\d,.-]+|\([\d,.-]+\))/,
     // Payment method lines: "VISA/MASTER($13,616.46)" or "AMEX($2,486.57)" - may have multiple amounts
     paymentMethodLine:
       /^(VISA\/MASTER|VISA|MASTER|MASTERCARD|AMEX|DISCOVER|CASH|CHECKS)(\$[\d,.-]+|\(\$[\d,.-]+\))/,
