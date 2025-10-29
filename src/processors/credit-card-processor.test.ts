@@ -346,5 +346,61 @@ describe("CreditCardProcessor", () => {
 
       expect(filtered).toHaveLength(0);
     });
+
+    it('should remove records with "Payment Method Total" description', () => {
+      const processor = new CreditCardProcessor();
+      const records: Array<{
+        sourceCode: string;
+        sourceAmount: number;
+        sourceDescription?: string;
+      }> = [
+        {
+          sourceCode: "VISA/MASTER",
+          sourceAmount: -1000,
+          sourceDescription: "Payment Method Total",
+        },
+        { sourceCode: "RC", sourceAmount: 150 },
+      ];
+
+      const filtered =
+        processor.removeIndividualCreditCardTransactions(records);
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].sourceCode).toBe("RC");
+    });
+  });
+
+  describe("processCreditCards", () => {
+    it("should process credit cards end-to-end", () => {
+      const processor = new CreditCardProcessor();
+      const records = [
+        { sourceCode: "VISA/MASTER", sourceAmount: -1000, targetCode: "1001" },
+        { sourceCode: "AMEX", sourceAmount: -500, targetCode: "1002" },
+        { sourceCode: "RC", sourceAmount: 150, targetCode: "4010" },
+        { sourceCode: "VS", sourceAmount: 50, targetCode: "1001" }, // Individual transaction
+      ];
+
+      const result = processor.processCreditCards(records, mockPropertyConfig);
+
+      // Should have RC record + 2 deposit records (VISA/MASTER+DISCOVER, AMEX)
+      expect(result.length).toBe(3);
+      // Should filter out VS transaction
+      expect(result.find((r: any) => r.sourceCode === "VS")).toBeUndefined();
+      // Should have RC record
+      expect(result.find((r: any) => r.sourceCode === "RC")).toBeDefined();
+    });
+
+    it("should handle records with no credit cards", () => {
+      const processor = new CreditCardProcessor();
+      const records = [
+        { sourceCode: "RC", sourceAmount: 150, targetCode: "4010" },
+        { sourceCode: "RD", sourceAmount: -10, targetCode: "4020" },
+      ];
+
+      const result = processor.processCreditCards(records, mockPropertyConfig);
+
+      // Should have original 2 records + 0 deposit records (no credit cards)
+      expect(result.length).toBe(2);
+    });
   });
 });

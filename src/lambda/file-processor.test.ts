@@ -675,6 +675,230 @@ describe("File Processor Lambda", () => {
     });
   });
 
+  describe("Whitelist Validation Integration", () => {
+    it("should use whitelist from mapping file for PDF parsing", async () => {
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.default.Workbook();
+      const worksheet = workbook.addWorksheet("Mappings");
+
+      // Add header row
+      worksheet.addRow([
+        "Rec Id",
+        "Src Acct Code",
+        "Src Acct Desc",
+        "Xref Key",
+        "Acct Id",
+        "Property Id",
+        "Property Name",
+        "Acct Code",
+        "Acct Suffix",
+        "Acct Name",
+        "Multiplier",
+        "Created",
+        "Updated",
+      ]);
+
+      // Add real mapping codes that should be in whitelist
+      worksheet.addRow([
+        1,
+        "9",
+        "City Lodging Tax",
+        "TAX-9",
+        101,
+        0,
+        "",
+        "2010",
+        "3",
+        "Tax Payable",
+        1,
+        new Date("2024-01-01"),
+        new Date("2024-01-01"),
+      ]);
+      worksheet.addRow([
+        2,
+        "91",
+        "State Lodging Tax",
+        "TAX-91",
+        102,
+        0,
+        "",
+        "2010",
+        "3",
+        "Tax Payable",
+        1,
+        new Date("2024-01-01"),
+        new Date("2024-01-01"),
+      ]);
+      worksheet.addRow([
+        3,
+        "92",
+        "State Lodging Tax 2",
+        "TAX-92",
+        103,
+        0,
+        "",
+        "2010",
+        "3",
+        "Tax Payable",
+        1,
+        new Date("2024-01-01"),
+        new Date("2024-01-01"),
+      ]);
+      worksheet.addRow([
+        4,
+        "RC",
+        "Room Charge",
+        "ROOM-RC",
+        104,
+        0,
+        "",
+        "4010",
+        "0",
+        "Room Revenue",
+        -1,
+        new Date("2024-01-01"),
+        new Date("2024-01-01"),
+      ]);
+
+      const mappingBuffer = await workbook.xlsx.writeBuffer();
+
+      const mockObjects = [
+        {
+          Key: "daily-files/test-property/2025-10-24/test.pdf",
+          LastModified: new Date(),
+          Size: 1024,
+        },
+      ];
+
+      // Mock PDF content with GL/CL codes that need whitelist validation
+      const pdfContent = Buffer.from("%PDF-1.4\nTest PDF");
+
+      mockRetryS3Operation
+        .mockResolvedValueOnce({
+          Contents: mockObjects, // List data files
+        })
+        .mockResolvedValueOnce({
+          Contents: [
+            {
+              Key: "VMMapping092225.xlsx",
+              LastModified: new Date(),
+              Size: mappingBuffer.byteLength,
+            },
+          ], // List mapping files
+        })
+        .mockResolvedValueOnce({
+          Body: mappingBuffer, // Download mapping file
+        })
+        .mockResolvedValueOnce({
+          Body: pdfContent, // Download PDF file
+        })
+        .mockResolvedValueOnce({
+          // Upload consolidated report
+        });
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      // Should complete successfully with whitelist validation
+      expect(result.statusCode).toBe(200);
+      expect(result.processedFiles).toBe(1);
+    });
+
+    it("should handle whitelist validation with multiple PDF files", async () => {
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.default.Workbook();
+      const worksheet = workbook.addWorksheet("Mappings");
+
+      worksheet.addRow([
+        "Rec Id",
+        "Src Acct Code",
+        "Src Acct Desc",
+        "Xref Key",
+        "Acct Id",
+        "Property Id",
+        "Property Name",
+        "Acct Code",
+        "Acct Suffix",
+        "Acct Name",
+        "Multiplier",
+        "Created",
+        "Updated",
+      ]);
+
+      // Add multiple codes for whitelist
+      const codes = [
+        "9",
+        "91",
+        "92",
+        "P",
+        "RC",
+        "RD",
+        "71",
+        "GUEST LEDGER TOTAL",
+      ];
+      codes.forEach((code, idx) => {
+        worksheet.addRow([
+          idx + 1,
+          code,
+          `Description for ${code}`,
+          `KEY-${code}`,
+          100 + idx,
+          0,
+          "",
+          "4010",
+          "0",
+          `Account ${code}`,
+          1,
+          new Date("2024-01-01"),
+          new Date("2024-01-01"),
+        ]);
+      });
+
+      const mappingBuffer = await workbook.xlsx.writeBuffer();
+
+      const mockObjects = [
+        {
+          Key: "daily-files/prop1/2025-10-24/file1.pdf",
+          LastModified: new Date(),
+          Size: 1024,
+        },
+        {
+          Key: "daily-files/prop2/2025-10-24/file2.pdf",
+          LastModified: new Date(),
+          Size: 2048,
+        },
+      ];
+
+      const pdfContent = Buffer.from("%PDF-1.4\nTest");
+
+      mockRetryS3Operation
+        .mockResolvedValueOnce({ Contents: mockObjects })
+        .mockResolvedValueOnce({
+          Contents: [
+            {
+              Key: "VMMapping092225.xlsx",
+              LastModified: new Date(),
+              Size: mappingBuffer.byteLength,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ Body: mappingBuffer })
+        .mockResolvedValueOnce({ Body: pdfContent })
+        .mockResolvedValueOnce({ Body: pdfContent })
+        .mockResolvedValueOnce({});
+
+      const event = createMockEventBridgeEvent("daily-batch");
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedFiles).toBe(2);
+    });
+  });
+
   describe("Phase 3 File Processing Integration", () => {
     it("should process files with parsers and generate logs", async () => {
       const mockObjects = createMockS3Objects();

@@ -215,10 +215,20 @@ export class FileProcessor {
         operation: "files_organized",
       });
 
+      // Step 2.5: Load VisualMatrix mapping early to get valid source codes
+      const visualMatrixData =
+        await this.loadVisualMatrixMapping(correlationId);
+      const validSourceCodes = visualMatrixData
+        ? new Set(
+            visualMatrixData.mappings.map((m) => m.srcAcctCode.toUpperCase()),
+          )
+        : undefined;
+
       // Step 3: Process each property's files (Phase 3B)
       const processedFiles = await this.processPropertyFiles(
         organizedFiles,
         correlationId,
+        validSourceCodes,
       );
 
       logger.info("Files processed and parsed", {
@@ -230,6 +240,7 @@ export class FileProcessor {
       const transformedData = await this.applyAccountCodeMappings(
         processedFiles,
         correlationId,
+        visualMatrixData, // Pass the already-loaded mapping data
       );
 
       logger.info("Data transformations applied", {
@@ -571,6 +582,7 @@ export class FileProcessor {
   private async processPropertyFiles(
     organizedFiles: OrganizedFiles,
     correlationId: string,
+    validSourceCodes?: Set<string>,
   ): Promise<ProcessedFileData[]> {
     const logger = createCorrelatedLogger(correlationId, {
       operation: "process_property_files",
@@ -602,6 +614,15 @@ export class FileProcessor {
             const supportedType =
               this.mapExtensionToSupportedType(fileExtension);
             const parser = ParserFactory.createParser(supportedType);
+
+            // If it's a PDF parser and we have valid source codes, set them
+            if (
+              supportedType === "pdf" &&
+              validSourceCodes &&
+              validSourceCodes.size > 0
+            ) {
+              (parser as any).setValidSourceCodes(validSourceCodes);
+            }
 
             // Parse the file content
             /* c8 ignore next */
@@ -772,13 +793,16 @@ export class FileProcessor {
   private async applyAccountCodeMappings(
     processedFiles: ProcessedFileData[],
     correlationId: string,
+    visualMatrixData?: VisualMatrixData | null,
   ): Promise<ConsolidatedReport[]> {
     const logger = createCorrelatedLogger(correlationId, {
       operation: "apply_account_code_mappings",
     });
 
-    // Load VisualMatrix mapping file
-    const visualMatrixData = await this.loadVisualMatrixMapping(correlationId);
+    // Load VisualMatrix mapping file if not already provided
+    if (!visualMatrixData) {
+      visualMatrixData = await this.loadVisualMatrixMapping(correlationId);
+    }
 
     if (!visualMatrixData) {
       logger.error(
@@ -1540,41 +1564,6 @@ export class FileProcessor {
   }
 
   /**
-   * Helper method to load Excel mapping configuration (legacy support)
-   */
-  private async loadExcelMapping(
-    correlationId: string,
-  ): Promise<ExcelMappingData | null> {
-    // For now, return null to force use of VisualMatrix mapping
-    // This method is kept for backward compatibility
-    const logger = createCorrelatedLogger(correlationId, {
-      operation: "load_excel_mapping",
-    });
-
-    logger.info(
-      "Excel mapping deprecated - using VisualMatrix mapping instead",
-    );
-    return null;
-  }
-
-  /**
-   * Helper method to convert parsed content to structured data
-   */
-  private parseContentToStructuredData(content: string): unknown[] {
-    try {
-      // Try to parse as JSON first
-      return JSON.parse(content);
-    } catch {
-      // If not JSON, split by lines and create simple records
-      const lines = content.split("\n").filter((line) => line.trim());
-      return lines.map((line, index) => ({
-        lineNumber: index + 1,
-        content: line.trim(),
-      }));
-    }
-  }
-
-  /**
    * Helper method to generate separate JE and StatJE CSV reports from all property data
    */
   private async generateSeparateCSVReports(
@@ -1651,38 +1640,6 @@ export class FileProcessor {
     }
   }
 
-  /**
-   * Helper method to generate CSV report from consolidated data (legacy - kept for compatibility)
-   */
-  private generateCSVReport(report: ConsolidatedReport): string {
-    if (report.data.length === 0) {
-      return "No data available\n";
-    }
-
-    // Get all unique keys from the data
-    const allKeys = new Set<string>();
-    report.data.forEach((record) => {
-      if (typeof record === "object" && record !== null) {
-        Object.keys(record).forEach((key) => allKeys.add(key));
-      }
-    });
-
-    const headers = Array.from(allKeys);
-    const csvLines = [headers.join(",")];
-
-    // Add data rows
-    report.data.forEach((record) => {
-      if (typeof record === "object" && record !== null) {
-        const row = headers.map((header) => {
-          const value = (record as Record<string, unknown>)[header];
-          return value !== undefined ? String(value) : "";
-        });
-        csvLines.push(row.join(","));
-      }
-    });
-
-    return csvLines.join("\n");
-  }
 }
 
 /**

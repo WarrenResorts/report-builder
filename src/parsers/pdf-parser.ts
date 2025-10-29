@@ -95,6 +95,20 @@ export class PDFParser extends BaseFileParser {
   }
 
   /**
+   * Set valid source codes for whitelist validation in account line parsing
+   * @param validCodes - Set of valid source codes from mapping file
+   */
+  setValidSourceCodes(validCodes: Set<string>): void {
+    this.accountLineParser = new AccountLineParser({
+      combinePaymentMethods: true,
+      paymentMethodGroups: {
+        "Credit Cards": ["VISA/MASTER", "AMEX"],
+      },
+      validSourceCodes: validCodes,
+    });
+  }
+
+  /**
    * Parse PDF content from buffer
    */
   async parseFromBuffer(

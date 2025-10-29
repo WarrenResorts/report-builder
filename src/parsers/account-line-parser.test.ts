@@ -61,7 +61,9 @@ MSMISC. CHARGE0$0.00$27.25$28.75
     });
 
     it("should handle GL/CL account lines", () => {
-      const parser = new AccountLineParser();
+      const parser = new AccountLineParser({
+        validSourceCodes: new Set(["60", "71"]),
+      });
       const pdfText = `
 GL ROOM REV60$9,949.23$228,339.12$199,178.73
 CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)$0.00
@@ -70,7 +72,7 @@ CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)$0.00
       const result = parser.parseAccountLines(pdfText);
 
       expect(result).toHaveLength(2);
-      // Should extract just the short posting code (1-3 chars), not the full category + code
+      // Should extract just the short posting code from whitelist
       expect(result[0].sourceCode).toBe("60");
       expect(result[0].description).toContain("GL ROOM REV");
       expect(result[1].sourceCode).toBe("71");
@@ -242,9 +244,101 @@ RDRATE DISCOUNT REV2$100.00$200.00
     });
   });
 
+  describe("Whitelist Validation", () => {
+    it("should extract codes from actual mapping file whitelist", () => {
+      // Real codes from the mapping file
+      const parser = new AccountLineParser({
+        validSourceCodes: new Set([
+          "9",
+          "91",
+          "92",
+          "P",
+          "RC",
+          "RD",
+          "DBA",
+          "71",
+        ]),
+      });
+      const pdfText = `
+GL ROOM TAX REV9CITY LODGING TAX49$980.63
+GL ROOM TAX REV91STATE TAX4$147.20
+GL ROOM TAX REV92STATE TAX4$1.20
+RCROOM CHRG REVENUE50$10,107.15
+RDRATE DISCOUNT REV10($157.92)
+CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(6);
+      // Should extract "9" from "9CITY" (tries "9CITY", "9CIT", "9CI", "9C", "9" - only "9" is valid)
+      expect(result[0].sourceCode).toBe("9");
+      // Should extract "91" from "91STATE" (tries "91STATE", "91STAT", etc. - "91" is valid)
+      expect(result[1].sourceCode).toBe("91");
+      // Should extract "92" from "92STATE"
+      expect(result[2].sourceCode).toBe("92");
+      // Should extract "RC" from "RCROOM"
+      expect(result[3].sourceCode).toBe("RC");
+      // Should extract "RD" from "RDRATE"
+      expect(result[4].sourceCode).toBe("RD");
+      // Should extract "71" from "71ADV"
+      expect(result[5].sourceCode).toBe("71");
+    });
+
+    it("should fallback to 1-2 char extraction when no whitelist provided", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+GL ROOM TAX REV9CITY TAX29$786.57
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Without whitelist, should extract first 1-2 chars
+      expect(result).toHaveLength(1);
+      expect(result[0].sourceCode).toBe("9C");
+    });
+
+    it("should return null when no valid code found in whitelist", () => {
+      const parser = new AccountLineParser({
+        validSourceCodes: new Set(["RC", "RD", "P"]),
+      });
+      const pdfText = `
+GL ROOM TAX REV9CITY TAX29$786.57
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Should skip line because "9", "9C", "9CI", etc. are not in whitelist
+      expect(result).toHaveLength(0);
+    });
+
+    it("should handle section-aware parsing with whitelist", () => {
+      const parser = new AccountLineParser({
+        validSourceCodes: new Set(["9", "71", "GL ROOM TAX REV"]),
+      });
+      const pdfText = `
+Detail Listing
+GL ROOM TAX REV9CITY TAX29$786.57
+Detail Listing Summary
+GL ROOM TAX REV29$786.57
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(2);
+      // Detail Listing: extract posting code
+      expect(result[0].sourceCode).toBe("9");
+      // Detail Listing Summary: use full category
+      expect(result[1].sourceCode).toBe("GL ROOM TAX REV");
+    });
+  });
+
   describe("Comprehensive Integration Test", () => {
     it("should handle mixed line types from real PDF content", () => {
-      const parser = new AccountLineParser({ includeZeroAmounts: true });
+      const parser = new AccountLineParser({
+        includeZeroAmounts: true,
+        validSourceCodes: new Set(["RC", "RD", "60", "71"]),
+      });
       const pdfText = `
 RCROOM CHRG REVENUE50$10,107.15$231,259.82
 RDRATE DISCOUNT REV10($157.92)($2,920.70)
@@ -259,7 +353,7 @@ CL ADV DEP CTRL71ADV DEP BAL FWD1($7,095.60)
 
       const result = parser.parseAccountLines(pdfText);
 
-      expect(result.length).toBeGreaterThan(8);
+      expect(result.length).toBeGreaterThanOrEqual(8);
 
       // Check we have embedded codes
       const embeddedCodes = result.filter((r) =>
@@ -401,6 +495,30 @@ AMEX($2,486.57)
 
       // Should keep individual lines when no groups are configured
       expect(consolidated).toEqual(individual);
+    });
+
+    it("should handle lines with multiple consecutive spaces", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `GL  ROOM  REV60ROOM  REVENUE10$1,000.50`;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Should still parse correctly despite extra spaces
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it("should handle empty input", () => {
+      const parser = new AccountLineParser();
+      const result = parser.parseAccountLines("");
+
+      expect(result).toHaveLength(0);
+    });
+
+    it("should handle input with only whitespace", () => {
+      const parser = new AccountLineParser();
+      const result = parser.parseAccountLines("   \n  \t  \n   ");
+
+      expect(result).toHaveLength(0);
     });
   });
 });

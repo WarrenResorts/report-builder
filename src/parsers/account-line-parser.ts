@@ -51,6 +51,8 @@ export interface AccountLineParserConfig {
   minimumAmount?: number;
   /** Whether to include zero amounts */
   includeZeroAmounts?: boolean;
+  /** Set of valid source codes from mapping file for whitelist validation */
+  validSourceCodes?: Set<string>;
 }
 
 /**
@@ -64,10 +66,10 @@ export class AccountLineParser {
   // Common patterns for detecting account lines
   private readonly patterns = {
     // Hotel PDF format: "GL ROOM REV60$9,949.23..." or "GL CASH & CHECKS REVCHPAYMENT CASH0$0.00..."
-    // Posting code (group 2) is limited to 1-2 characters to avoid capturing description text
-    // Most posting codes are 1-2 chars: "9", "91", "RC", "RD", "P", "A"
+    // Posting code (group 2) - captures the text after category, will be validated against whitelist
+    // Note: We capture up to the first $ or ( to get all potential code characters
     glClAccountCode:
-      /^(GL\s+[A-Z\s&]+(?:\s+REV)?|CL\s+[A-Z\s&]+)([A-Z0-9]{1,2})([^$]*?)(\$[\d,.-]+|\([\d,.-]+\))/,
+      /^(GL\s+[A-Z\s&]+(?:\s+REV)?|CL\s+[A-Z\s&]+)([A-Z0-9\s]+?)(\$[\d,.-]+|\(\$?[\d,.-]+\))/,
     // Payment method lines: "VISA/MASTER($13,616.46)" or "AMEX($2,486.57)" - may have multiple amounts
     paymentMethodLine:
       /^(VISA\/MASTER|VISA|MASTER|MASTERCARD|AMEX|DISCOVER|CASH|CHECKS)(\$[\d,.-]+|\(\$[\d,.-]+\))/,
@@ -303,10 +305,10 @@ export class AccountLineParser {
     // Try GL/CL account lines: "GL ROOM REV60$9,949.23$228,339.12..."
     const glClMatch = line.match(this.patterns.glClAccountCode);
     if (glClMatch) {
-      const [, category, code, description, firstAmountStr] = glClMatch;
+      const [, category, codeAndDescription, firstAmountStr] = glClMatch;
 
       // Determine source code based on section:
-      // - "detail-listing": Use only the posting code (group 2)
+      // - "detail-listing": Use only the posting code (validated against whitelist)
       // - "detail-listing-summary": Use the full category (group 1) - the "code" is just transaction count
       let sourceCode: string;
       let descriptionText: string;
@@ -314,19 +316,28 @@ export class AccountLineParser {
       if (section === "detail-listing-summary") {
         // Page 7 format: Category is the account code, "code" is just # Trans
         sourceCode = category.trim();
-        descriptionText = description.trim();
+        descriptionText = codeAndDescription.trim();
         /* c8 ignore next */
         console.log(
           `  → GL/CL in SUMMARY section: using full category "${sourceCode}"`,
         );
       } else {
-        // Pages 2-6 format OR unknown: Extract the short posting code
-        // (Default to extracting posting code since Detail Listing pages come first)
-        sourceCode = code.trim();
-        descriptionText = `${category.trim()} ${description.trim()}`.trim();
+        // Pages 2-6 format OR unknown: Extract the posting code using whitelist validation
+        const extractedCode = this.extractValidPostingCode(codeAndDescription);
+        if (!extractedCode) {
+          // No valid code found, skip this line
+          /* c8 ignore next 3 */
+          console.log(
+            `  → GL/CL: Could not extract valid posting code from "${codeAndDescription.trim()}"`,
+          );
+          return null;
+        }
+        sourceCode = extractedCode.code;
+        descriptionText =
+          `${category.trim()} ${extractedCode.remainingText}`.trim();
         /* c8 ignore next */
         console.log(
-          `  → GL/CL in DETAIL section (or unknown): using posting code "${sourceCode}"`,
+          `  → GL/CL in DETAIL section: extracted posting code "${sourceCode}"`,
         );
       }
 
@@ -383,6 +394,44 @@ export class AccountLineParser {
     console.log(
       `  Last 50 chars: "${line.substring(Math.max(0, line.length - 50))}"`,
     );
+    return null;
+  }
+
+  /**
+   * Extract valid posting code from text using whitelist validation
+   * Tries longest match first (up to 8 chars) and returns the longest valid code found
+   * This ensures we match "91" instead of "9" when both are valid
+   */
+  private extractValidPostingCode(
+    text: string,
+  ): { code: string; remainingText: string } | null {
+    const trimmedText = text.trim();
+    const validCodes = this.config.validSourceCodes;
+
+    // If no whitelist provided, fall back to extracting first 1-2 characters
+    if (!validCodes || validCodes.size === 0) {
+      const fallbackMatch = trimmedText.match(/^([A-Z0-9]{1,2})/i);
+      if (fallbackMatch) {
+        return {
+          code: fallbackMatch[1],
+          remainingText: trimmedText.substring(fallbackMatch[1].length).trim(),
+        };
+      }
+      return null;
+    }
+
+    // Try longest match first (8 chars down to 1 char)
+    // This ensures we prefer "91" over "9", "PET1" over "P", etc.
+    for (let length = 8; length >= 1; length--) {
+      const candidate = trimmedText.substring(0, length).toUpperCase();
+      if (validCodes.has(candidate)) {
+        return {
+          code: candidate,
+          remainingText: trimmedText.substring(length).trim(),
+        };
+      }
+    }
+
     return null;
   }
 

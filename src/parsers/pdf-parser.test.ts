@@ -451,4 +451,60 @@ Final page`;
       expect(propertyName).toBe("THE BARD'S INN HOTEL");
     });
   });
+
+  describe("setValidSourceCodes", () => {
+    it("should update parser with valid source codes for whitelist validation", () => {
+      const validCodes = new Set(["9", "91", "92", "P", "RC", "RD"]);
+
+      // Should not throw
+      expect(() => parser.setValidSourceCodes(validCodes)).not.toThrow();
+    });
+
+    it("should allow parsing with whitelist validation after setting codes", async () => {
+      const validCodes = new Set(["9", "91", "92", "RC", "RD", "P"]);
+      parser.setValidSourceCodes(validCodes);
+
+      // Mock pdf-parse to return a test document with GL/CL codes
+      vi.mock("pdf-parse", () => ({
+        default: vi.fn().mockResolvedValue({
+          text: `
+GL ROOM TAX REV9CITY TAX29$786.57
+GL ROOM TAX REV91STATE TAX4$147.20
+GL ROOM TAX REV92STATE TAX4$1.20
+RCROOM CHRG REVENUE50$10,107.15
+RDRATE DISCOUNT REV10($157.92)
+`,
+          numpages: 1,
+          info: {},
+        }),
+      }));
+
+      const testBuffer = Buffer.from("%PDF-1.4\nTest content");
+      const result = await parser.parseFromBuffer(testBuffer, "test.pdf");
+
+      // Parser should now use whitelist and extract correct codes
+      expect(result.success).toBe(true);
+      if (
+        result.data &&
+        typeof result.data === "object" &&
+        "accountLines" in result.data
+      ) {
+        const accountLines = (result.data as any).accountLines;
+        expect(accountLines).toBeDefined();
+        expect(Array.isArray(accountLines)).toBe(true);
+        if (accountLines && accountLines.length >= 5) {
+          // With whitelist, should extract "9" not "9C" from "9CITY"
+          expect(accountLines[0].sourceCode).toBe("9");
+          // Should extract "91" from "91STATE"
+          expect(accountLines[1].sourceCode).toBe("91");
+          // Should extract "92" from "92STATE"
+          expect(accountLines[2].sourceCode).toBe("92");
+          // Should extract "RC" from "RCROOM"
+          expect(accountLines[3].sourceCode).toBe("RC");
+          // Should extract "RD" from "RDRATE"
+          expect(accountLines[4].sourceCode).toBe("RD");
+        }
+      }
+    });
+  });
 });
