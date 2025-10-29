@@ -38,7 +38,6 @@ import { StatisticalEntryGenerator } from "../output/statistical-entry-generator
 import { CreditCardProcessor } from "../processors/credit-card-processor";
 import { getPropertyConfigService } from "../config/property-config";
 import type { SupportedFileType } from "../parsers/base/parser-types";
-import type { ExcelMappingData } from "../parsers/excel-mapping-parser";
 import type {
   RawFileData,
   FieldValue,
@@ -1639,7 +1638,6 @@ export class FileProcessor {
       };
     }
   }
-
 }
 
 /**
