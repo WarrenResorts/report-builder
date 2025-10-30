@@ -408,23 +408,39 @@ export class AccountLineParser {
     const trimmedText = text.trim();
     const validCodes = this.config.validSourceCodes;
 
+    console.log(`EXTRACT_CODE: Input text="${trimmedText}"`);
+    console.log(
+      `EXTRACT_CODE: Whitelist size=${validCodes?.size || 0}, has whitelist=${!!validCodes}`,
+    );
+
     // If no whitelist provided, fall back to extracting first 1-2 characters
     if (!validCodes || validCodes.size === 0) {
+      console.log(`EXTRACT_CODE: No whitelist, using fallback`);
       const fallbackMatch = trimmedText.match(/^([A-Z0-9]{1,2})/i);
       if (fallbackMatch) {
+        console.log(
+          `EXTRACT_CODE: Fallback matched code="${fallbackMatch[1]}"`,
+        );
         return {
           code: fallbackMatch[1],
           remainingText: trimmedText.substring(fallbackMatch[1].length).trim(),
         };
       }
+      console.log(`EXTRACT_CODE: Fallback found no match`);
       return null;
     }
 
     // Try longest match first (8 chars down to 1 char)
     // This ensures we prefer "91" over "9", "PET1" over "P", etc.
+    console.log(`EXTRACT_CODE: Trying candidates from length 8 down to 1...`);
     for (let length = 8; length >= 1; length--) {
       const candidate = trimmedText.substring(0, length).toUpperCase();
-      if (validCodes.has(candidate)) {
+      const isValid = validCodes.has(candidate);
+      console.log(
+        `EXTRACT_CODE:   Trying "${candidate}" (len=${length}): ${isValid ? "✓ VALID" : "✗ not in whitelist"}`,
+      );
+      if (isValid) {
+        console.log(`EXTRACT_CODE: ✓✓✓ FOUND valid code="${candidate}"`);
         return {
           code: candidate,
           remainingText: trimmedText.substring(length).trim(),
@@ -432,6 +448,7 @@ export class AccountLineParser {
       }
     }
 
+    console.log(`EXTRACT_CODE: ✗✗✗ NO VALID CODE FOUND in "${trimmedText}"`);
     return null;
   }
 
