@@ -319,6 +319,18 @@ export class PDFParser extends BaseFileParser {
           warnings.push("DEBUG: No business date found in PDF");
         }
 
+        // LOG RAW PDF TEXT LINE BY LINE FOR DEBUGGING
+        const lines = data.text.split("\n");
+        console.log(
+          `PARSED PDF LINES: ===== START (${lines.length} total lines) =====`,
+        );
+        lines.forEach((line, idx) => {
+          if (line.trim()) {
+            console.log(`PARSED PDF LINES: LINE ${idx + 1}: "${line}"`);
+          }
+        });
+        console.log(`PARSED PDF LINES: ===== END =====`);
+
         // Split text into pages (pdf-parse doesn't provide per-page text)
         const pageTexts = this.splitTextIntoPages(data.text, data.numpages);
         const pages = pageTexts.map((pageText, index) => ({
