@@ -1101,7 +1101,7 @@ export class FileProcessor {
           } else {
             // Per hotel requirements: If no mapping found, skip the record (don't include in report)
             logger.warn(
-              "No mapping found for account code - skipping record per hotel requirements",
+              `No mapping found for account code "${accountLine.sourceCode}" - skipping record per hotel requirements`,
               {
                 sourceCode: accountLine.sourceCode,
                 description: accountLine.description,
