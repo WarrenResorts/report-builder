@@ -1036,7 +1036,8 @@ export class FileProcessor {
   }
 
   /**
-   * Apply VisualMatrix account code mappings to a processed file
+   * Apply VisualMatrix account code mappings to a processed file.
+   * Maps source codes to NetSuite account codes using the mapping file.
    */
   private async applyVisualMatrixMappings(
     file: ProcessedFileData,
