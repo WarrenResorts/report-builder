@@ -84,11 +84,12 @@ export class AccountLineParser {
     // Statistical lines: "Occupied461,02689714.38" (number followed by amounts)
     statisticalLine:
       /^(Occupied|No\s+Show|Late\s+C\/I|Early\s+C\/O|Total\s+Rooms|Out\s+of\s+Service|Comps)(\d+)/i,
-    // Embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "AXPAYMENT AMEX6($2,486.57)"
+    // Embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "AXPAYMENT AMEX6($2,486.57)" or "PET1ONE PET FEE4$80.00"
     // Must NOT start with "GL " or "CL " to avoid conflicting with GL/CL pattern
+    // Captures code+description together, will be split using whitelist validation
     // More flexible to capture malformed amounts too
     embeddedTransactionCode:
-      /^(?!GL |CL )([A-Z0-9]{1,2})([A-Z][A-Z\s]+.*?)(\d+)(\$[^$\s]+|\(\$[^)]+\))/,
+      /^(?!GL |CL )([A-Z0-9]+)([A-Z][A-Z\s]+.*?)(\d+)(\$[^$\s]+|\(\$[^)]+\))/,
     // Amount patterns - more strict, must be complete numbers
     amount: /([-$]?[\d,]+\.?\d*|\([\d,]+\.?\d*\))/g,
     // Payment method patterns
@@ -278,11 +279,36 @@ export class AccountLineParser {
       };
     }
 
-    // Try embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "9CITY LODGING TAX49$980.63"
+    // Try embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "9CITY LODGING TAX49$980.63" or "PET1ONE PET FEE4$80.00"
     // This is more specific than GL/CL pattern and should be checked before GL/CL to avoid over-matching
     const embeddedMatch = line.match(this.patterns.embeddedTransactionCode);
     if (embeddedMatch) {
-      const [, code, description, , amountStr] = embeddedMatch;
+      const [, , , , amountStr] = embeddedMatch;
+
+      // Extract valid posting code from the BEGINNING of the line using whitelist validation
+      // The regex splits awkwardly, so we extract from the original line instead
+      const extractedCode = this.extractValidPostingCode(line);
+      if (!extractedCode) {
+        // No valid code found, skip this line
+        /* c8 ignore next 3 */
+        console.log(
+          `  → Embedded: Could not extract valid posting code from "${line.substring(0, 20)}..."`,
+        );
+        return null;
+      }
+
+      const sourceCode = extractedCode.code;
+      // Remove the source code from the beginning and extract description from what remains
+      // Description is everything after the code, up to the transaction count and amount
+      const afterCode = extractedCode.remainingText;
+      // Remove trailing transaction count and amount using regex
+      const descriptionMatch = afterCode.match(
+        /^(.+?)(\d+)(\$[^$\s]+|\(\$[^)]+\)).*$/,
+      );
+      const descriptionText = descriptionMatch
+        ? descriptionMatch[1].trim()
+        : afterCode.trim();
+
       const amount = this.parseAmount(amountStr);
 
       if (
@@ -292,9 +318,14 @@ export class AccountLineParser {
         return null;
       }
 
+      /* c8 ignore next */
+      console.log(
+        `  → Embedded transaction: extracted posting code "${sourceCode}", description "${descriptionText}"`,
+      );
+
       return {
-        sourceCode: code.trim(),
-        description: description.trim(),
+        sourceCode,
+        description: descriptionText,
         amount,
         paymentMethod: this.detectPaymentMethod(line),
         originalLine: line,

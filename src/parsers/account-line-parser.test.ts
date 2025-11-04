@@ -253,6 +253,7 @@ RDRATE DISCOUNT REV2$100.00$200.00
           "91",
           "92",
           "P",
+          "PET1",
           "RC",
           "RD",
           "DBA",
@@ -310,6 +311,26 @@ GL ROOM TAX REV9CITY TAX29$786.57
 
       // Should skip line because "9", "9C", "9CI", etc. are not in whitelist
       expect(result).toHaveLength(0);
+    });
+
+    it("should extract PET1 from embedded transaction code", () => {
+      const parser = new AccountLineParser({
+        validSourceCodes: new Set(["PET1", "P", "RC", "RD"]),
+      });
+      const pdfText = `
+PET1ONE PET FEE4$80.00$1,340.00$1,300.00$3.08$11,105.00$11,240.00($1.20)
+POTHER REVENUE5$100.00
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(2);
+      // Should extract "PET1" (4 chars) instead of "P" (1 char) because whitelist prefers longest match
+      expect(result[0].sourceCode).toBe("PET1");
+      expect(result[0].description).toContain("PET FEE");
+      expect(result[0].amount).toBe(80.0);
+      // Should extract "P" for the second line
+      expect(result[1].sourceCode).toBe("P");
     });
 
     it("should handle section-aware parsing with whitelist", () => {
