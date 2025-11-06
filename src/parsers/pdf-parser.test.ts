@@ -507,4 +507,115 @@ RDRATE DISCOUNT REV10($157.92)
       }
     });
   });
+
+  describe("Custom page render with pipe delimiters", () => {
+    it("should insert pipe delimiters for spacing in real PDF", async () => {
+      // Unmock pdf-parse to use the real library
+      vi.unmock("pdf-parse");
+      
+      // Re-import to get the real pdf-parse
+      await vi.resetModules();
+      
+      // Create a fresh parser instance to ensure it uses the real pdf-parse
+      const { PDFParser } = await import("./pdf-parser");
+      const freshParser = new PDFParser();
+      
+      // Use the actual test PDF file
+      const fs = await import("fs");
+      const path = await import("path");
+      
+      const pdfPath = path.join(process.cwd(), "BardsInnTest.pdf");
+      
+      // Check if file exists
+      if (!fs.existsSync(pdfPath)) {
+        // Skip test if file doesn't exist
+        console.log("Skipping test - BardsInnTest.pdf not found");
+        return;
+      }
+
+      const buffer = fs.readFileSync(pdfPath);
+      const result = await freshParser.parseFromBuffer(buffer);
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        const data = result.data as PDFParserData;
+        expect(data.text).toBeDefined();
+        
+        // Debug: show first 500 chars of text
+        console.log("First 500 chars of parsed text:", data.text!.substring(0, 500));
+        
+        // Check that pipe delimiters are present in the text
+        expect(data.text).toContain("|");
+        
+        // Check for statistical lines with pipes
+        const lines = data.text!.split("\n");
+        const occupiedLine = lines.find((line) =>
+          line.startsWith("Occupied|")
+        );
+        const occupancyLine = lines.find((line) =>
+          line.startsWith("Occupancy %|")
+        );
+        
+        expect(occupiedLine).toBeDefined();
+        expect(occupancyLine).toBeDefined();
+        
+        // Verify the format: "Occupied|46|1,026|..."
+        if (occupiedLine) {
+          const parts = occupiedLine.split("|");
+          expect(parts.length).toBeGreaterThan(2);
+          expect(parts[0]).toBe("Occupied");
+          expect(parts[1]).toMatch(/^\d+$/); // First value should be just digits
+        }
+        
+        if (occupancyLine) {
+          const parts = occupancyLine.split("|");
+          expect(parts.length).toBeGreaterThan(1);
+          expect(parts[0]).toBe("Occupancy %");
+          expect(parts[1]).toMatch(/^\d+(\.\d+)?$/); // Should be a number, possibly decimal
+        }
+      }
+    });
+
+    it("should handle custom render function for multi-column data", async () => {
+      // Unmock pdf-parse to use the real library
+      vi.unmock("pdf-parse");
+      await vi.resetModules();
+      
+      // Create a fresh parser instance
+      const { PDFParser } = await import("./pdf-parser");
+      const freshParser = new PDFParser();
+      
+      const fs = await import("fs");
+      const path = await import("path");
+      
+      const pdfPath = path.join(process.cwd(), "BardsInnTest.pdf");
+      
+      if (!fs.existsSync(pdfPath)) {
+        console.log("Skipping test - BardsInnTest.pdf not found");
+        return;
+      }
+
+      const buffer = fs.readFileSync(pdfPath);
+      const result = await freshParser.parseFromBuffer(buffer);
+
+      if (result.success && result.data) {
+        const data = result.data as PDFParserData;
+        const lines = data.text!.split("\n");
+        
+        // Find lines that should have multiple columns separated by pipes
+        const totalRmRevLine = lines.find((line) =>
+          line.includes("Total Rm Rev")
+        );
+        
+        if (totalRmRevLine) {
+          // Should have multiple dollar amounts separated by pipes
+          const pipeCount = (totalRmRevLine.match(/\|/g) || []).length;
+          expect(pipeCount).toBeGreaterThan(3); // Multiple columns
+          
+          // Should contain dollar amounts
+          expect(totalRmRevLine).toMatch(/\$[\d,]+\.\d+/);
+        }
+      }
+    });
+  });
 });

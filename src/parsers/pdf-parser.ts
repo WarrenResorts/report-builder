@@ -282,10 +282,54 @@ export class PDFParser extends BaseFileParser {
         /* c8 ignore next */
         console.log("DEBUG: Using real PDF parsing path");
 
-        // Use pdf-parse for real PDFs - direct static import approach
+        // Use pdf-parse for real PDFs with custom rendering to preserve spacing
         console.log("DEBUG: About to parse with pdf-parse");
-        const data = await pdf(buffer);
-        /* c8 ignore next 3 */
+        
+        // Custom page render function to insert pipe delimiters where spaces are detected
+        const customPageRender = (pageData: any) => {
+          const render_options = {
+            normalizeWhitespace: false,
+            disableCombineTextItems: false
+          };
+
+          return pageData.getTextContent(render_options).then((textContent: any) => {
+            let text = '';
+            let lastY: number | undefined;
+            let lastX: number | undefined;
+            
+            for (const item of textContent.items) {
+              const currentY = item.transform[5];
+              const currentX = item.transform[4];
+              const itemWidth = item.width || 0;
+              
+              if (lastY === currentY || lastY === undefined) {
+                // Same line - check for gap between items
+                if (lastX !== undefined && currentX !== undefined) {
+                  const gap = currentX - lastX;
+                  // If gap is larger than 5 units, insert a pipe delimiter
+                  if (gap > 5) {
+                    text += '|';
+                  }
+                }
+              } else {
+                // New line
+                text += '\n';
+              }
+              
+              text += item.str;
+              lastY = currentY;
+              lastX = currentX + itemWidth;
+            }
+            
+            return text;
+          });
+        };
+        
+        const pdfOptions = {
+          pagerender: customPageRender
+        };
+        console.log("DEBUG: Calling pdf-parse with custom options");
+        const data = await pdf(buffer, pdfOptions);
         console.log(
           `DEBUG: pdf-parse completed - pages: ${data.numpages}, text length: ${data.text.length}`,
         );
@@ -571,7 +615,7 @@ export class PDFParser extends BaseFileParser {
 
   /**
    * Extract business date from PDF text
-   * Looks for "Business Date:" pattern in the text
+   * Looks for date pattern in MM/DD/YY format near "Daily Report" header
    */
   private extractBusinessDate(text: string): string | undefined {
     /* c8 ignore next */
@@ -579,18 +623,20 @@ export class PDFParser extends BaseFileParser {
       `DEBUG: extractBusinessDate called with text length: ${text.length}`,
     );
 
-    // Look for "Business Date:" pattern followed by a date
-    // Format can be: "Business Date: 07/14/2025" or "Business Date:07/14/2025"
-    const businessDateMatch = text.match(
-      /Business Date:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    // Look for date in MM/DD/YY format that appears after "Daily Report"
+    // The date appears on its own line in the header section
+    // Format: "Daily Report\n...\n07/14/25"
+    const dailyReportMatch = text.match(
+      /Daily Report[\s\S]{0,200}?(\d{1,2}\/\d{1,2}\/\d{2})/i,
     );
-    if (businessDateMatch) {
-      const dateStr = businessDateMatch[1];
+    if (dailyReportMatch) {
+      const dateStr = dailyReportMatch[1];
       /* c8 ignore next */
-      console.log(`DEBUG: Found Business Date: ${dateStr}`);
+      console.log(`DEBUG: Found date near Daily Report: ${dateStr}`);
 
-      // Convert MM/DD/YYYY to YYYY-MM-DD
-      const [month, day, year] = dateStr.split("/");
+      // Convert MM/DD/YY to YYYY-MM-DD (assuming 20xx for years)
+      const [month, day, yearShort] = dateStr.split("/");
+      const year = `20${yearShort}`; // Convert 25 -> 2025
       const isoDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 
       /* c8 ignore next */
@@ -599,7 +645,9 @@ export class PDFParser extends BaseFileParser {
     }
 
     /* c8 ignore next */
-    console.log("DEBUG: No Business Date found, will use current date");
+    console.log(
+      "DEBUG: No date found near Daily Report, will use current date",
+    );
     return undefined;
   }
 

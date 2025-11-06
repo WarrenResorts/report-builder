@@ -66,30 +66,25 @@ export class AccountLineParser {
   // Common patterns for detecting account lines
   private readonly patterns = {
     // Hotel PDF format: "GL ROOM REV60$9,949.23..." or "GL CASH & CHECKS REVCHPAYMENT CASH0$0.00..."
-    // Posting code (group 2) - captures the text after category, will be validated against whitelist
-    // Note: We capture up to the first $ or ( to get all potential code characters
+    // GL/CL account codes with pipe delimiters: "GL ROOM TAX REV|9|CITY LODGING TAX|49|$980.63|..."
+    // Format: GL/CL [Category]|[Source Code]|[Description]|[Count]|[Amount]|...
     glClAccountCode:
-      /^(GL\s+[A-Z\s&]+(?:\s+REV)?|CL\s+[A-Z\s&]+)([A-Z0-9\s]+?)(\$[\d,.-]+|\(\$?[\d,.-]+\))/,
-    // Payment method lines: "VISA/MASTER($13,616.46)" or "AMEX($2,486.57)" - may have multiple amounts
+      /^(GL|CL)\s+([^|]+)\|([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
+    // Payment method lines with pipes: "AMEX|($2,486.57)|..." or "VISA/MASTER|($13,616.46)|..."
     paymentMethodLine:
-      /^(VISA\/MASTER|VISA|MASTER|MASTERCARD|AMEX|DISCOVER|CASH|CHECKS)(\$[\d,.-]+|\(\$[\d,.-]+\))/,
-    // Summary lines: "Total Rm Rev$9,949.23" or "ADR$216.29"
+      /^(VISA\/MASTER|VISA|MASTER|MASTERCARD|AMEX|DISCOVER|CASH|CHECKS)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
+    // Summary lines with pipes: "Total Rm Rev|$9,949.23|..." or "ADR|$216.29|..."
     summaryLine:
-      /^(Total\s+[A-Z\s]+|ADR|RevPar|Occupancy\s*%?|DEPOSIT\s+TOTAL)(\$[\d,.-]+|\([\d,.-]+\))/i,
-    // Ledger lines: "GUEST LEDGER TOTAL$21,084.73" or "CITY LEDGER$9,014.85" or "ADVANCE DEPOSITS($7,095.60)"
-    // Also matches lines from Ledger Summary section with multiple amounts
-    // Captures the full ledger name including "TOTAL" if present
+      /^(Total\s+[A-Z\s]+|ADR|RevPar|Occupancy\s*%?|DEPOSIT\s+TOTAL)\|(\$[\d,.-]+|\([\d,.-]+\))/i,
+    // Ledger lines with pipes: "ADVANCE DEPOSITS|($7,095.60)|..." or "GUEST LEDGER|$21,084.73|..."
     ledgerLine:
-      /^((?:GUEST\s+LEDGER|CITY\s+LEDGER|ADVANCE\s+DEPOSITS)(?:\s+TOTAL)?)[\s\w]*?(\$[\d,.-]+|\([$]?[\d,.-]+\))/i,
-    // Statistical lines: "Occupied461,02689714.38" (number followed by amounts)
+      /^((?:GUEST\s+LEDGER|CITY\s+LEDGER|ADVANCE\s+DEPOSITS)(?:\s+TOTAL)?)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/i,
+    // Statistical lines with pipes: "Occupied|46|1,026" or "Occupancy %|51.11|81.75"
     statisticalLine:
-      /^(Occupied|No\s+Show|Late\s+C\/I|Early\s+C\/O|Total\s+Rooms|Out\s+of\s+Service|Comps)(\d+)/i,
-    // Embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "AXPAYMENT AMEX6($2,486.57)" or "PET1ONE PET FEE4$80.00"
-    // Must NOT start with "GL " or "CL " to avoid conflicting with GL/CL pattern
-    // Captures code+description together, will be split using whitelist validation
-    // More flexible to capture malformed amounts too
+      /^(Occupied|No\s+Show|Late\s+C\/I|Early\s+C\/O|Total\s+Rooms|Out\s+of\s+Service|Comps|Occupancy\s*%)\|(\d+(?:\.\d+)?)/i,
+    // Embedded transaction codes with pipes: "RC|ROOM CHRG REVENUE|50|$10,107.15|..." or "AX|PAYMENT AMEX|6|($2,486.57)|..."
     embeddedTransactionCode:
-      /^(?!GL |CL )([A-Z0-9]+)([A-Z][A-Z\s]+.*?)(\d+)(\$[^$\s]+|\(\$[^)]+\))/,
+      /^([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
     // Amount patterns - more strict, must be complete numbers
     amount: /([-$]?[\d,]+\.?\d*|\([\d,]+\.?\d*\))/g,
     // Payment method patterns
@@ -97,9 +92,9 @@ export class AccountLineParser {
     mastercard: /(?:^|\s)(MASTER|MASTERCARD|MASTER\s*CARD|MC)(?:\s|\d|$)/i,
     discover: /(?:^|\s)(DISCOVER)(?:\s|\d|$)/i,
     amex: /(?:^|\s)(AMEX|AMERICAN\s*EXPRESS)(?:\s|\d|$)/i,
-    // Line that likely contains account information - expanded to include all types
+    // Line that likely contains account information - must have a pipe delimiter after the first field
     accountLine:
-      /^(GL|CL|VISA|MASTER|AMEX|DISCOVER|CASH|CHECKS|Total|ADR|RevPar|GUEST|CITY|ADVANCE|Occupied)/i,
+      /^(GL|CL|VISA|MASTER|AMEX|DISCOVER|CASH|CHECKS|Total|ADR|RevPar|GUEST|CITY|ADVANCE|Occupied|No\s+Show|Late\s+C\/I|Early\s+C\/O|Total\s+Rooms|Out\s+of\s+Service|Comps|Occupancy\s*%)[|\s]/i,
   };
 
   constructor(config: Partial<AccountLineParserConfig> = {}) {
@@ -115,6 +110,27 @@ export class AccountLineParser {
   }
 
   /**
+   * Check if a source code is a statistical metric (ADR, RevPar, etc.)
+   */
+  private isStatisticalCode(sourceCode: string): boolean {
+    const statisticalCodes = [
+      "ADR",
+      "REVPAR",
+      "OCCUPANCY",
+      "OCCUPIED",
+      "OUT OF SERVICE",
+      "COMPS",
+      "ROOMS SOLD",
+      "ROOMS AVAILABLE",
+      "NO SHOW",
+      "LATE C/I",
+      "EARLY C/O",
+      "TOTAL ROOMS",
+    ];
+    return statisticalCodes.includes(sourceCode.toUpperCase());
+  }
+
+  /**
    * Parse PDF text content into structured account lines
    */
   parseAccountLines(pdfText: string): AccountLine[] {
@@ -124,6 +140,9 @@ export class AccountLineParser {
       | "detail-listing"
       | "detail-listing-summary"
       | "unknown" = "unknown";
+
+    // Track seen statistical codes to avoid duplicates (e.g., ADR vs ADR w/comps)
+    const seenStatisticalCodes = new Set<string>();
 
     /* c8 ignore next 8 */
     console.log("\n========================================");
@@ -165,6 +184,22 @@ export class AccountLineParser {
 
       const accountLine = this.parseAccountLine(line, i + 1, currentSection);
       if (accountLine) {
+        // Skip duplicate statistical codes (keep only first occurrence)
+        // Statistical codes are: ADR, RevPar, Occupied, Out of Service, Comps, etc.
+        const isStatisticalCode = this.isStatisticalCode(
+          accountLine.sourceCode,
+        );
+        if (isStatisticalCode) {
+          if (seenStatisticalCodes.has(accountLine.sourceCode.toUpperCase())) {
+            /* c8 ignore next 4 */
+            console.log(
+              `  → Skipping duplicate statistical code: ${accountLine.sourceCode}`,
+            );
+            continue;
+          }
+          seenStatisticalCodes.add(accountLine.sourceCode.toUpperCase());
+        }
+
         accountLines.push(accountLine);
       }
     }
@@ -279,35 +314,19 @@ export class AccountLineParser {
       };
     }
 
-    // Try embedded transaction codes: "RCROOM CHRG REVENUE50$10,107.15" or "9CITY LODGING TAX49$980.63" or "PET1ONE PET FEE4$80.00"
-    // This is more specific than GL/CL pattern and should be checked before GL/CL to avoid over-matching
+    // Try embedded transaction codes with pipes: "RC|ROOM CHRG REVENUE|50|$10,107.15|..." or "AX|PAYMENT AMEX|6|($2,486.57)|..."
     const embeddedMatch = line.match(this.patterns.embeddedTransactionCode);
     if (embeddedMatch) {
-      const [, , , , amountStr] = embeddedMatch;
+      const [, sourceCodeRaw, description, count, amountStr] = embeddedMatch;
 
-      // Extract valid posting code from the BEGINNING of the line using whitelist validation
-      // The regex splits awkwardly, so we extract from the original line instead
-      const extractedCode = this.extractValidPostingCode(line);
-      if (!extractedCode) {
-        // No valid code found, skip this line
-        /* c8 ignore next 3 */
-        console.log(
-          `  → Embedded: Could not extract valid posting code from "${line.substring(0, 20)}..."`,
-        );
-        return null;
-      }
+      // The source code is cleanly extracted by the pipe delimiter
+      const sourceCode = sourceCodeRaw.trim();
+      const descriptionText = description.trim();
 
-      const sourceCode = extractedCode.code;
-      // Remove the source code from the beginning and extract description from what remains
-      // Description is everything after the code, up to the transaction count and amount
-      const afterCode = extractedCode.remainingText;
-      // Remove trailing transaction count and amount using regex
-      const descriptionMatch = afterCode.match(
-        /^(.+?)(\d+)(\$[^$\s]+|\(\$[^)]+\)).*$/,
+      /* c8 ignore next */
+      console.log(
+        `  → Embedded transaction: sourceCode="${sourceCode}" description="${descriptionText}" count="${count}"`,
       );
-      const descriptionText = descriptionMatch
-        ? descriptionMatch[1].trim()
-        : afterCode.trim();
 
       const amount = this.parseAmount(amountStr);
 
@@ -318,11 +337,6 @@ export class AccountLineParser {
         return null;
       }
 
-      /* c8 ignore next */
-      console.log(
-        `  → Embedded transaction: extracted posting code "${sourceCode}", description "${descriptionText}"`,
-      );
-
       return {
         sourceCode,
         description: descriptionText,
@@ -333,46 +347,21 @@ export class AccountLineParser {
       };
     }
 
-    // Try GL/CL account lines: "GL ROOM REV60$9,949.23$228,339.12..."
+    // Try GL/CL account lines with pipes: "GL ROOM TAX REV|9|CITY LODGING TAX|49|$980.63|..."
     const glClMatch = line.match(this.patterns.glClAccountCode);
     if (glClMatch) {
-      const [, category, codeAndDescription, firstAmountStr] = glClMatch;
+      const [, glClPrefix, category, sourceCodeRaw, description, count, amountStr] = glClMatch;
 
-      // Determine source code based on section:
-      // - "detail-listing": Use only the posting code (validated against whitelist)
-      // - "detail-listing-summary": Use the full category (group 1) - the "code" is just transaction count
-      let sourceCode: string;
-      let descriptionText: string;
+      // The source code is cleanly extracted by the pipe delimiter
+      const sourceCode = sourceCodeRaw.trim();
+      const descriptionText = `${category.trim()} ${description.trim()}`.trim();
 
-      if (section === "detail-listing-summary") {
-        // Page 7 format: Category is the account code, "code" is just # Trans
-        sourceCode = category.trim();
-        descriptionText = codeAndDescription.trim();
-        /* c8 ignore next */
-        console.log(
-          `  → GL/CL in SUMMARY section: using full category "${sourceCode}"`,
-        );
-      } else {
-        // Pages 2-6 format OR unknown: Extract the posting code using whitelist validation
-        const extractedCode = this.extractValidPostingCode(codeAndDescription);
-        if (!extractedCode) {
-          // No valid code found, skip this line
-          /* c8 ignore next 3 */
-          console.log(
-            `  → GL/CL: Could not extract valid posting code from "${codeAndDescription.trim()}"`,
-          );
-          return null;
-        }
-        sourceCode = extractedCode.code;
-        descriptionText =
-          `${category.trim()} ${extractedCode.remainingText}`.trim();
-        /* c8 ignore next */
-        console.log(
-          `  → GL/CL in DETAIL section: extracted posting code "${sourceCode}"`,
-        );
-      }
+      /* c8 ignore next */
+      console.log(
+        `  → GL/CL: ${glClPrefix} category="${category.trim()}" sourceCode="${sourceCode}" description="${description.trim()}" count="${count}"`,
+      );
 
-      const amount = this.parseAmount(firstAmountStr);
+      const amount = this.parseAmount(amountStr);
 
       if (
         Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
@@ -391,18 +380,14 @@ export class AccountLineParser {
       };
     }
 
-    // Try statistical lines: "Occupied461,026"
+    // Try statistical lines: "Occupied|46|1,026" or "Occupancy %|51.11|81.75"
     const statMatch = line.match(this.patterns.statisticalLine);
     if (statMatch) {
       const [, statType, valueStr] = statMatch;
       const amount = parseFloat(valueStr.replace(/,/g, ""));
 
-      if (
-        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
-        !this.config.includeZeroAmounts
-      ) {
-        return null;
-      }
+      // Statistical data should NOT be filtered by minimum amount - these are counts/percentages, not dollar amounts
+      // Always include statistical lines regardless of value
 
       return {
         sourceCode: statType.trim(),
