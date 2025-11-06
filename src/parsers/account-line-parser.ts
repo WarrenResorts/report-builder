@@ -218,7 +218,7 @@ export class AccountLineParser {
   private parseAccountLine(
     line: string,
     lineNumber: number,
-    section:
+    _section:
       | "detail-listing"
       | "detail-listing-summary"
       | "unknown" = "unknown",
