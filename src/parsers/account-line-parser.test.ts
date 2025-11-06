@@ -19,7 +19,8 @@ AX|PAYMENT AMEX|6|($2,486.57)|($19,441.87)|($22,920.91)
         description: "ROOM CHRG REVENUE",
         amount: 10107.15,
         paymentMethod: undefined,
-        originalLine: "RC|ROOM CHRG REVENUE|50|$10,107.15|$231,259.82|$202,397.53",
+        originalLine:
+          "RC|ROOM CHRG REVENUE|50|$10,107.15|$231,259.82|$202,397.53",
         lineNumber: 2,
       });
       expect(result[1]).toEqual({
@@ -27,7 +28,8 @@ AX|PAYMENT AMEX|6|($2,486.57)|($19,441.87)|($22,920.91)
         description: "RATE DISCOUNT REV",
         amount: -157.92,
         paymentMethod: undefined,
-        originalLine: "RD|RATE DISCOUNT REV|10|($157.92)|($2,920.70)|($3,218.80)",
+        originalLine:
+          "RD|RATE DISCOUNT REV|10|($157.92)|($2,920.70)|($3,218.80)",
         lineNumber: 3,
       });
       expect(result[2]).toEqual({
@@ -523,7 +525,7 @@ AMEX|($2,486.57)
       // Should parse correctly with pipe delimiters
       expect(result.length).toBeGreaterThan(0);
       expect(result[0].sourceCode).toBe("60");
-      expect(result[0].amount).toBe(1000.50);
+      expect(result[0].amount).toBe(1000.5);
     });
 
     it("should handle empty input", () => {

@@ -284,49 +284,51 @@ export class PDFParser extends BaseFileParser {
 
         // Use pdf-parse for real PDFs with custom rendering to preserve spacing
         console.log("DEBUG: About to parse with pdf-parse");
-        
+
         // Custom page render function to insert pipe delimiters where spaces are detected
         const customPageRender = (pageData: any) => {
           const render_options = {
             normalizeWhitespace: false,
-            disableCombineTextItems: false
+            disableCombineTextItems: false,
           };
 
-          return pageData.getTextContent(render_options).then((textContent: any) => {
-            let text = '';
-            let lastY: number | undefined;
-            let lastX: number | undefined;
-            
-            for (const item of textContent.items) {
-              const currentY = item.transform[5];
-              const currentX = item.transform[4];
-              const itemWidth = item.width || 0;
-              
-              if (lastY === currentY || lastY === undefined) {
-                // Same line - check for gap between items
-                if (lastX !== undefined && currentX !== undefined) {
-                  const gap = currentX - lastX;
-                  // If gap is larger than 5 units, insert a pipe delimiter
-                  if (gap > 5) {
-                    text += '|';
+          return pageData
+            .getTextContent(render_options)
+            .then((textContent: any) => {
+              let text = "";
+              let lastY: number | undefined;
+              let lastX: number | undefined;
+
+              for (const item of textContent.items) {
+                const currentY = item.transform[5];
+                const currentX = item.transform[4];
+                const itemWidth = item.width || 0;
+
+                if (lastY === currentY || lastY === undefined) {
+                  // Same line - check for gap between items
+                  if (lastX !== undefined && currentX !== undefined) {
+                    const gap = currentX - lastX;
+                    // If gap is larger than 5 units, insert a pipe delimiter
+                    if (gap > 5) {
+                      text += "|";
+                    }
                   }
+                } else {
+                  // New line
+                  text += "\n";
                 }
-              } else {
-                // New line
-                text += '\n';
+
+                text += item.str;
+                lastY = currentY;
+                lastX = currentX + itemWidth;
               }
-              
-              text += item.str;
-              lastY = currentY;
-              lastX = currentX + itemWidth;
-            }
-            
-            return text;
-          });
+
+              return text;
+            });
         };
-        
+
         const pdfOptions = {
-          pagerender: customPageRender
+          pagerender: customPageRender,
         };
         console.log("DEBUG: Calling pdf-parse with custom options");
         const data = await pdf(buffer, pdfOptions);

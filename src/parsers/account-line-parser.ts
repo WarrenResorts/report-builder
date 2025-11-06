@@ -350,7 +350,15 @@ export class AccountLineParser {
     // Try GL/CL account lines with pipes: "GL ROOM TAX REV|9|CITY LODGING TAX|49|$980.63|..."
     const glClMatch = line.match(this.patterns.glClAccountCode);
     if (glClMatch) {
-      const [, glClPrefix, category, sourceCodeRaw, description, count, amountStr] = glClMatch;
+      const [
+        ,
+        glClPrefix,
+        category,
+        sourceCodeRaw,
+        description,
+        count,
+        amountStr,
+      ] = glClMatch;
 
       // The source code is cleanly extracted by the pipe delimiter
       const sourceCode = sourceCodeRaw.trim();
