@@ -1200,8 +1200,10 @@ export class FileProcessor {
 
       // Use the first report's date (they should all be the same date)
       const reportDate = transformedData[0].reportDate;
-      const jeReportKey = `reports/${reportDate}/${previousDayStr}_JE.csv`;
-      const statJEReportKey = `reports/${reportDate}/${previousDayStr}_StatJE.csv`;
+      // Folder uses today's date (run date), filename uses previous day
+      const todayStr = new Date().toISOString().split("T")[0];
+      const jeReportKey = `reports/${todayStr}/${previousDayStr}_JE.csv`;
+      const statJEReportKey = `reports/${todayStr}/${previousDayStr}_StatJE.csv`;
 
       // Calculate totals across all properties
       const totalRecords = transformedData.reduce(
