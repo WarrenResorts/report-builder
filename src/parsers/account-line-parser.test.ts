@@ -67,8 +67,8 @@ MS|MISC. CHARGE|0|$0.00|$27.25|$28.75
         validSourceCodes: new Set(["60", "71"]),
       });
       const pdfText = `
-GL|ROOM REV|60|ROOM REVENUE|50|$9,949.23|$228,339.12|$199,178.73
-CL|ADV DEP CTRL|71|ADV DEP BAL FWD|1|($7,095.60)|$0.00
+GL ROOM REV|60|ROOM REVENUE|50|$9,949.23|$228,339.12|$199,178.73
+CL ADV DEP CTRL|71|ADV DEP BAL FWD|1|($7,095.60)|$0.00
       `;
 
       const result = parser.parseAccountLines(pdfText);
@@ -266,12 +266,12 @@ RD|RATE DISCOUNT REV|2|$100.00|$200.00
         ]),
       });
       const pdfText = `
-GL|ROOM TAX REV|9|CITY LODGING TAX|49|$980.63
-GL|ROOM TAX REV|91|STATE TAX|4|$147.20
-GL|ROOM TAX REV|92|STATE TAX|4|$1.20
+GL ROOM TAX REV|9|CITY LODGING TAX|49|$980.63
+GL ROOM TAX REV|91|STATE TAX|4|$147.20
+GL ROOM TAX REV|92|STATE TAX|4|$1.20
 RC|ROOM CHRG REVENUE|50|$10,107.15
 RD|RATE DISCOUNT REV|10|($157.92)
-CL|ADV DEP CTRL|71|ADV DEP BAL FWD|1|($7,095.60)
+CL ADV DEP CTRL|71|ADV DEP BAL FWD|1|($7,095.60)
       `;
 
       const result = parser.parseAccountLines(pdfText);
@@ -289,7 +289,7 @@ CL|ADV DEP CTRL|71|ADV DEP BAL FWD|1|($7,095.60)
     it("should extract source code directly from pipe-delimited format", () => {
       const parser = new AccountLineParser();
       const pdfText = `
-GL|ROOM TAX REV|9C|CITY TAX|29|$786.57
+GL ROOM TAX REV|9C|CITY TAX|29|$786.57
       `;
 
       const result = parser.parseAccountLines(pdfText);
@@ -304,7 +304,7 @@ GL|ROOM TAX REV|9C|CITY TAX|29|$786.57
         validSourceCodes: new Set(["RC", "RD", "P"]),
       });
       const pdfText = `
-GL|ROOM TAX REV|9|CITY TAX|29|$786.57
+GL ROOM TAX REV|9|CITY TAX|29|$786.57
       `;
 
       const result = parser.parseAccountLines(pdfText);
@@ -339,8 +339,8 @@ P|OTHER REVENUE|5|$100.00
         validSourceCodes: new Set(["9", "71", "GL ROOM TAX REV"]),
       });
       const pdfText = `
-GL|ROOM TAX REV|9|CITY TAX|29|$786.57
-GL|MISC REV|71|MISC REVENUE|10|$500.00
+GL ROOM TAX REV|9|CITY TAX|29|$786.57
+GL MISC REV|71|MISC REVENUE|10|$500.00
       `;
 
       const result = parser.parseAccountLines(pdfText);
@@ -366,8 +366,8 @@ AMEX|($2,486.57)|($20,217.07)
 Total Rm Rev|$9,949.23|$228,339.12
 ADR|$216.29|$221.90|$222.55
 Occupied|46|1,026|897|14.38
-GL|ROOM REV|60|ROOM REVENUE|50|$9,949.23|$228,339.12
-CL|ADV DEP CTRL|71|ADV DEP BAL FWD|1|($7,095.60)
+GL ROOM REV|60|ROOM REVENUE|50|$9,949.23|$228,339.12
+CL ADV DEP CTRL|71|ADV DEP BAL FWD|1|($7,095.60)
       `;
 
       const result = parser.parseAccountLines(pdfText);
@@ -518,7 +518,7 @@ AMEX|($2,486.57)
 
     it("should handle lines with pipe delimiters", () => {
       const parser = new AccountLineParser();
-      const pdfText = `GL|ROOM REV|60|ROOM REVENUE|10|$1,000.50`;
+      const pdfText = `GL ROOM REV|60|ROOM REVENUE|10|$1,000.50`;
 
       const result = parser.parseAccountLines(pdfText);
 

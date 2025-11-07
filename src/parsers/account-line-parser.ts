@@ -67,9 +67,9 @@ export class AccountLineParser {
   private readonly patterns = {
     // Hotel PDF format: "GL ROOM REV60$9,949.23..." or "GL CASH & CHECKS REVCHPAYMENT CASH0$0.00..."
     // GL/CL account codes with pipe delimiters: "GL ROOM TAX REV|9|CITY LODGING TAX|49|$980.63|..."
-    // Format: GL/CL [Category]|[Source Code]|[Description]|[Count]|[Amount]|...
+    // Format: GL/CL [space] [Category]|[Source Code]|[Description]|[Count]|[Amount]|...
     glClAccountCode:
-      /^(GL|CL)\|([^|]+)\|([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
+      /^(GL|CL)\s+([^|]+)\|([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
     // Payment method lines with pipes: "AMEX|($2,486.57)|..." or "VISA/MASTER|($13,616.46)|..."
     paymentMethodLine:
       /^(VISA\/MASTER|VISA|MASTER|MASTERCARD|AMEX|DISCOVER|CASH|CHECKS)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
