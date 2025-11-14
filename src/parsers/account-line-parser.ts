@@ -70,6 +70,9 @@ export class AccountLineParser {
     // Format: GL/CL [space] [Category]|[Source Code]|[Description]|[Count]|[Amount]|...
     glClAccountCode:
       /^(GL|CL)\s+([^|]+)\|([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
+    // GL/CL summary lines with pipes: "CL DB CONTROL|6|$393.02|..." or "GL ROOM REV|50|$10,107.15|..."
+    // Format: GL/CL [space] [Category]|[Count]|[Amount]|... (no embedded transaction code)
+    glClSummaryLine: /^(GL|CL)\s+([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
     // Payment method lines with pipes: "AMEX|($2,486.57)|..." or "VISA/MASTER|($13,616.46)|..."
     paymentMethodLine:
       /^(VISA\/MASTER|VISA|MASTER|MASTERCARD|AMEX|DISCOVER|CASH|CHECKS)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
@@ -381,6 +384,38 @@ export class AccountLineParser {
       return {
         sourceCode,
         description: descriptionText,
+        amount,
+        paymentMethod: this.detectPaymentMethod(line),
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    // Try GL/CL summary lines with pipes: "CL DB CONTROL|6|$393.02|..." (category totals without transaction codes)
+    const glClSummaryMatch = line.match(this.patterns.glClSummaryLine);
+    if (glClSummaryMatch) {
+      const [, glClPrefix, category, count, amountStr] = glClSummaryMatch;
+
+      // For summary lines, the category name IS the source code
+      const sourceCode = category.trim();
+
+      /* c8 ignore next */
+      console.log(
+        `  → GL/CL Summary: ${glClPrefix} category="${sourceCode}" count="${count}"`,
+      );
+
+      const amount = this.parseAmount(amountStr);
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode,
+        description: `${glClPrefix} ${sourceCode}`,
         amount,
         paymentMethod: this.detectPaymentMethod(line),
         originalLine: line,
