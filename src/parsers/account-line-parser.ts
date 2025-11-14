@@ -396,12 +396,12 @@ export class AccountLineParser {
     if (glClSummaryMatch) {
       const [, glClPrefix, category, count, amountStr] = glClSummaryMatch;
 
-      // For summary lines, the category name IS the source code
-      const sourceCode = category.trim();
+      // For summary lines, include GL/CL prefix in the source code (e.g., "CL DB CONTROL")
+      const sourceCode = `${glClPrefix} ${category.trim()}`;
 
       /* c8 ignore next */
       console.log(
-        `  → GL/CL Summary: ${glClPrefix} category="${sourceCode}" count="${count}"`,
+        `  → GL/CL Summary: ${glClPrefix} category="${category.trim()}" count="${count}"`,
       );
 
       const amount = this.parseAmount(amountStr);
@@ -415,7 +415,7 @@ export class AccountLineParser {
 
       return {
         sourceCode,
-        description: `${glClPrefix} ${sourceCode}`,
+        description: sourceCode,
         amount,
         paymentMethod: this.detectPaymentMethod(line),
         originalLine: line,

@@ -91,11 +91,11 @@ GL ROOM REV|50|$10,107.15|$231,259.82
       const result = parser.parseAccountLines(pdfText);
 
       expect(result).toHaveLength(2);
-      // For summary lines, the category name is the source code
-      expect(result[0].sourceCode).toBe("DB CONTROL");
+      // For summary lines, the full "GL/CL CATEGORY" is the source code
+      expect(result[0].sourceCode).toBe("CL DB CONTROL");
       expect(result[0].description).toBe("CL DB CONTROL");
       expect(result[0].amount).toBe(393.02);
-      expect(result[1].sourceCode).toBe("ROOM REV");
+      expect(result[1].sourceCode).toBe("GL ROOM REV");
       expect(result[1].description).toBe("GL ROOM REV");
       expect(result[1].amount).toBe(10107.15);
     });
