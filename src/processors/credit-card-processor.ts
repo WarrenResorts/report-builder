@@ -150,11 +150,6 @@ export class CreditCardProcessor {
     return records.filter((record) => {
       const sourceCode = (record.sourceCode || "").toUpperCase().trim();
 
-      // Keep summary lines (these have sourceDescription = "Payment Method Total")
-      if (record.sourceDescription === "Payment Method Total") {
-        return false; // Remove these too - we'll replace with deposit records
-      }
-
       // Remove any transaction codes that indicate credit card processing
       const creditCardCodes = [
         "VISA/MASTER",
