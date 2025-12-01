@@ -347,7 +347,7 @@ describe("CreditCardProcessor", () => {
       expect(filtered).toHaveLength(0);
     });
 
-    it('should remove credit card payment method records but preserve non-credit-card payment methods', () => {
+    it("should remove credit card payment method records but preserve non-credit-card payment methods", () => {
       const processor = new CreditCardProcessor();
       const records: Array<{
         sourceCode: string;
@@ -361,7 +361,7 @@ describe("CreditCardProcessor", () => {
         },
         {
           sourceCode: "CASH",
-          sourceAmount: -27.10,
+          sourceAmount: -27.1,
           sourceDescription: "Payment Method Total",
         },
         { sourceCode: "RC", sourceAmount: 150 },
