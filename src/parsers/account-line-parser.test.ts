@@ -178,6 +178,54 @@ Comps|0|13|-66.67|235
     });
   });
 
+  describe("Category-Prefixed Line Parsing", () => {
+    it("should parse category-prefixed detail lines like Guest 021|X3|PET CHARGE", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+Guest 021|X3|PET CHARGE|3|$60.00|$1,920.00|$2,360.00
+Guest 022|RC|ROOM CHRG|50|$10,107.15|$231,259.82
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        sourceCode: "X3",
+        description: "PET CHARGE",
+        amount: 60.0,
+        paymentMethod: undefined,
+        originalLine: "Guest 021|X3|PET CHARGE|3|$60.00|$1,920.00|$2,360.00",
+        lineNumber: 2,
+      });
+      expect(result[1]).toEqual({
+        sourceCode: "RC",
+        description: "ROOM CHRG",
+        amount: 10107.15,
+        paymentMethod: undefined,
+        originalLine: "Guest 022|RC|ROOM CHRG|50|$10,107.15|$231,259.82",
+        lineNumber: 3,
+      });
+    });
+
+    it("should handle various category prefixes", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+Guest 001|X4|WEEKLY PET CHARGE|2|$100.00|$500.00
+Guest 002|X6|TWO PET CHARGES|1|$25.00|$675.00
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(2);
+      expect(result[0].sourceCode).toBe("X4");
+      expect(result[0].description).toBe("WEEKLY PET CHARGE");
+      expect(result[0].amount).toBe(100.0);
+      expect(result[1].sourceCode).toBe("X6");
+      expect(result[1].description).toBe("TWO PET CHARGES");
+      expect(result[1].amount).toBe(25.0);
+    });
+  });
+
   describe("Configuration Options", () => {
     it("should skip lines below minimum amount threshold", () => {
       const parser = new AccountLineParser({ minimumAmount: 100.0 });

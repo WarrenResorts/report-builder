@@ -88,6 +88,10 @@ export class AccountLineParser {
     // Embedded transaction codes with pipes: "RC|ROOM CHRG REVENUE|50|$10,107.15|..." or "AX|PAYMENT AMEX|6|($2,486.57)|..."
     embeddedTransactionCode:
       /^([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
+    // Category-prefixed detail lines: "Guest 021|X3|PET CHARGE|3|$60.00|..." or "Guest 022|RC|ROOM CHRG|50|$10,107.15|..."
+    // Format: [Category]|[TransactionCode]|[Description]|[Count]|[Amount]|...
+    categoryPrefixedLine:
+      /^([^|]+)\|([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
     // Amount patterns - more strict, must be complete numbers
     amount: /([-$]?[\d,]+\.?\d*|\([\d,]+\.?\d*\))/g,
     // Payment method patterns
@@ -437,6 +441,42 @@ export class AccountLineParser {
         description: "Statistical Data",
         amount,
         paymentMethod: undefined,
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    // Try category-prefixed detail lines: "Guest 021|X3|PET CHARGE|3|$60.00|..."
+    // This must come after more specific patterns to avoid false matches
+    const categoryPrefixedMatch = line.match(
+      this.patterns.categoryPrefixedLine,
+    );
+    if (categoryPrefixedMatch) {
+      const [, category, sourceCodeRaw, description, count, amountStr] =
+        categoryPrefixedMatch;
+
+      const sourceCode = sourceCodeRaw.trim();
+      const descriptionText = description.trim();
+
+      /* c8 ignore next */
+      console.log(
+        `  → Category-prefixed: category="${category.trim()}" sourceCode="${sourceCode}" description="${descriptionText}" count="${count}"`,
+      );
+
+      const amount = this.parseAmount(amountStr);
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode,
+        description: descriptionText,
+        amount,
+        paymentMethod: this.detectPaymentMethod(line),
         originalLine: line,
         lineNumber,
       };
