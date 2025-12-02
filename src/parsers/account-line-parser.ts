@@ -86,8 +86,9 @@ export class AccountLineParser {
     statisticalLine:
       /^(Occupied|No\s+Show|Late\s+C\/I|Early\s+C\/O|Total\s+Rooms|Out\s+of\s+Service|Comps|Occupancy\s*%)\|(\d+(?:\.\d+)?)/i,
     // Embedded transaction codes with pipes: "RC|ROOM CHRG REVENUE|50|$10,107.15|..." or "AX|PAYMENT AMEX|6|($2,486.57)|..."
+    // Also handles mixed case like "Pet|PET CHARGE|4|$112.00|..."
     embeddedTransactionCode:
-      /^([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
+      /^([A-Za-z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
     // Category-prefixed detail lines: "Guest 021|X3|PET CHARGE|3|$60.00|..." or "Guest 022|RC|ROOM CHRG|50|$10,107.15|..."
     // Format: [Category]|[TransactionCode]|[Description]|[Count]|[Amount]|...
     categoryPrefixedLine:

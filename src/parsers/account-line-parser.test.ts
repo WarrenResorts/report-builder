@@ -62,6 +62,20 @@ MS|MISC. CHARGE|0|$0.00|$27.25|$28.75
       expect(result[4].sourceCode).toBe("91");
     });
 
+    it("should handle mixed case source codes like Pet", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+Pet|PET CHARGE|4|$112.00|$1,736.00|$1,525.00
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].sourceCode).toBe("Pet");
+      expect(result[0].description).toBe("PET CHARGE");
+      expect(result[0].amount).toBe(112.0);
+    });
+
     it("should handle GL/CL account lines", () => {
       const parser = new AccountLineParser({
         validSourceCodes: new Set(["60", "71"]),
