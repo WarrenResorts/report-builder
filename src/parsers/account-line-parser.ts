@@ -93,6 +93,10 @@ export class AccountLineParser {
     // Format: [Category]|[TransactionCode]|[Description]|[Count]|[Amount]|...
     categoryPrefixedLine:
       /^([^|]+)\|([A-Z0-9]+)\|([^|]+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
+    // Category summary lines without GL/CL prefix: "ADV DEPOSIT|62|$2,207.49|..." or "DIRECT BILLS|3|$385.36|..."
+    // Format: [Category with spaces]|[Count]|[Amount]|... (category contains spaces, distinguishing from embeddedTransactionCode)
+    categorySummaryLine:
+      /^([A-Za-z]+(?:\s+[A-Za-z]+)+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
     // Amount patterns - more strict, must be complete numbers
     amount: /([-$]?[\d,]+\.?\d*|\([\d,]+\.?\d*\))/g,
     // Payment method patterns
@@ -476,6 +480,38 @@ export class AccountLineParser {
       return {
         sourceCode,
         description: descriptionText,
+        amount,
+        paymentMethod: this.detectPaymentMethod(line),
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    // Try category summary lines without GL/CL prefix: "ADV DEPOSIT|62|$2,207.49|..." or "DIRECT BILLS|3|$385.36|..."
+    const categorySummaryMatch = line.match(this.patterns.categorySummaryLine);
+    if (categorySummaryMatch) {
+      const [, category, count, amountStr] = categorySummaryMatch;
+
+      // The category name IS the source code for these summary lines
+      const sourceCode = category.trim();
+
+      /* c8 ignore next */
+      console.log(
+        `  → Category Summary: sourceCode="${sourceCode}" count="${count}"`,
+      );
+
+      const amount = this.parseAmount(amountStr);
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode,
+        description: sourceCode,
         amount,
         paymentMethod: this.detectPaymentMethod(line),
         originalLine: line,

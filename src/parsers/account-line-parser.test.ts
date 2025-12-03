@@ -240,6 +240,36 @@ Guest 002|X6|TWO PET CHARGES|1|$25.00|$675.00
     });
   });
 
+  describe("Category Summary Line Parsing", () => {
+    it("should parse category summary lines without GL/CL prefix", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+ADV DEPOSIT|62|$2,207.49|($19,289.76)|($3,301.08)
+DIRECT BILLS|3|$385.36|$630.22|($32,565.04)
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        sourceCode: "ADV DEPOSIT",
+        description: "ADV DEPOSIT",
+        amount: 2207.49,
+        paymentMethod: undefined,
+        originalLine: "ADV DEPOSIT|62|$2,207.49|($19,289.76)|($3,301.08)",
+        lineNumber: 2,
+      });
+      expect(result[1]).toEqual({
+        sourceCode: "DIRECT BILLS",
+        description: "DIRECT BILLS",
+        amount: 385.36,
+        paymentMethod: undefined,
+        originalLine: "DIRECT BILLS|3|$385.36|$630.22|($32,565.04)",
+        lineNumber: 3,
+      });
+    });
+  });
+
   describe("Configuration Options", () => {
     it("should skip lines below minimum amount threshold", () => {
       const parser = new AccountLineParser({ minimumAmount: 100.0 });
