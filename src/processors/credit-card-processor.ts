@@ -151,6 +151,8 @@ export class CreditCardProcessor {
       const sourceCode = (record.sourceCode || "").toUpperCase().trim();
 
       // Remove any transaction codes that indicate credit card processing
+      // These codes must match EXACTLY - we don't use startsWith to avoid
+      // false positives like "DIRECT BILLS" matching "DI" (Discover code)
       const creditCardCodes = [
         "VISA/MASTER",
         "VISA",
@@ -165,9 +167,9 @@ export class CreditCardProcessor {
         "DI", // Discover transaction code
       ];
 
-      // Check if sourceCode matches any credit card code
+      // Check if sourceCode matches any credit card code EXACTLY
       const isCreditCardTransaction = creditCardCodes.some(
-        (code) => sourceCode === code || sourceCode.startsWith(code),
+        (code) => sourceCode === code,
       );
 
       if (isCreditCardTransaction) {
