@@ -19,8 +19,10 @@ export interface StatisticalJournalEntryRecord {
   transactionId: string;
   /** Business date in MM/DD/YYYY format */
   date: string;
-  /** Subsidiary full name */
+  /** Subsidiary Internal ID (code) */
   subsidiary: string;
+  /** Property full name */
+  propertyName: string;
   /** Unit of measure type (always "statistical") */
   unitOfMeasureType: string;
   /** Unit of measure (always "Each") */
@@ -163,6 +165,7 @@ export class StatisticalEntryGenerator {
       "Transaction ID",
       "Date",
       "Subsidiary",
+      "Property Name",
       "Unit of Measure Type",
       "Unit of Measure",
       "acctNumber",
@@ -225,7 +228,8 @@ export class StatisticalEntryGenerator {
     return {
       transactionId,
       date: formattedDate,
-      subsidiary: propertyConfig.subsidiaryFullName,
+      subsidiary: propertyConfig.subsidiaryInternalId,
+      propertyName: propertyConfig.subsidiaryFullName,
       unitOfMeasureType: "statistical",
       unitOfMeasure: "Each",
       acctNumber: prefix,
@@ -267,6 +271,7 @@ export class StatisticalEntryGenerator {
       record.transactionId,
       record.date,
       record.subsidiary,
+      record.propertyName,
       record.unitOfMeasureType,
       record.unitOfMeasure,
       record.acctNumber,

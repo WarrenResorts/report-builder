@@ -1213,7 +1213,7 @@ describe("File Processor Lambda", () => {
 
       // StatJE file should contain StatJE header and statistical record
       expect(statJEContent).toContain(
-        '"Transaction ID","Date","Subsidiary","Unit of Measure Type"',
+        '"Transaction ID","Date","Subsidiary","Property Name","Unit of Measure Type"',
       );
       expect(statJEContent).toContain("ADR");
       expect(statJEContent).toContain("07/14/2025 WRH"); // Transaction ID format
