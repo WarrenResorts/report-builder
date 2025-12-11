@@ -6,6 +6,20 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
+    // Use forks instead of threads - they clean up more reliably
+    pool: 'forks',
+    // Pool options to ensure proper cleanup
+    poolOptions: {
+      forks: {
+        // Kill workers after they finish to prevent orphans
+        singleFork: false,
+        // Isolate each test file
+        isolate: true,
+      },
+    },
+    // Timeout settings to prevent hanging tests
+    testTimeout: 30000, // 30 seconds per test
+    hookTimeout: 30000, // 30 seconds for setup/teardown hooks
     exclude: [
       'tests/integration/**/*.test.ts',  // Exclude integration tests from unit test runs
       'node_modules/**',

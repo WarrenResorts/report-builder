@@ -1216,7 +1216,7 @@ describe("File Processor Lambda", () => {
         '"Transaction ID","Date","Subsidiary","Property Name","Unit of Measure Type"',
       );
       expect(statJEContent).toContain("ADR");
-      expect(statJEContent).toContain("07/14/2025 WRH"); // Transaction ID format
+      expect(statJEContent).toContain("07/14/2025 WRH26"); // Transaction ID format with subsidiary ID
     });
 
     it("should test private utility methods", async () => {
@@ -1251,6 +1251,302 @@ describe("File Processor Lambda", () => {
           "daily-files/prop/2024-01-15/log.txt",
         ),
       ).toBe("txt");
+    });
+  });
+
+  describe("Post-Parse Duplicate Detection", () => {
+    it("should extract file identities from parsed content", () => {
+      const processor = new FileProcessor();
+
+      const processedFiles = [
+        {
+          fileKey: "daily-files/prop1/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Driftwood Inn",
+            businessDate: "2025-07-14",
+            accountLines: [],
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop1",
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/prop2/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Lakeside Lodge",
+            businessDate: "2025-07-14",
+            accountLines: [],
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop2",
+          processingTime: 100,
+        },
+      ];
+
+      const identities = (processor as any).extractParsedFileIdentities(
+        processedFiles,
+        "test-correlation-id",
+      );
+
+      expect(identities).toHaveLength(2);
+      expect(identities[0].propertyName).toBe("Driftwood Inn");
+      expect(identities[0].businessDate).toBe("2025-07-14");
+      expect(identities[0].deduplicationKey).toBe("Driftwood Inn|2025-07-14");
+      expect(identities[1].propertyName).toBe("Lakeside Lodge");
+      expect(identities[1].businessDate).toBe("2025-07-14");
+    });
+
+    it("should skip files with parsing errors during identity extraction", () => {
+      const processor = new FileProcessor();
+
+      const processedFiles = [
+        {
+          fileKey: "daily-files/prop1/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Driftwood Inn",
+            businessDate: "2025-07-14",
+          }),
+          transformedData: [],
+          errors: [], // No errors
+          propertyId: "prop1",
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/prop2/2024-01-15/DailyReport.pdf",
+          originalContent: "",
+          transformedData: [],
+          errors: ["Failed to parse PDF"], // Has errors
+          propertyId: "prop2",
+          processingTime: 50,
+        },
+      ];
+
+      const identities = (processor as any).extractParsedFileIdentities(
+        processedFiles,
+        "test-correlation-id",
+      );
+
+      // Only the file without errors should be included
+      expect(identities).toHaveLength(1);
+      expect(identities[0].propertyName).toBe("Driftwood Inn");
+    });
+
+    it("should use fallback values when propertyName or businessDate missing", () => {
+      const processor = new FileProcessor();
+
+      const processedFiles = [
+        {
+          fileKey: "daily-files/unknown-prop/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            // No propertyName or businessDate
+            accountLines: [],
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "unknown-prop",
+          processingTime: 100,
+        },
+      ];
+
+      const identities = (processor as any).extractParsedFileIdentities(
+        processedFiles,
+        "test-correlation-id",
+      );
+
+      expect(identities).toHaveLength(1);
+      // Should fall back to propertyId when propertyName is missing
+      expect(identities[0].propertyName).toBe("unknown-prop");
+      // Should fall back to yesterday's date when businessDate is missing
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const expectedDate = yesterday.toISOString().split("T")[0];
+      expect(identities[0].businessDate).toBe(expectedDate);
+    });
+
+    it("should deduplicate files with same propertyName and businessDate", () => {
+      const processor = new FileProcessor();
+
+      // Two files for the same property and date (duplicates)
+      const processedFiles = [
+        {
+          fileKey: "daily-files/prop1/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Driftwood Inn",
+            businessDate: "2025-07-14",
+            accountLines: [{ sourceCode: "RC" }],
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop1",
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/prop1-resend/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Driftwood Inn", // Same property
+            businessDate: "2025-07-14", // Same date
+            accountLines: [{ sourceCode: "RC" }],
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop1-resend",
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/prop2/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Lakeside Lodge", // Different property
+            businessDate: "2025-07-14",
+            accountLines: [{ sourceCode: "RC" }],
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop2",
+          processingTime: 100,
+        },
+      ];
+
+      const uniqueFiles = (processor as any).deduplicateByParsedContent(
+        processedFiles,
+        "test-correlation-id",
+      );
+
+      // Should keep only one Driftwood Inn file and the Lakeside Lodge file
+      expect(uniqueFiles).toHaveLength(2);
+
+      // Check which files were kept
+      const fileKeys = uniqueFiles.map((f: any) => f.fileKey);
+      expect(fileKeys).toContain(
+        "daily-files/prop1/2024-01-15/DailyReport.pdf",
+      ); // First Driftwood kept
+      expect(fileKeys).toContain(
+        "daily-files/prop2/2024-01-15/DailyReport.pdf",
+      ); // Lakeside kept
+      expect(fileKeys).not.toContain(
+        "daily-files/prop1-resend/2024-01-15/DailyReport.pdf",
+      ); // Duplicate removed
+    });
+
+    it("should allow same property on different dates", () => {
+      const processor = new FileProcessor();
+
+      const processedFiles = [
+        {
+          fileKey: "daily-files/prop1/2025-07-14/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Driftwood Inn",
+            businessDate: "2025-07-14", // First date
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop1",
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/prop1/2025-07-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Driftwood Inn", // Same property
+            businessDate: "2025-07-15", // Different date
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop1",
+          processingTime: 100,
+        },
+      ];
+
+      const uniqueFiles = (processor as any).deduplicateByParsedContent(
+        processedFiles,
+        "test-correlation-id",
+      );
+
+      // Both should be kept - different dates
+      expect(uniqueFiles).toHaveLength(2);
+    });
+
+    it("should include files with errors in the output (unchanged)", () => {
+      const processor = new FileProcessor();
+
+      const processedFiles = [
+        {
+          fileKey: "daily-files/prop1/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Driftwood Inn",
+            businessDate: "2025-07-14",
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop1",
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/prop2/2024-01-15/CorruptedFile.pdf",
+          originalContent: "",
+          transformedData: [],
+          errors: ["PDF parsing failed"], // Has errors
+          propertyId: "prop2",
+          processingTime: 50,
+        },
+      ];
+
+      const uniqueFiles = (processor as any).deduplicateByParsedContent(
+        processedFiles,
+        "test-correlation-id",
+      );
+
+      // Both files should be included - one deduplicated, one with errors passed through
+      expect(uniqueFiles).toHaveLength(2);
+      expect(uniqueFiles.some((f: any) => f.errors.length > 0)).toBe(true);
+    });
+
+    it("should handle case when all files are from different properties", () => {
+      const processor = new FileProcessor();
+
+      const processedFiles = [
+        {
+          fileKey: "daily-files/prop1/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Driftwood Inn",
+            businessDate: "2025-07-14",
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop1",
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/prop2/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Lakeside Lodge",
+            businessDate: "2025-07-14",
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop2",
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/prop3/2024-01-15/DailyReport.pdf",
+          originalContent: JSON.stringify({
+            propertyName: "Ponderay Mountain Lodge",
+            businessDate: "2025-07-14",
+          }),
+          transformedData: [],
+          errors: [],
+          propertyId: "prop3",
+          processingTime: 100,
+        },
+      ];
+
+      const uniqueFiles = (processor as any).deduplicateByParsedContent(
+        processedFiles,
+        "test-correlation-id",
+      );
+
+      // All files should be kept - no duplicates
+      expect(uniqueFiles).toHaveLength(3);
     });
   });
 });

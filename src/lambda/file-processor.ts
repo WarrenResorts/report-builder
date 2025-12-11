@@ -121,12 +121,24 @@ interface OrganizedFiles {
 }
 
 /**
- * Interface for duplicate detection results
+ * Interface for duplicate detection results (pre-parse, based on S3 metadata)
  */
 interface DuplicateDetectionResult {
   uniqueFiles: S3FileInfo[];
   duplicatesFound: number;
   duplicatesRemoved: S3FileInfo[];
+}
+
+/**
+ * Interface for parsed file identity (post-parse, based on PDF content)
+ * Used for accurate duplicate detection based on actual property name and business date
+ */
+interface ParsedFileIdentity {
+  file: ProcessedFileData;
+  propertyName: string;
+  businessDate: string;
+  /** Key for deduplication: propertyName|businessDate */
+  deduplicationKey: string;
 }
 
 /**
@@ -420,7 +432,16 @@ export class FileProcessor {
   }
 
   /**
-   * Detect and handle duplicate files before processing
+   * Pre-parse duplicate detection: Lightweight first-pass filter
+   *
+   * This is a quick check BEFORE parsing PDFs to catch exact file duplicates.
+   * It uses S3 metadata (propertyId from path, filename, size) which is fast
+   * but not fully reliable since all files are named "DailyReport.pdf" and
+   * different properties could have same-sized files.
+   *
+   * The authoritative duplicate detection happens AFTER parsing in
+   * deduplicateByParsedContent() which uses propertyName|businessDate
+   * extracted from the actual PDF content.
    *
    * Identifies duplicates by:
    * 1. Property ID + filename + size (exact match)
@@ -573,6 +594,157 @@ export class FileProcessor {
       duplicatesFound: duplicatesToRemove.length,
       duplicatesRemoved: duplicatesToRemove,
     };
+  }
+
+  /**
+   * Extract parsed file identities for post-parse duplicate detection
+   *
+   * This extracts propertyName and businessDate from each parsed file's content.
+   * These values come directly from the PDF, making them authoritative for
+   * identifying which property and date a report is for.
+   */
+  private extractParsedFileIdentities(
+    processedFiles: ProcessedFileData[],
+    correlationId: string,
+  ): ParsedFileIdentity[] {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "extract_parsed_file_identities",
+    });
+
+    const identities: ParsedFileIdentity[] = [];
+
+    for (const file of processedFiles) {
+      // Skip files with parsing errors
+      if (file.errors.length > 0) {
+        logger.warn(
+          "Skipping file with parsing errors for identity extraction",
+          {
+            fileKey: file.fileKey,
+            errors: file.errors,
+          },
+        );
+        continue;
+      }
+
+      // Extract propertyName and businessDate from parsed content
+      let propertyName = file.propertyId; // Default fallback
+      let businessDate: string;
+
+      try {
+        const parsedData = JSON.parse(file.originalContent);
+        if (parsedData.propertyName) {
+          propertyName = parsedData.propertyName;
+        }
+        if (parsedData.businessDate) {
+          businessDate = parsedData.businessDate;
+        } else {
+          // Fall back to yesterday's date if no business date in PDF
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          businessDate = yesterday.toISOString().split("T")[0];
+        }
+      } catch {
+        // If parsing fails, use fallback values
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        businessDate = yesterday.toISOString().split("T")[0];
+      }
+
+      const deduplicationKey = `${propertyName}|${businessDate}`;
+
+      identities.push({
+        file,
+        propertyName,
+        businessDate,
+        deduplicationKey,
+      });
+
+      logger.debug("Extracted file identity", {
+        fileKey: file.fileKey,
+        propertyName,
+        businessDate,
+        deduplicationKey,
+      });
+    }
+
+    return identities;
+  }
+
+  /**
+   * Deduplicate parsed files based on propertyName and businessDate from PDF content
+   *
+   * This is the authoritative duplicate detection since it uses actual data from
+   * the PDF rather than file metadata. Two files are considered duplicates if they
+   * have the same property name AND business date extracted from the PDF content.
+   *
+   * When duplicates are found, keeps the first file encountered (could be enhanced
+   * to keep the one with more account lines or most recent upload time).
+   */
+  private deduplicateByParsedContent(
+    processedFiles: ProcessedFileData[],
+    correlationId: string,
+  ): ProcessedFileData[] {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "deduplicate_by_parsed_content",
+    });
+
+    // Extract identities for all files
+    const identities = this.extractParsedFileIdentities(
+      processedFiles,
+      correlationId,
+    );
+
+    // Group by deduplication key (propertyName|businessDate)
+    const fileGroups = new Map<string, ParsedFileIdentity[]>();
+
+    for (const identity of identities) {
+      if (!fileGroups.has(identity.deduplicationKey)) {
+        fileGroups.set(identity.deduplicationKey, []);
+      }
+      fileGroups.get(identity.deduplicationKey)!.push(identity);
+    }
+
+    // Keep only unique files (first occurrence of each property+date combination)
+    const uniqueFiles: ProcessedFileData[] = [];
+    let duplicatesSkipped = 0;
+
+    for (const [deduplicationKey, group] of fileGroups.entries()) {
+      if (group.length === 1) {
+        // No duplicates for this property+date
+        uniqueFiles.push(group[0].file);
+      } else {
+        // Found duplicates - keep the first one, log the rest
+        uniqueFiles.push(group[0].file);
+        duplicatesSkipped += group.length - 1;
+
+        const keptFile = group[0];
+        const skippedFiles = group.slice(1);
+
+        logger.info("Post-parse duplicate detected - keeping first file", {
+          deduplicationKey,
+          propertyName: keptFile.propertyName,
+          businessDate: keptFile.businessDate,
+          keptFileKey: keptFile.file.fileKey,
+          skippedFileKeys: skippedFiles.map((s) => s.file.fileKey),
+          duplicateCount: group.length,
+        });
+      }
+    }
+
+    // Also include files that had parsing errors (they weren't in identities)
+    const filesWithErrors = processedFiles.filter((f) => f.errors.length > 0);
+    uniqueFiles.push(...filesWithErrors);
+
+    logger.info("Post-parse deduplication completed", {
+      totalFilesProcessed: processedFiles.length,
+      filesWithIdentities: identities.length,
+      uniquePropertyDateCombinations: fileGroups.size,
+      uniqueFilesKept: uniqueFiles.length - filesWithErrors.length,
+      filesWithErrors: filesWithErrors.length,
+      duplicatesSkipped,
+    });
+
+    return uniqueFiles;
   }
 
   /**
@@ -810,9 +982,24 @@ export class FileProcessor {
       return [];
     }
 
+    // Step 4.1: Post-parse duplicate detection
+    // Deduplicate based on propertyName|businessDate from PDF content
+    // This is more accurate than pre-parse detection since all files are named
+    // "DailyReport.pdf" and sizes can overlap between different properties
+    const deduplicatedFiles = this.deduplicateByParsedContent(
+      processedFiles,
+      correlationId,
+    );
+
+    logger.info("Processing deduplicated files", {
+      originalCount: processedFiles.length,
+      afterDeduplication: deduplicatedFiles.length,
+      duplicatesRemoved: processedFiles.length - deduplicatedFiles.length,
+    });
+
     const reportsByProperty: { [propertyId: string]: ConsolidatedReport } = {};
 
-    for (const file of processedFiles) {
+    for (const file of deduplicatedFiles) {
       if (file.errors.length > 0) {
         logger.warn("Skipping file with parsing errors", {
           fileKey: file.fileKey,

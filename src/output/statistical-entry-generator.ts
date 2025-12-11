@@ -15,7 +15,7 @@ import {
  * Statistical Journal Entry record structure
  */
 export interface StatisticalJournalEntryRecord {
-  /** Transaction ID: MM/DD/YYYY WRH */
+  /** Transaction ID: MM/DD/YYYY WRH{SubsidiaryID} (e.g., "07/14/2025 WRH26") */
   transactionId: string;
   /** Business date in MM/DD/YYYY format */
   date: string;
@@ -119,9 +119,10 @@ export class StatisticalEntryGenerator {
         continue;
       }
 
-      // Generate transaction ID
+      // Generate transaction ID with subsidiary ID
       const transactionId = this.generateTransactionId(
         transformedData.reportDate,
+        propertyConfig.subsidiaryInternalId,
       );
 
       // Format date
@@ -302,11 +303,15 @@ export class StatisticalEntryGenerator {
   }
 
   /**
-   * Generate transaction ID: MM/DD/YYYY WRH
+   * Generate transaction ID: MM/DD/YYYY WRH{SubsidiaryID}
+   * Example: "07/14/2025 WRH26" for subsidiary ID 26
    */
-  private generateTransactionId(reportDate: string): string {
+  private generateTransactionId(
+    reportDate: string,
+    subsidiaryId: string,
+  ): string {
     const formattedDate = this.formatDate(reportDate);
-    return `${formattedDate} WRH`;
+    return `${formattedDate} WRH${subsidiaryId}`;
   }
 
   /**
