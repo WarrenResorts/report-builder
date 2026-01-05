@@ -5,6 +5,8 @@
  * Handles various PDF formats and payment method detection.
  */
 
+import { createCorrelatedLogger } from "../utils/logger";
+
 /**
  * Represents a parsed account line from PDF content
  */
@@ -62,6 +64,7 @@ export interface AccountLineParserConfig {
  */
 export class AccountLineParser {
   private config: AccountLineParserConfig;
+  private logger = createCorrelatedLogger("AccountLineParser");
 
   // Common patterns for detecting account lines
   private readonly patterns = {
@@ -156,17 +159,9 @@ export class AccountLineParser {
     // Track seen statistical codes to avoid duplicates (e.g., ADR vs ADR w/comps)
     const seenStatisticalCodes = new Set<string>();
 
-    /* c8 ignore next 8 */
-    console.log("\n========================================");
-    console.log("STARTING ACCOUNT LINE PARSING");
-    console.log(`Total lines in PDF: ${lines.length}`);
-    console.log("Active regex patterns:");
-    Object.keys(this.patterns).forEach((key) => {
-      console.log(
-        `  ${key}: ${this.patterns[key as keyof typeof this.patterns]}`,
-      );
+    this.logger.debug("Starting account line parsing", {
+      totalLines: lines.length,
     });
-    console.log("========================================\n");
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -179,18 +174,10 @@ export class AccountLineParser {
       // Check for "Detail Listing Summary" first (more specific)
       if (line.match(/Detail\s+Listing\s+Summary/i)) {
         currentSection = "detail-listing-summary";
-        /* c8 ignore next */
-        console.log(
-          `  → Entering section: DETAIL LISTING SUMMARY (use full category)`,
-        );
         continue;
       } else if (line.match(/^Detail\s+Listing\s*$/i)) {
         // Match "Detail Listing" ONLY when it's alone on a line (not followed by "Summary")
         currentSection = "detail-listing";
-        /* c8 ignore next */
-        console.log(
-          `  → Entering section: DETAIL LISTING (extract posting code)`,
-        );
         continue;
       }
 
@@ -203,10 +190,6 @@ export class AccountLineParser {
         );
         if (isStatisticalCode) {
           if (seenStatisticalCodes.has(accountLine.sourceCode.toUpperCase())) {
-            /* c8 ignore next 4 */
-            console.log(
-              `  → Skipping duplicate statistical code: ${accountLine.sourceCode}`,
-            );
             continue;
           }
           seenStatisticalCodes.add(accountLine.sourceCode.toUpperCase());
@@ -216,10 +199,10 @@ export class AccountLineParser {
       }
     }
 
-    /* c8 ignore next 3 */
-    console.log("\n========================================");
-    console.log(`PARSING COMPLETE: Found ${accountLines.length} account lines`);
-    console.log("========================================\n");
+    this.logger.debug("Account line parsing completed", {
+      totalLines: lines.length,
+      parsedLines: accountLines.length,
+    });
 
     return accountLines;
   }
@@ -235,24 +218,8 @@ export class AccountLineParser {
       | "detail-listing-summary"
       | "unknown" = "unknown",
   ): AccountLine | null {
-    /* c8 ignore next 5 */
-    // DEBUG: Log every line we're trying to parse
-    console.log(`\n=== PARSING LINE ${lineNumber} ===`);
-    console.log(`Raw text: "${line}"`);
-    console.log(`Length: ${line.length}, Has tabs: ${line.includes("\t")}`);
-    console.log(
-      `Character codes: ${line
-        .split("")
-        .map((c) => c.charCodeAt(0))
-        .join(",")}`,
-    );
-
     // Try ledger lines FIRST (most specific): "GUEST LEDGER$21,084.73"
     const ledgerMatch = line.match(this.patterns.ledgerLine);
-    /* c8 ignore next 3 */
-    if (ledgerMatch) {
-      console.log(`✓ Matched ledgerLine pattern:`, ledgerMatch);
-    }
     if (ledgerMatch) {
       const [, ledgerType, amountStr] = ledgerMatch;
       const amount = this.parseAmount(amountStr);
@@ -278,10 +245,6 @@ export class AccountLineParser {
     // These are SUMMARY lines, not individual transactions
     // Do NOT set paymentMethod to avoid double-counting in consolidation
     const paymentMatch = line.match(this.patterns.paymentMethodLine);
-    /* c8 ignore next 3 */
-    if (paymentMatch) {
-      console.log(`✓ Matched paymentMethodLine pattern:`, paymentMatch);
-    }
     if (paymentMatch) {
       const [, paymentType, amountStr] = paymentMatch;
       const amount = this.parseAmount(amountStr);
@@ -329,17 +292,13 @@ export class AccountLineParser {
     // Try embedded transaction codes with pipes: "RC|ROOM CHRG REVENUE|50|$10,107.15|..." or "AX|PAYMENT AMEX|6|($2,486.57)|..."
     const embeddedMatch = line.match(this.patterns.embeddedTransactionCode);
     if (embeddedMatch) {
-      const [, sourceCodeRaw, description, count, amountStr] = embeddedMatch;
+      // Destructure: [fullMatch, sourceCode, description, count, amount]
+      // We skip count (_count) as it's not needed for output
+      const [, sourceCodeRaw, description, _count, amountStr] = embeddedMatch;
 
       // The source code is cleanly extracted by the pipe delimiter
       const sourceCode = sourceCodeRaw.trim();
       const descriptionText = description.trim();
-
-      /* c8 ignore next */
-      console.log(
-        `  → Embedded transaction: sourceCode="${sourceCode}" description="${descriptionText}" count="${count}"`,
-      );
-
       const amount = this.parseAmount(amountStr);
 
       if (
@@ -362,25 +321,21 @@ export class AccountLineParser {
     // Try GL/CL account lines with pipes: "GL ROOM TAX REV|9|CITY LODGING TAX|49|$980.63|..."
     const glClMatch = line.match(this.patterns.glClAccountCode);
     if (glClMatch) {
+      // Destructure: [fullMatch, glClPrefix, category, sourceCode, description, count, amount]
+      // We skip glClPrefix (_prefix) and count (_count) as they're not needed for output
       const [
         ,
-        glClPrefix,
+        _prefix,
         category,
         sourceCodeRaw,
         description,
-        count,
+        _count,
         amountStr,
       ] = glClMatch;
 
       // The source code is cleanly extracted by the pipe delimiter
       const sourceCode = sourceCodeRaw.trim();
       const descriptionText = `${category.trim()} ${description.trim()}`.trim();
-
-      /* c8 ignore next */
-      console.log(
-        `  → GL/CL: ${glClPrefix} category="${category.trim()}" sourceCode="${sourceCode}" description="${description.trim()}" count="${count}"`,
-      );
-
       const amount = this.parseAmount(amountStr);
 
       if (
@@ -403,16 +358,12 @@ export class AccountLineParser {
     // Try GL/CL summary lines with pipes: "CL DB CONTROL|6|$393.02|..." (category totals without transaction codes)
     const glClSummaryMatch = line.match(this.patterns.glClSummaryLine);
     if (glClSummaryMatch) {
-      const [, glClPrefix, category, count, amountStr] = glClSummaryMatch;
+      // Destructure: [fullMatch, glClPrefix, category, count, amount]
+      // We skip count (_count) as it's not needed for output
+      const [, glClPrefix, category, _count, amountStr] = glClSummaryMatch;
 
       // For summary lines, include GL/CL prefix in the source code (e.g., "CL DB CONTROL")
       const sourceCode = `${glClPrefix} ${category.trim()}`;
-
-      /* c8 ignore next */
-      console.log(
-        `  → GL/CL Summary: ${glClPrefix} category="${category.trim()}" count="${count}"`,
-      );
-
       const amount = this.parseAmount(amountStr);
 
       if (
@@ -457,17 +408,13 @@ export class AccountLineParser {
       this.patterns.categoryPrefixedLine,
     );
     if (categoryPrefixedMatch) {
-      const [, category, sourceCodeRaw, description, count, amountStr] =
+      // Destructure: [fullMatch, category, sourceCode, description, count, amount]
+      // We skip category (_category) and count (_count) as they're not needed for output
+      const [, _category, sourceCodeRaw, description, _count, amountStr] =
         categoryPrefixedMatch;
 
       const sourceCode = sourceCodeRaw.trim();
       const descriptionText = description.trim();
-
-      /* c8 ignore next */
-      console.log(
-        `  → Category-prefixed: category="${category.trim()}" sourceCode="${sourceCode}" description="${descriptionText}" count="${count}"`,
-      );
-
       const amount = this.parseAmount(amountStr);
 
       if (
@@ -490,16 +437,12 @@ export class AccountLineParser {
     // Try category summary lines without GL/CL prefix: "ADV DEPOSIT|62|$2,207.49|..." or "DIRECT BILLS|3|$385.36|..."
     const categorySummaryMatch = line.match(this.patterns.categorySummaryLine);
     if (categorySummaryMatch) {
-      const [, category, count, amountStr] = categorySummaryMatch;
+      // Destructure: [fullMatch, category, count, amount]
+      // We skip count (_count) as it's not needed for output
+      const [, category, _count, amountStr] = categorySummaryMatch;
 
       // The category name IS the source code for these summary lines
       const sourceCode = category.trim();
-
-      /* c8 ignore next */
-      console.log(
-        `  → Category Summary: sourceCode="${sourceCode}" count="${count}"`,
-      );
-
       const amount = this.parseAmount(amountStr);
 
       if (
@@ -520,16 +463,6 @@ export class AccountLineParser {
     }
 
     // No pattern matched
-    /* c8 ignore next 6 */
-    console.log(`✗ NO PATTERN MATCHED for line ${lineNumber}`);
-    console.log(
-      `  Tried patterns: ledgerLine, paymentMethodLine, summaryLine, embeddedTransactionCode, glClAccountCode, statisticalLine`,
-    );
-    console.log(`  Line length: ${line.length}`);
-    console.log(`  First 50 chars: "${line.substring(0, 50)}"`);
-    console.log(
-      `  Last 50 chars: "${line.substring(Math.max(0, line.length - 50))}"`,
-    );
     return null;
   }
 
@@ -544,39 +477,23 @@ export class AccountLineParser {
     const trimmedText = text.trim();
     const validCodes = this.config.validSourceCodes;
 
-    console.log(`EXTRACT_CODE: Input text="${trimmedText}"`);
-    console.log(
-      `EXTRACT_CODE: Whitelist size=${validCodes?.size || 0}, has whitelist=${!!validCodes}`,
-    );
-
     // If no whitelist provided, fall back to extracting first 1-2 characters
     if (!validCodes || validCodes.size === 0) {
-      console.log(`EXTRACT_CODE: No whitelist, using fallback`);
       const fallbackMatch = trimmedText.match(/^([A-Z0-9]{1,2})/i);
       if (fallbackMatch) {
-        console.log(
-          `EXTRACT_CODE: Fallback matched code="${fallbackMatch[1]}"`,
-        );
         return {
           code: fallbackMatch[1],
           remainingText: trimmedText.substring(fallbackMatch[1].length).trim(),
         };
       }
-      console.log(`EXTRACT_CODE: Fallback found no match`);
       return null;
     }
 
     // Try longest match first (8 chars down to 1 char)
     // This ensures we prefer "91" over "9", "PET1" over "P", etc.
-    console.log(`EXTRACT_CODE: Trying candidates from length 8 down to 1...`);
     for (let length = 8; length >= 1; length--) {
       const candidate = trimmedText.substring(0, length).toUpperCase();
-      const isValid = validCodes.has(candidate);
-      console.log(
-        `EXTRACT_CODE:   Trying "${candidate}" (len=${length}): ${isValid ? "✓ VALID" : "✗ not in whitelist"}`,
-      );
-      if (isValid) {
-        console.log(`EXTRACT_CODE: ✓✓✓ FOUND valid code="${candidate}"`);
+      if (validCodes.has(candidate)) {
         return {
           code: candidate,
           remainingText: trimmedText.substring(length).trim(),
@@ -584,7 +501,6 @@ export class AccountLineParser {
       }
     }
 
-    console.log(`EXTRACT_CODE: ✗✗✗ NO VALID CODE FOUND in "${trimmedText}"`);
     return null;
   }
 

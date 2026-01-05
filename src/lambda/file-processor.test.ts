@@ -1549,4 +1549,241 @@ describe("File Processor Lambda", () => {
       expect(uniqueFiles).toHaveLength(3);
     });
   });
+
+  describe("Pre-Parse Duplicate Detection (S3 Metadata)", () => {
+    // Note: Pre-parse detection uses propertyId|filename|size as key
+    // This is a lightweight filter before parsing; post-parse is authoritative
+
+    it("should detect duplicates with same property, filename, and size", async () => {
+      const processor = new FileProcessor();
+
+      // Mock S3 operations for archiving
+      mockS3Client.send.mockImplementation((command: any) => {
+        if (command.constructor.name === "GetObjectCommand") {
+          return Promise.resolve({
+            Body: {
+              transformToByteArray: () =>
+                Promise.resolve(new Uint8Array([1, 2, 3])),
+            },
+          });
+        }
+        return Promise.resolve({});
+      });
+      mockRetryS3Operation.mockImplementation((fn: any) => fn());
+
+      const files = [
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:00:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:05:00Z"), // More recent
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+      ];
+
+      const result = await (processor as any).detectAndRemoveDuplicates(
+        files,
+        "test-correlation-id",
+      );
+
+      expect(result.uniqueFiles).toHaveLength(1);
+      expect(result.duplicatesFound).toBe(1);
+      // Most recent file should be kept
+      expect(result.uniqueFiles[0].lastModified).toEqual(
+        new Date("2024-01-15T10:05:00Z"),
+      );
+    });
+
+    it("should keep all files when no duplicates exist", async () => {
+      const processor = new FileProcessor();
+
+      const files = [
+        {
+          key: "daily-files/PROP123/2024-01-15/report1.pdf",
+          lastModified: new Date("2024-01-15T10:00:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report1.pdf",
+        },
+        {
+          key: "daily-files/PROP123/2024-01-15/report2.pdf",
+          lastModified: new Date("2024-01-15T10:05:00Z"),
+          size: 2000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report2.pdf",
+        },
+      ];
+
+      const result = await (processor as any).detectAndRemoveDuplicates(
+        files,
+        "test-correlation-id",
+      );
+
+      expect(result.uniqueFiles).toHaveLength(2);
+      expect(result.duplicatesFound).toBe(0);
+    });
+
+    it("should treat files with same name but different sizes as unique", async () => {
+      const processor = new FileProcessor();
+
+      const files = [
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:00:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:05:00Z"),
+          size: 2000, // Different size
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+      ];
+
+      const result = await (processor as any).detectAndRemoveDuplicates(
+        files,
+        "test-correlation-id",
+      );
+
+      // Different sizes = unique files
+      expect(result.uniqueFiles).toHaveLength(2);
+      expect(result.duplicatesFound).toBe(0);
+    });
+
+    it("should archive duplicates to duplicates/ folder", async () => {
+      const processor = new FileProcessor();
+
+      // Track S3 calls
+      const s3Calls: any[] = [];
+      mockS3Client.send.mockImplementation((command: any) => {
+        s3Calls.push(command);
+        if (command.constructor.name === "GetObjectCommand") {
+          return Promise.resolve({
+            Body: {
+              transformToByteArray: () =>
+                Promise.resolve(new Uint8Array([1, 2, 3])),
+            },
+          });
+        }
+        return Promise.resolve({});
+      });
+      mockRetryS3Operation.mockImplementation((fn: any) => fn());
+
+      const files = [
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:00:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:05:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+      ];
+
+      await (processor as any).detectAndRemoveDuplicates(
+        files,
+        "test-correlation-id",
+      );
+
+      // Should have called S3 to archive the duplicate
+      expect(mockRetryS3Operation).toHaveBeenCalled();
+    });
+
+    it("should handle archiving errors gracefully", async () => {
+      const processor = new FileProcessor();
+
+      // Make archiving fail
+      mockRetryS3Operation.mockImplementation(() => {
+        throw new Error("S3 archive failed");
+      });
+
+      const files = [
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:00:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:05:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+      ];
+
+      // Should not throw - errors are caught and logged
+      const result = await (processor as any).detectAndRemoveDuplicates(
+        files,
+        "test-correlation-id",
+      );
+
+      // Still returns the deduplicated result even if archiving fails
+      expect(result.uniqueFiles).toHaveLength(1);
+      expect(result.duplicatesFound).toBe(1);
+    });
+
+    it("should handle missing body in S3 response", async () => {
+      const processor = new FileProcessor();
+
+      // Return null Body
+      mockS3Client.send.mockResolvedValue({ Body: null });
+      mockRetryS3Operation.mockImplementation((fn: any) => fn());
+
+      const files = [
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:00:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+        {
+          key: "daily-files/PROP123/2024-01-15/report.pdf",
+          lastModified: new Date("2024-01-15T10:05:00Z"),
+          size: 1000,
+          propertyId: "PROP123",
+          date: "2024-01-15",
+          filename: "report.pdf",
+        },
+      ];
+
+      // Should handle gracefully
+      const result = await (processor as any).detectAndRemoveDuplicates(
+        files,
+        "test-correlation-id",
+      );
+
+      expect(result.uniqueFiles).toHaveLength(1);
+    });
+  });
 });
