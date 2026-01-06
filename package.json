@@ -7,8 +7,10 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
+    "test:no-coverage": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "test:integration:local": "SKIP_INTEGRATION_TESTS=false vitest run --config vitest.integration.config.ts",
@@ -45,11 +47,15 @@
     "@aws-sdk/client-sqs": "^3.873.0",
     "@aws-sdk/client-ssm": "^3.873.0",
     "@types/aws-lambda": "^8.10.152",
-    "mailparser": "^3.6.5"
+    "@types/pdf-parse": "^1.1.5",
+    "exceljs": "^4.4.0",
+    "mailparser": "^3.6.5",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@commitlint/config-conventional": "^19.8.1",
     "@eslint/js": "^9.35.0",
+    "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^22.17.2",
     "@typescript-eslint/eslint-plugin": "^8.40.0",

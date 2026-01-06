@@ -291,11 +291,30 @@ export class LambdaConstruct extends Construct {
       role: this.fileProcessorRole,
       timeout: cdk.Duration.minutes(config.lambda.fileProcessor.timeoutMinutes),
       memorySize: config.lambda.fileProcessor.memoryMB,
+      projectRoot: path.join(__dirname, '..', '..', '..'),
+      depsLockFilePath: path.join(__dirname, '..', '..', '..', 'package-lock.json'),
       bundling: {
+        nodeModules: ['exceljs', 'pdf-parse'],
         externalModules: ['@aws-sdk/*'],
         format: lambdaNodejs.OutputFormat.ESM,
         target: 'es2022',
         sourceMap: true,
+        commandHooks: {
+          beforeBundling(inputDir: string, outputDir: string): string[] {
+            return [
+              // Create the test directory structure that pdf-parse expects
+              `mkdir -p ${outputDir}/test/data`,
+              // Copy the test file that pdf-parse needs during initialization
+              `cp ${inputDir}/test/data/05-versions-space.pdf ${outputDir}/test/data/05-versions-space.pdf`,
+            ];
+          },
+          beforeInstall(inputDir: string, outputDir: string): string[] {
+            return [];
+          },
+          afterBundling(inputDir: string, outputDir: string): string[] {
+            return [];
+          },
+        },
       },
       environment: {
         NODE_ENV: environment,
