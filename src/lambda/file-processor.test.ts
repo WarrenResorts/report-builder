@@ -1786,4 +1786,108 @@ describe("File Processor Lambda", () => {
       expect(result.uniqueFiles).toHaveLength(1);
     });
   });
+
+  describe("Email Summary Building Logic", () => {
+    let processor: FileProcessor;
+
+    beforeEach(() => {
+      processor = new FileProcessor();
+    });
+
+    it("should build property details with correct JE and StatJE counts", () => {
+      const transformedData = [
+        {
+          propertyId: "prop-1",
+          propertyName: "Windsor Inn",
+          reportDate: "2025-01-06",
+          data: [
+            { targetCode: "40100" },
+            { targetCode: "40200" },
+            { targetCode: "90100" },
+          ],
+        },
+        {
+          propertyId: "prop-2",
+          propertyName: "Lakeside Lodge",
+          reportDate: "2025-01-07",
+          data: [
+            { targetCode: "40100" },
+            { targetCode: "90200" },
+            { targetCode: "90300" },
+          ],
+        },
+      ];
+
+      const propertyDetails = processor.buildPropertyDetails(transformedData);
+
+      expect(propertyDetails).toHaveLength(2);
+      expect(propertyDetails[0]).toEqual({
+        propertyName: "Windsor Inn",
+        businessDate: "2025-01-06",
+        jeRecordCount: 2,
+        statJERecordCount: 1,
+      });
+      expect(propertyDetails[1]).toEqual({
+        propertyName: "Lakeside Lodge",
+        businessDate: "2025-01-07",
+        jeRecordCount: 1,
+        statJERecordCount: 2,
+      });
+    });
+
+    it("should use propertyId when propertyName is empty", () => {
+      const transformedData = [
+        {
+          propertyId: "fallback-id",
+          propertyName: "",
+          reportDate: "2025-01-06",
+          data: [],
+        },
+      ];
+
+      const propertyDetails = processor.buildPropertyDetails(transformedData);
+
+      expect(propertyDetails[0].propertyName).toBe("fallback-id");
+    });
+
+    it("should handle empty data array", () => {
+      const transformedData = [
+        {
+          propertyId: "prop-1",
+          propertyName: "Empty Hotel",
+          reportDate: "2025-01-06",
+          data: undefined,
+        },
+      ];
+
+      const propertyDetails = processor.buildPropertyDetails(
+        transformedData as any,
+      );
+
+      expect(propertyDetails[0].jeRecordCount).toBe(0);
+      expect(propertyDetails[0].statJERecordCount).toBe(0);
+    });
+
+    it("should calculate date range for multiple business dates", () => {
+      const dates = ["2025-01-05", "2025-01-07", "2025-01-06"];
+
+      const dateRange = processor.calculateDateRange(dates);
+
+      expect(dateRange).toBe("01/05/2025 - 01/07/2025");
+    });
+
+    it("should return undefined for single business date", () => {
+      const dates = ["2025-01-06", "2025-01-06"];
+
+      const dateRange = processor.calculateDateRange(dates);
+
+      expect(dateRange).toBeUndefined();
+    });
+
+    it("should return undefined for empty dates array", () => {
+      const dateRange = processor.calculateDateRange([]);
+
+      expect(dateRange).toBeUndefined();
+    });
+  });
 });
