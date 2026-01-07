@@ -37,6 +37,10 @@ import { JournalEntryGenerator } from "../output/journal-entry-generator";
 import { StatisticalEntryGenerator } from "../output/statistical-entry-generator";
 import { CreditCardProcessor } from "../processors/credit-card-processor";
 import { getPropertyConfigService } from "../config/property-config";
+import {
+  ReportEmailSender,
+  type ReportSummary,
+} from "../email/report-email-sender";
 import type { SupportedFileType } from "../parsers/base/parser-types";
 import type {
   RawFileData,
@@ -157,6 +161,7 @@ export class FileProcessor {
   private mappingBucket: string;
   private parserFactory: ParserFactory;
   private transformationEngine: TransformationEngine;
+  private emailSender: ReportEmailSender;
 
   constructor() {
     this.s3Client = new S3Client({
@@ -172,6 +177,12 @@ export class FileProcessor {
     // Initialize Phase 3 processing components
     this.parserFactory = new ParserFactory();
     this.transformationEngine = new TransformationEngine();
+
+    // Initialize email sender for Phase 5
+    this.emailSender = new ReportEmailSender({
+      processedBucket: this.processedBucket,
+      region: environmentConfig.awsRegion,
+    });
   }
 
   /**
@@ -274,6 +285,81 @@ export class FileProcessor {
       });
 
       const processingTimeMs = Date.now() - startTime;
+
+      // Step 6: Send email with reports (Phase 5)
+      if (reports.length >= 2) {
+        const jeReportKey = reports.find((r) => r.includes("_JE.csv")) || "";
+        const statJEReportKey =
+          reports.find((r) => r.includes("_StatJE.csv")) || "";
+
+        if (jeReportKey && statJEReportKey) {
+          // Calculate record counts from transformed data
+          const totalJERecords = transformedData.reduce((sum, report) => {
+            const financialRecords = (report.data || []).filter((record) => {
+              const code =
+                (record as { targetCode?: string }).targetCode ||
+                (record as { sourceCode?: string }).sourceCode ||
+                "";
+              return !code.startsWith("90"); // Exclude statistical records
+            });
+            return sum + financialRecords.length;
+          }, 0);
+
+          const totalStatJERecords = transformedData.reduce((sum, report) => {
+            const statRecords = (report.data || []).filter((record) => {
+              const code =
+                (record as { targetCode?: string }).targetCode ||
+                (record as { sourceCode?: string }).sourceCode ||
+                "";
+              return code.startsWith("90"); // Only statistical records
+            });
+            return sum + statRecords.length;
+          }, 0);
+
+          // Get previous day's date for report date
+          const previousDay = new Date();
+          previousDay.setDate(previousDay.getDate() - 1);
+          const reportDate = previousDay.toISOString().split("T")[0];
+
+          // Collect any errors from processing
+          const processingErrors = transformedData
+            .flatMap((report) => report.summary?.errors || [])
+            .filter(Boolean);
+
+          const emailSummary: ReportSummary = {
+            reportDate,
+            totalProperties: transformedData.length,
+            propertyNames: transformedData.map(
+              (report) => report.propertyName || report.propertyId,
+            ),
+            totalFiles: files.length,
+            totalJERecords,
+            totalStatJERecords,
+            processingTimeMs,
+            errors: processingErrors,
+          };
+
+          const emailResult = await this.emailSender.sendReportEmail(
+            jeReportKey,
+            statJEReportKey,
+            emailSummary,
+            correlationId,
+          );
+
+          if (emailResult.success) {
+            logger.info("Report email sent successfully", {
+              messageId: emailResult.messageId,
+              recipients: emailResult.recipients,
+              operation: "email_sent",
+            });
+          } else {
+            logger.warn("Failed to send report email", {
+              error: emailResult.error,
+              operation: "email_send_failed",
+            });
+          }
+        }
+      }
 
       return {
         statusCode: 200,
