@@ -18,11 +18,27 @@ import { environmentConfig } from "../config/environment";
 import { RetryConfig } from "../types/errors";
 
 /**
+ * Details for a single property/date combination
+ */
+export interface PropertyDetail {
+  /** Property name */
+  propertyName: string;
+  /** Business date (YYYY-MM-DD) */
+  businessDate: string;
+  /** Number of JE records for this property/date */
+  jeRecordCount: number;
+  /** Number of StatJE records for this property/date */
+  statJERecordCount: number;
+}
+
+/**
  * Report summary data for email body
  */
 export interface ReportSummary {
   /** Date of the processed reports (YYYY-MM-DD) */
   reportDate: string;
+  /** Date range if multiple dates (e.g., "01/05/2025 - 01/07/2025") */
+  dateRange?: string;
   /** Total number of properties included */
   totalProperties: number;
   /** List of property names processed */
@@ -37,6 +53,8 @@ export interface ReportSummary {
   processingTimeMs: number;
   /** Any errors encountered during processing */
   errors: string[];
+  /** Detailed breakdown by property and date (optional for backwards compatibility) */
+  propertyDetails?: PropertyDetail[];
 }
 
 /**
@@ -352,12 +370,18 @@ export class ReportEmailSender {
    * Generate HTML email body
    */
   private generateHtmlBody(summary: ReportSummary): string {
-    const dateFormatted = this.formatDateForDisplay(summary.reportDate);
+    const dateDisplay =
+      summary.dateRange || this.formatDateForDisplay(summary.reportDate);
     const hasErrors = summary.errors && summary.errors.length > 0;
+    const hasPropertyDetails =
+      summary.propertyDetails && summary.propertyDetails.length > 0;
 
-    const propertyList = summary.propertyNames
-      .map((name) => `<li>${this.escapeHtml(name)}</li>`)
-      .join("\n");
+    // Use detailed view if propertyDetails available, otherwise simple list
+    const propertiesSection = hasPropertyDetails
+      ? this.generatePropertyDetailsHtml(summary.propertyDetails!)
+      : summary.propertyNames
+          .map((name) => `<li>${this.escapeHtml(name)}</li>`)
+          .join("\n");
 
     const errorSection = hasErrors
       ? `
@@ -375,13 +399,16 @@ export class ReportEmailSender {
   <meta charset="UTF-8">
   <style>
     body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .container { max-width: 650px; margin: 0 auto; padding: 20px; }
     .header { background-color: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 4px 4px 0 0; }
     .content { background-color: #f8f9fa; padding: 20px; border: 1px solid #dee2e6; }
     .summary-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
     .summary-table td { padding: 8px; border-bottom: 1px solid #dee2e6; }
     .summary-table td:first-child { font-weight: bold; width: 40%; }
     .properties-list { background-color: white; padding: 15px; border-radius: 4px; margin: 15px 0; }
+    .property-name { font-weight: bold; color: #2c3e50; margin: 10px 0 5px 0; }
+    .property-name:first-child { margin-top: 0; }
+    .date-detail { margin-left: 20px; color: #555; font-size: 13px; }
     .footer { text-align: center; padding: 15px; color: #6c757d; font-size: 12px; }
   </style>
 </head>
@@ -389,14 +416,14 @@ export class ReportEmailSender {
   <div class="container">
     <div class="header">
       <h1>Daily Hotel Reports</h1>
-      <p>${dateFormatted}</p>
+      <p>${dateDisplay}</p>
     </div>
     <div class="content">
       <h2>Processing Summary</h2>
       <table class="summary-table">
         <tr>
-          <td>Report Date:</td>
-          <td>${dateFormatted}</td>
+          <td>Report Date(s):</td>
+          <td>${dateDisplay}</td>
         </tr>
         <tr>
           <td>Properties Processed:</td>
@@ -407,11 +434,11 @@ export class ReportEmailSender {
           <td>${summary.totalFiles}</td>
         </tr>
         <tr>
-          <td>JE Records:</td>
+          <td>Total JE Records:</td>
           <td>${summary.totalJERecords.toLocaleString()}</td>
         </tr>
         <tr>
-          <td>StatJE Records:</td>
+          <td>Total StatJE Records:</td>
           <td>${summary.totalStatJERecords.toLocaleString()}</td>
         </tr>
         <tr>
@@ -420,11 +447,9 @@ export class ReportEmailSender {
         </tr>
       </table>
 
-      <h3>Properties Included</h3>
+      <h3>Property Details</h3>
       <div class="properties-list">
-        <ul>
-          ${propertyList}
-        </ul>
+        ${hasPropertyDetails ? propertiesSection : `<ul>${propertiesSection}</ul>`}
       </div>
 
       ${errorSection}
@@ -517,5 +542,39 @@ Environment: ${environmentConfig.environment}
       "'": "&#39;",
     };
     return text.replace(/[&<>"']/g, (char) => htmlEntities[char]);
+  }
+
+  /**
+   * Generate HTML for property details breakdown
+   */
+  private generatePropertyDetailsHtml(
+    propertyDetails: PropertyDetail[],
+  ): string {
+    // Group by property name
+    const grouped = new Map<string, PropertyDetail[]>();
+    for (const detail of propertyDetails) {
+      const existing = grouped.get(detail.propertyName) || [];
+      existing.push(detail);
+      grouped.set(detail.propertyName, existing);
+    }
+
+    // Sort property names alphabetically
+    const sortedNames = Array.from(grouped.keys()).sort();
+
+    const html: string[] = [];
+    for (const name of sortedNames) {
+      const details = grouped.get(name)!;
+      details.sort((a, b) => a.businessDate.localeCompare(b.businessDate));
+
+      html.push(`<div class="property-name">${this.escapeHtml(name)}</div>`);
+      for (const d of details) {
+        const dateFormatted = this.formatDateForDisplay(d.businessDate);
+        html.push(
+          `<div class="date-detail">• ${dateFormatted}: ${d.jeRecordCount} JE, ${d.statJERecordCount} StatJE</div>`,
+        );
+      }
+    }
+
+    return html.join("\n");
   }
 }

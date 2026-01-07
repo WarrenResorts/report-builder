@@ -470,5 +470,82 @@ describe("ReportEmailSender", () => {
         "X-SES-CONFIGURATION-SET: report-builder-test",
       );
     });
+
+    it("should display property details when provided", async () => {
+      const summaryWithDetails: ReportSummary = {
+        ...mockSummary,
+        propertyDetails: [
+          {
+            propertyName: "Windsor Inn",
+            businessDate: "2025-01-05",
+            jeRecordCount: 20,
+            statJERecordCount: 5,
+          },
+          {
+            propertyName: "Windsor Inn",
+            businessDate: "2025-01-06",
+            jeRecordCount: 22,
+            statJERecordCount: 6,
+          },
+          {
+            propertyName: "Lakeside Lodge",
+            businessDate: "2025-01-06",
+            jeRecordCount: 25,
+            statJERecordCount: 7,
+          },
+        ],
+        dateRange: "01/05/2025 - 01/06/2025",
+      };
+
+      const sender = new ReportEmailSender({
+        processedBucket: "test-processed-bucket",
+        region: "us-east-1",
+      });
+
+      const result = await sender.sendReportEmail(
+        "reports/2025-01-07/2025-01-06_JE.csv",
+        "reports/2025-01-07/2025-01-06_StatJE.csv",
+        summaryWithDetails,
+        "test-correlation-id",
+      );
+
+      expect(result.success).toBe(true);
+
+      const sendCall = mockSESSend.mock.calls[0][0];
+      const rawEmail = sendCall.RawMessage.Data.toString();
+
+      // Should contain date range in header
+      expect(rawEmail).toContain("01/05/2025 - 01/06/2025");
+      // Should contain property names
+      expect(rawEmail).toContain("Windsor Inn");
+      expect(rawEmail).toContain("Lakeside Lodge");
+      // Should contain record counts
+      expect(rawEmail).toContain("20 JE");
+      expect(rawEmail).toContain("22 JE");
+      expect(rawEmail).toContain("25 JE");
+    });
+
+    it("should fall back to simple list when propertyDetails not provided", async () => {
+      const sender = new ReportEmailSender({
+        processedBucket: "test-processed-bucket",
+        region: "us-east-1",
+      });
+
+      const result = await sender.sendReportEmail(
+        "reports/2025-01-07/2025-01-06_JE.csv",
+        "reports/2025-01-07/2025-01-06_StatJE.csv",
+        mockSummary, // No propertyDetails
+        "test-correlation-id",
+      );
+
+      expect(result.success).toBe(true);
+
+      const sendCall = mockSESSend.mock.calls[0][0];
+      const rawEmail = sendCall.RawMessage.Data.toString();
+
+      // Should contain property names in simple list format
+      expect(rawEmail).toContain("THE BARD&#39;S INN HOTEL");
+      expect(rawEmail).toContain("Crown City Inn");
+    });
   });
 });

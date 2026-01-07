@@ -40,6 +40,7 @@ import { getPropertyConfigService } from "../config/property-config";
 import {
   ReportEmailSender,
   type ReportSummary,
+  type PropertyDetail,
 } from "../email/report-email-sender";
 import type { SupportedFileType } from "../parsers/base/parser-types";
 import type {
@@ -316,10 +317,32 @@ export class FileProcessor {
             return sum + statRecords.length;
           }, 0);
 
-          // Get previous day's date for report date
-          const previousDay = new Date();
-          previousDay.setDate(previousDay.getDate() - 1);
-          const reportDate = previousDay.toISOString().split("T")[0];
+          // Build property details from transformed data
+          const propertyDetails = this.buildPropertyDetails(
+            transformedData as Array<{
+              propertyId: string;
+              propertyName: string;
+              reportDate: string;
+              data?: Array<{ targetCode?: string; sourceCode?: string }>;
+            }>,
+          );
+
+          // Get unique dates and calculate date range
+          const reportDates = transformedData.map((r) => r.reportDate);
+          const uniqueDates = [...new Set(reportDates)].sort();
+          const reportDate =
+            uniqueDates[uniqueDates.length - 1] ||
+            new Date().toISOString().split("T")[0];
+          const dateRange = this.calculateDateRange(reportDates);
+
+          // Get unique property names
+          const uniquePropertyNames = [
+            ...new Set(
+              transformedData.map(
+                (report) => report.propertyName || report.propertyId,
+              ),
+            ),
+          ].sort();
 
           // Collect any errors from processing
           const processingErrors = transformedData
@@ -328,15 +351,15 @@ export class FileProcessor {
 
           const emailSummary: ReportSummary = {
             reportDate,
-            totalProperties: transformedData.length,
-            propertyNames: transformedData.map(
-              (report) => report.propertyName || report.propertyId,
-            ),
+            dateRange,
+            totalProperties: uniquePropertyNames.length,
+            propertyNames: uniquePropertyNames,
             totalFiles: files.length,
             totalJERecords,
             totalStatJERecords,
             processingTimeMs,
             errors: processingErrors,
+            propertyDetails,
           };
 
           const emailResult = await this.emailSender.sendReportEmail(
@@ -1895,6 +1918,54 @@ export class FileProcessor {
         statJEContent: "Error generating StatJE CSV report\n",
       };
     }
+  }
+
+  /**
+   * Build property details array from transformed data
+   * Used for email summary with per-property breakdown
+   */
+  buildPropertyDetails(
+    transformedData: Array<{
+      propertyId: string;
+      propertyName: string;
+      reportDate: string;
+      data?: Array<{ targetCode?: string; sourceCode?: string }>;
+    }>,
+  ): PropertyDetail[] {
+    return transformedData.map((report) => {
+      const jeCount = (report.data || []).filter((record) => {
+        const code = record.targetCode || record.sourceCode || "";
+        return !code.startsWith("90");
+      }).length;
+
+      const statJECount = (report.data || []).filter((record) => {
+        const code = record.targetCode || record.sourceCode || "";
+        return code.startsWith("90");
+      }).length;
+
+      return {
+        propertyName: report.propertyName || report.propertyId,
+        businessDate: report.reportDate,
+        jeRecordCount: jeCount,
+        statJERecordCount: statJECount,
+      };
+    });
+  }
+
+  /**
+   * Calculate date range string from array of dates
+   * Returns undefined if only one unique date
+   */
+  calculateDateRange(dates: string[]): string | undefined {
+    const uniqueDates = [...new Set(dates)].sort();
+    if (uniqueDates.length <= 1) {
+      return undefined;
+    }
+    const formatDate = (d: string) => {
+      const [year, month, day] = d.split("-");
+      return `${month}/${day}/${year}`;
+    };
+    return `${formatDate(uniqueDates[0])} - ${formatDate(uniqueDates[uniqueDates.length - 1])}`;
   }
 }
 
