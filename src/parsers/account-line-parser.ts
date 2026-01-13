@@ -299,6 +299,13 @@ export class AccountLineParser {
       // The source code is cleanly extracted by the pipe delimiter
       const sourceCode = sourceCodeRaw.trim();
       const descriptionText = description.trim();
+
+      // Skip "REFUND AD" lines - these are refunds of advance deposits (8A, 8B, 8C, 8G, 8H, 8I, 8P, 8V)
+      // They should not be included in JE/StatJE reports
+      if (descriptionText.startsWith("REFUND AD") || descriptionText === "REFUND PREPAID") {
+        return null;
+      }
+
       const amount = this.parseAmount(amountStr);
 
       if (

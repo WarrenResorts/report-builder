@@ -62,6 +62,28 @@ MS|MISC. CHARGE|0|$0.00|$27.25|$28.75
       expect(result[4].sourceCode).toBe("91");
     });
 
+    it("should skip REFUND AD lines (refunds of advance deposits)", () => {
+      const parser = new AccountLineParser({ includeZeroAmounts: true });
+      const pdfText = `
+7V|ADV DEP VISA|5|($512.33)|($5,426.36)|($4,887.35)
+8A|REFUND AD AMEX|0|$0.00|$0.00|$0.00
+8B|REFUND AD JCB|0|$0.00|$0.00|$0.00
+8C|REFUND AD CASH|0|$0.00|$0.00|$0.00
+8G|REFUND AD DINER|0|$0.00|$0.00|$0.00
+8H|REFUND AD CK|0|$0.00|$0.00|$0.00
+8I|REFUND AD DISCV|0|$0.00|$0.00|$0.00
+8P|REFUND PREPAID|0|$0.00|$0.00|$0.00
+8V|REFUND AD VISA|0|$0.00|$0.00|$124.85
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Should only include ADV DEP VISA, not any REFUND AD lines
+      expect(result).toHaveLength(1);
+      expect(result[0].sourceCode).toBe("7V");
+      expect(result[0].description).toBe("ADV DEP VISA");
+    });
+
     it("should handle mixed case source codes like Pet", () => {
       const parser = new AccountLineParser();
       const pdfText = `
