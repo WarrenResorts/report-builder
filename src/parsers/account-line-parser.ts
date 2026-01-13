@@ -302,7 +302,10 @@ export class AccountLineParser {
 
       // Skip "REFUND AD" lines - these are refunds of advance deposits (8A, 8B, 8C, 8G, 8H, 8I, 8P, 8V)
       // They should not be included in JE/StatJE reports
-      if (descriptionText.startsWith("REFUND AD") || descriptionText === "REFUND PREPAID") {
+      if (
+        descriptionText.startsWith("REFUND AD") ||
+        descriptionText === "REFUND PREPAID"
+      ) {
         return null;
       }
 
