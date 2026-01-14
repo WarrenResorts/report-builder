@@ -55,7 +55,9 @@ export class CreditCardProcessor {
 
     for (const record of records) {
       const sourceCode = (record.sourceCode || "").toUpperCase().trim();
-      const amount = Math.abs(record.sourceAmount || 0);
+      // Preserve sign for proper arithmetic when combining (e.g., Discover refunds are negative)
+      // We'll take absolute value later when generating the final deposit record
+      const amount = record.sourceAmount || 0;
 
       // Match payment method summary lines from first page
       if (sourceCode === "VISA/MASTER" || sourceCode === "VISA") {
@@ -95,15 +97,18 @@ export class CreditCardProcessor {
     const deposits: CreditCardDepositRecord[] = [];
 
     // Combined VISA/MASTER + DISCOVER deposit
+    // Amounts are signed (negative = payments/deposits, positive = refunds)
+    // Combined correctly handles Discover refunds (positive) reducing the total
     const combinedAmount = totals.visaMaster + totals.discover;
-    if (combinedAmount > 0) {
+    const absCombined = Math.abs(combinedAmount);
+    if (absCombined > 0) {
       deposits.push({
         sourceCode: "VISA/MASTER",
         sourceDescription: "VISA/MASTER Credit Card Deposit",
-        sourceAmount: combinedAmount,
+        sourceAmount: absCombined,
         targetCode: propertyConfig.creditCardDepositAccount,
         targetDescription: "Cash in Bank : Credit Card Deposits",
-        mappedAmount: combinedAmount,
+        mappedAmount: absCombined,
         paymentMethod: "VISA/MASTER",
         isCreditCardDeposit: true,
       });
@@ -112,25 +117,28 @@ export class CreditCardProcessor {
         visaMaster: totals.visaMaster,
         discover: totals.discover,
         combined: combinedAmount,
+        absoluteDeposit: absCombined,
         account: propertyConfig.creditCardDepositAccount,
       });
     }
 
     // Separate AMEX deposit
-    if (totals.amex > 0) {
+    const absAmex = Math.abs(totals.amex);
+    if (absAmex > 0) {
       deposits.push({
         sourceCode: "AMEX",
         sourceDescription: "AMEX Credit Card Deposit",
-        sourceAmount: totals.amex,
+        sourceAmount: absAmex,
         targetCode: propertyConfig.creditCardDepositAccount,
         targetDescription: "Cash in Bank : Credit Card Deposits",
-        mappedAmount: totals.amex,
+        mappedAmount: absAmex,
         paymentMethod: "AMEX",
         isCreditCardDeposit: true,
       });
 
       this.logger.info("Created AMEX deposit", {
         amex: totals.amex,
+        absoluteDeposit: absAmex,
         account: propertyConfig.creditCardDepositAccount,
       });
     }

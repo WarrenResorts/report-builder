@@ -13,7 +13,7 @@ describe("CreditCardProcessor", () => {
   };
 
   describe("extractCreditCardTotals", () => {
-    it("should extract VISA/MASTER totals", () => {
+    it("should extract VISA/MASTER totals preserving sign", () => {
       const processor = new CreditCardProcessor();
       const lines = [
         { sourceCode: "VISA/MASTER", sourceAmount: -1000 },
@@ -22,12 +22,13 @@ describe("CreditCardProcessor", () => {
 
       const totals = processor.extractCreditCardTotals(lines);
 
-      expect(totals.visaMaster).toBe(1000);
+      // Sign is preserved for proper arithmetic when combining
+      expect(totals.visaMaster).toBe(-1000);
       expect(totals.amex).toBe(0);
       expect(totals.discover).toBe(0);
     });
 
-    it("should extract AMEX totals", () => {
+    it("should extract AMEX totals preserving sign", () => {
       const processor = new CreditCardProcessor();
       const lines = [
         { sourceCode: "AMEX", sourceAmount: -500 },
@@ -37,11 +38,11 @@ describe("CreditCardProcessor", () => {
       const totals = processor.extractCreditCardTotals(lines);
 
       expect(totals.visaMaster).toBe(0);
-      expect(totals.amex).toBe(500);
+      expect(totals.amex).toBe(-500);
       expect(totals.discover).toBe(0);
     });
 
-    it("should extract DISCOVER totals", () => {
+    it("should extract DISCOVER totals preserving sign", () => {
       const processor = new CreditCardProcessor();
       const lines = [
         { sourceCode: "DISCOVER", sourceAmount: -250 },
@@ -52,10 +53,10 @@ describe("CreditCardProcessor", () => {
 
       expect(totals.visaMaster).toBe(0);
       expect(totals.amex).toBe(0);
-      expect(totals.discover).toBe(250);
+      expect(totals.discover).toBe(-250);
     });
 
-    it("should extract all credit card types", () => {
+    it("should extract all credit card types preserving signs", () => {
       const processor = new CreditCardProcessor();
       const lines = [
         { sourceCode: "VISA/MASTER", sourceAmount: -1000 },
@@ -66,9 +67,9 @@ describe("CreditCardProcessor", () => {
 
       const totals = processor.extractCreditCardTotals(lines);
 
-      expect(totals.visaMaster).toBe(1000);
-      expect(totals.amex).toBe(500);
-      expect(totals.discover).toBe(250);
+      expect(totals.visaMaster).toBe(-1000);
+      expect(totals.amex).toBe(-500);
+      expect(totals.discover).toBe(-250);
     });
 
     it("should handle empty lines", () => {
@@ -82,13 +83,28 @@ describe("CreditCardProcessor", () => {
       expect(totals.discover).toBe(0);
     });
 
-    it("should use absolute values for negative amounts", () => {
+    it("should preserve sign for negative amounts (for combining later)", () => {
       const processor = new CreditCardProcessor();
       const lines = [{ sourceCode: "VISA/MASTER", sourceAmount: -1234.56 }];
 
       const totals = processor.extractCreditCardTotals(lines);
 
-      expect(totals.visaMaster).toBe(1234.56);
+      // Sign preserved - absolute value taken in generateDepositRecords
+      expect(totals.visaMaster).toBe(-1234.56);
+    });
+
+    it("should handle Discover refunds (positive) reducing VISA/MASTER total", () => {
+      const processor = new CreditCardProcessor();
+      const lines = [
+        { sourceCode: "VISA/MASTER", sourceAmount: -7276.65 },
+        { sourceCode: "DISCOVER", sourceAmount: 32.91 }, // Positive = refund
+      ];
+
+      const totals = processor.extractCreditCardTotals(lines);
+
+      expect(totals.visaMaster).toBe(-7276.65);
+      expect(totals.discover).toBe(32.91);
+      // When combined: -7276.65 + 32.91 = -7243.74, abs = 7243.74
     });
   });
 
@@ -177,6 +193,49 @@ describe("CreditCardProcessor", () => {
       );
 
       expect(records).toHaveLength(0);
+    });
+
+    it("should subtract positive Discover (refund) from VISA/MASTER total", () => {
+      const processor = new CreditCardProcessor();
+      // Real scenario: VISA/MASTER = -7276.65 (payments), DISCOVER = +32.91 (refund)
+      // Combined should be: -7276.65 + 32.91 = -7243.74, abs = 7243.74
+      const totals = {
+        visaMaster: -7276.65,
+        amex: 0,
+        discover: 32.91, // Positive = refund, should reduce total
+      };
+
+      const records = processor.generateDepositRecords(
+        totals,
+        mockPropertyConfig,
+      );
+
+      expect(records).toHaveLength(1);
+      expect(records[0].sourceCode).toBe("VISA/MASTER");
+      // Should be 7243.74, NOT 7309.56 (which was the bug)
+      expect(records[0].sourceAmount).toBeCloseTo(7243.74, 2);
+    });
+
+    it("should handle negative totals (payments) with absolute value for deposit", () => {
+      const processor = new CreditCardProcessor();
+      const totals = {
+        visaMaster: -1000,
+        amex: -500,
+        discover: -250,
+      };
+
+      const records = processor.generateDepositRecords(
+        totals,
+        mockPropertyConfig,
+      );
+
+      expect(records).toHaveLength(2);
+
+      const visaDeposit = records.find((r) => r.sourceCode === "VISA/MASTER");
+      expect(visaDeposit?.sourceAmount).toBe(1250); // abs(-1000 + -250)
+
+      const amexDeposit = records.find((r) => r.sourceCode === "AMEX");
+      expect(amexDeposit?.sourceAmount).toBe(500); // abs(-500)
     });
 
     it("should handle VISA/MASTER only", () => {
