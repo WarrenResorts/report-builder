@@ -101,11 +101,13 @@ export class EventsConstruct extends Construct {
     );
 
     // Weekly report generation rule - generates summary reports
+    // DISABLED: Placeholder for future weekly summary feature (see Phase 7 in PROJECT_PLAN.md)
+    // Currently does the same thing as daily processing - will be enabled when weekly summary logic is implemented
     this.weeklyReportRule = new events.Rule(this, 'WeeklyReportRule', {
       ruleName: `${config.naming.projectPrefix}${config.naming.separator}weekly-report${config.naming.separator}${environment}`,
       description: config.scheduling.weeklyReporting.description,
       schedule: events.Schedule.expression(config.scheduling.weeklyReporting.cronExpression),
-      enabled: true,
+      enabled: false,
     });
 
     // Add file processor Lambda as target for weekly reporting
