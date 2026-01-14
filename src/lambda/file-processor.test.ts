@@ -74,6 +74,7 @@ const createMockEventBridgeEvent = (
   processingType: "daily-batch" | "weekly-report" = "daily-batch",
   targetDate?: string,
   resendEmail?: boolean,
+  businessDate?: string,
 ): EventBridgeEvent<string, FileProcessingEvent> => ({
   version: "0",
   id: "test-event-id",
@@ -90,6 +91,7 @@ const createMockEventBridgeEvent = (
     scheduleExpression: "rate(1 day)",
     targetDate,
     resendEmail,
+    businessDate,
   },
 });
 
@@ -336,6 +338,319 @@ describe("File Processor Lambda", () => {
       expect(result.statusCode).toBe(404);
       expect(result.message).toContain("Reports not found");
       expect(result.message).toContain(targetDate);
+    });
+
+    it("should use businessDate reprocessing when businessDate is provided", async () => {
+      const businessDate = "2026-01-12";
+
+      // Mock S3 list operations to return empty (no files found)
+      mockRetryS3Operation.mockResolvedValue({ Contents: [] });
+
+      const event = createMockEventBridgeEvent(
+        "daily-batch",
+        undefined,
+        undefined,
+        businessDate,
+      );
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      // Should return 200 with no files found message
+      expect(result.statusCode).toBe(200);
+      expect(result.message).toContain("No files found");
+      expect(result.message).toContain(businessDate);
+    });
+
+    it("should query multiple folder dates when businessDate is provided", async () => {
+      const businessDate = "2026-01-12";
+
+      // Mock S3 list to return files
+      mockRetryS3Operation.mockResolvedValue({
+        Contents: [
+          {
+            Key: "daily-files/bards-inn/2026-01-12/DailyReport_abc.pdf",
+            LastModified: new Date("2026-01-12T10:00:00Z"),
+            Size: 1000,
+          },
+        ],
+      });
+
+      // Mock S3 GetObject for file download - return parseable PDF data
+      const mockPdfData = {
+        propertyName: "Bards Inn",
+        businessDate: "2026-01-12",
+        accountLines: [],
+      };
+      mockS3Client.send.mockResolvedValue({
+        Body: {
+          transformToByteArray: async () =>
+            Buffer.from(JSON.stringify(mockPdfData)),
+        },
+      });
+
+      const event = createMockEventBridgeEvent(
+        "daily-batch",
+        undefined,
+        undefined,
+        businessDate,
+      );
+      const context = createMockLambdaContext();
+
+      await handler(event, context);
+
+      // Should query both the business date folder and the next day's folder
+      expect(mockRetryS3Operation).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.any(String),
+        "list_daily_files_target_date",
+      );
+    });
+
+    it("should return message when files exist but none match business date", async () => {
+      const businessDate = "2026-01-12";
+
+      // Mock S3 list to return files
+      mockRetryS3Operation.mockResolvedValue({
+        Contents: [
+          {
+            Key: "daily-files/bards-inn/2026-01-13/DailyReport_abc.pdf",
+            LastModified: new Date("2026-01-13T10:00:00Z"),
+            Size: 1000,
+          },
+        ],
+      });
+
+      // Mock S3 GetObject for file download - return PDF data with different business date
+      const mockPdfData = {
+        propertyName: "Bards Inn",
+        businessDate: "2026-01-11", // Different from requested
+        accountLines: [],
+      };
+      mockS3Client.send.mockResolvedValue({
+        Body: {
+          transformToByteArray: async () =>
+            Buffer.from(JSON.stringify(mockPdfData)),
+        },
+      });
+
+      const event = createMockEventBridgeEvent(
+        "daily-batch",
+        undefined,
+        undefined,
+        businessDate,
+      );
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.message).toContain("No files found matching business date");
+    });
+
+    it("should handle error during businessDate reprocessing", async () => {
+      const businessDate = "2026-01-12";
+
+      // Mock S3 list to throw an error
+      mockRetryS3Operation.mockRejectedValue(new Error("S3 connection failed"));
+
+      const event = createMockEventBridgeEvent(
+        "daily-batch",
+        undefined,
+        undefined,
+        businessDate,
+      );
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(500);
+      expect(result.message).toContain("Failed to reprocess business date");
+    });
+  });
+
+  describe("downloadAndParseFile", () => {
+    it("should download and parse a file successfully", async () => {
+      const processor = new FileProcessor();
+
+      // Mock retryS3Operation to return valid file content
+      // The TXT parser expects simple text format, so return plain text
+      const mockContent = `Property Name: Test Property
+Business Date: 2026-01-12
+Room Revenue: 500.00`;
+
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Body: Buffer.from(mockContent),
+      });
+
+      const file = {
+        key: "daily-files/test-property/2026-01-12/DailyReport.txt",
+        filename: "DailyReport.txt",
+        lastModified: new Date(),
+        size: 1000,
+      };
+
+      const result = await (processor as any).downloadAndParseFile(
+        file,
+        "test-correlation-id",
+      );
+
+      // The txt parser should parse this successfully
+      expect(result).not.toBeNull();
+      expect(result?.fileKey).toBe(file.key);
+    });
+
+    it("should return null when file download fails", async () => {
+      const processor = new FileProcessor();
+
+      // Mock retryS3Operation to throw error
+      mockRetryS3Operation.mockRejectedValueOnce(new Error("Download failed"));
+
+      const file = {
+        key: "daily-files/test-property/2026-01-12/DailyReport.txt",
+        filename: "DailyReport.txt",
+        lastModified: new Date(),
+        size: 1000,
+      };
+
+      const result = await (processor as any).downloadAndParseFile(
+        file,
+        "test-correlation-id",
+      );
+
+      expect(result).toBeNull();
+    });
+
+    it("should extract property ID from file key path", async () => {
+      const processor = new FileProcessor();
+
+      // Simple content that parses successfully
+      mockRetryS3Operation.mockResolvedValueOnce({
+        Body: Buffer.from("Simple content"),
+      });
+
+      const file = {
+        key: "daily-files/bards-inn/2026-01-12/DailyReport.txt",
+        filename: "DailyReport.txt",
+        lastModified: new Date(),
+        size: 100,
+      };
+
+      const result = await (processor as any).downloadAndParseFile(
+        file,
+        "test-correlation-id",
+      );
+
+      // Should extract property ID from path when propertyName not in parsed data
+      expect(result?.propertyId).toBe("bards-inn");
+    });
+  });
+
+  describe("getFolderDatesToQuery", () => {
+    it("should return the business date and next day", () => {
+      const processor = new FileProcessor();
+
+      const result = (processor as any).getFolderDatesToQuery("2026-01-12");
+
+      expect(result).toEqual(["2026-01-12", "2026-01-13"]);
+    });
+
+    it("should handle month boundaries correctly", () => {
+      const processor = new FileProcessor();
+
+      const result = (processor as any).getFolderDatesToQuery("2026-01-31");
+
+      expect(result).toEqual(["2026-01-31", "2026-02-01"]);
+    });
+
+    it("should handle year boundaries correctly", () => {
+      const processor = new FileProcessor();
+
+      const result = (processor as any).getFolderDatesToQuery("2025-12-31");
+
+      expect(result).toEqual(["2025-12-31", "2026-01-01"]);
+    });
+  });
+
+  describe("reprocessBusinessDate", () => {
+    it("should filter files by business date and log matches correctly", async () => {
+      const processor = new FileProcessor();
+      const businessDate = "2026-01-12";
+
+      // Mock S3 list operation to return files
+      mockRetryS3Operation.mockImplementation(
+        (fn, _correlationId, operation) => {
+          if (operation === "list_daily_files_target_date") {
+            return Promise.resolve({
+              Contents: [
+                {
+                  Key: "daily-files/bards-inn/2026-01-12/DailyReport_abc.txt",
+                  LastModified: new Date(),
+                  Size: 100,
+                },
+                {
+                  Key: "daily-files/crown-city/2026-01-13/DailyReport_def.txt",
+                  LastModified: new Date(),
+                  Size: 100,
+                },
+              ],
+            });
+          }
+          return fn();
+        },
+      );
+
+      // Mock file downloads - return content with business dates
+      let downloadCount = 0;
+      mockS3Client.send.mockImplementation(() => {
+        downloadCount++;
+        // First file has matching business date, second doesn't
+        const content =
+          downloadCount === 1
+            ? `Property Name: Bards Inn\nBusiness Date: 2026-01-12\nRevenue: 100`
+            : `Property Name: Crown City\nBusiness Date: 2026-01-11\nRevenue: 200`;
+        return Promise.resolve({
+          Body: Buffer.from(content),
+        });
+      });
+
+      const result = await (processor as any).reprocessBusinessDate(
+        businessDate,
+        "test-correlation-id",
+      );
+
+      // Should find 2 files total but message should indicate filtering occurred
+      expect(result.summary.filesFound).toBe(2);
+    });
+
+    it("should handle files with unparseable business date", async () => {
+      const processor = new FileProcessor();
+      const businessDate = "2026-01-12";
+
+      // Mock S3 list operation
+      mockRetryS3Operation.mockResolvedValue({
+        Contents: [
+          {
+            Key: "daily-files/test/2026-01-12/DailyReport.txt",
+            LastModified: new Date(),
+            Size: 100,
+          },
+        ],
+      });
+
+      // Mock file download with content that won't have a valid businessDate after parsing
+      mockS3Client.send.mockResolvedValue({
+        Body: Buffer.from("Invalid content without business date"),
+      });
+
+      const result = await (processor as any).reprocessBusinessDate(
+        businessDate,
+        "test-correlation-id",
+      );
+
+      // Should complete but find no matching files
+      expect(result.statusCode).toBe(200);
+      expect(result.message).toContain("No files found matching business date");
     });
   });
 

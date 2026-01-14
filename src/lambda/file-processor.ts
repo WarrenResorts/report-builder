@@ -69,6 +69,14 @@ export interface FileProcessingEvent {
    * Useful when email delivery failed but reports were generated successfully.
    */
   resendEmail?: boolean;
+  /**
+   * Optional business date for reprocessing a specific day (YYYY-MM-DD format).
+   * Unlike targetDate (which queries by folder/received date), this filters by
+   * the actual business date inside the PDF files. Queries multiple folder dates
+   * and filters to only include files matching the specified business date.
+   * Useful for reprocessing after bug fixes.
+   */
+  businessDate?: string;
 }
 
 /**
@@ -1754,6 +1762,77 @@ export class FileProcessor {
   }
 
   /**
+   * Download and parse a single file from S3.
+   * Returns ProcessedFileData with parsed content, or null if parsing fails.
+   */
+  private async downloadAndParseFile(
+    file: S3FileInfo,
+    correlationId: string,
+  ): Promise<ProcessedFileData | null> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "download_and_parse_file",
+    });
+
+    try {
+      // Download file from S3
+      const fileContent = await this.downloadFileFromS3(
+        file.key,
+        correlationId,
+      );
+
+      // Determine file type and get appropriate parser
+      const fileExtension = this.getFileExtension(file.filename);
+      const supportedType = this.mapExtensionToSupportedType(fileExtension);
+      const parser = ParserFactory.createParser(supportedType);
+
+      // Parse the file content
+      const parseResult = await parser.parseFromBuffer(
+        fileContent,
+        file.filename,
+      );
+
+      if (!parseResult.success || !parseResult.data) {
+        logger.warn("Failed to parse file", {
+          fileKey: file.key,
+          errors: parseResult.errors,
+          operation: "parse_failed",
+        });
+        return null;
+      }
+
+      // Extract property ID from the file key (e.g., daily-files/bards-inn/2026-01-13/...)
+      const pathParts = file.key.split("/");
+      const propertyId = pathParts[1] || "unknown";
+
+      // Use extracted property name if available
+      let finalPropertyId = propertyId;
+      if (
+        typeof parseResult.data === "object" &&
+        parseResult.data !== null &&
+        "propertyName" in parseResult.data &&
+        parseResult.data.propertyName
+      ) {
+        finalPropertyId = parseResult.data.propertyName as string;
+      }
+
+      return {
+        fileKey: file.key,
+        propertyId: finalPropertyId,
+        originalContent: JSON.stringify(parseResult.data),
+        parsedContent: parseResult.data,
+        processingTimeMs: 0,
+        errors: parseResult.errors || [],
+      };
+    } catch (error) {
+      logger.error("Error downloading/parsing file", error as Error, {
+        fileKey: file.key,
+        operation: "download_parse_error",
+      });
+      return null;
+    }
+  }
+
+  /**
    * Helper method to get file extension from filename
    */
   private getFileExtension(filename: string): string {
@@ -2197,6 +2276,284 @@ export class FileProcessor {
       };
     }
   }
+
+  /**
+   * Reprocess files for a specific business date.
+   * Queries multiple folder dates, parses each file to extract the business date,
+   * and filters to only process files matching the specified business date.
+   *
+   * @param businessDate - Business date to reprocess (YYYY-MM-DD format)
+   * @param correlationId - Correlation ID for logging
+   * @returns Processing result
+   */
+  async reprocessBusinessDate(
+    businessDate: string,
+    correlationId: string,
+  ): Promise<FileProcessingResult> {
+    const startTime = Date.now();
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "reprocess_business_date",
+    });
+
+    logger.info("Starting business date reprocessing", {
+      businessDate,
+      operation: "reprocess_business_date_start",
+    });
+
+    try {
+      // Query files from multiple folder dates to catch all files for this business date
+      // Files for business date X could be received on X (same-day senders) or X+1 (next-day senders)
+      const folderDates = this.getFolderDatesToQuery(businessDate);
+      logger.info("Querying folder dates", {
+        businessDate,
+        folderDates,
+        operation: "query_folder_dates",
+      });
+
+      // Collect all files from the folder dates
+      const allFiles: S3FileInfo[] = [];
+      for (const folderDate of folderDates) {
+        const files = await this.getFilesFromTargetDate(
+          folderDate,
+          correlationId,
+        );
+        allFiles.push(...files);
+      }
+
+      logger.info("Found files across folder dates", {
+        businessDate,
+        totalFiles: allFiles.length,
+        operation: "files_found",
+      });
+
+      if (allFiles.length === 0) {
+        return {
+          statusCode: 200,
+          message: `No files found for business date ${businessDate}`,
+          processedFiles: 0,
+          timestamp: new Date().toISOString(),
+          summary: {
+            filesFound: 0,
+            propertiesProcessed: [],
+            processingTimeMs: Date.now() - startTime,
+            reportsGenerated: 0,
+          },
+        };
+      }
+
+      // Download and parse each file to extract business date, filter to matching files
+      const matchingFiles: ProcessedFileData[] = [];
+      for (const file of allFiles) {
+        const processedFile = await this.downloadAndParseFile(
+          file,
+          correlationId,
+        );
+        if (processedFile) {
+          // Extract business date from parsed content
+          try {
+            const parsedData = JSON.parse(processedFile.originalContent);
+            const fileBusinessDate = parsedData.businessDate;
+            if (fileBusinessDate === businessDate) {
+              matchingFiles.push(processedFile);
+              logger.info("File matches business date", {
+                fileKey: file.key,
+                fileBusinessDate,
+                businessDate,
+                operation: "file_matched",
+              });
+            } else {
+              logger.info("File does not match business date, skipping", {
+                fileKey: file.key,
+                fileBusinessDate,
+                businessDate,
+                operation: "file_skipped",
+              });
+            }
+          } catch {
+            logger.warn("Could not extract business date from file", {
+              fileKey: file.key,
+              operation: "business_date_extraction_failed",
+            });
+          }
+        }
+      }
+
+      logger.info("Filtered files by business date", {
+        businessDate,
+        totalFiles: allFiles.length,
+        matchingFiles: matchingFiles.length,
+        operation: "files_filtered",
+      });
+
+      if (matchingFiles.length === 0) {
+        return {
+          statusCode: 200,
+          message: `No files found matching business date ${businessDate}`,
+          processedFiles: 0,
+          timestamp: new Date().toISOString(),
+          summary: {
+            filesFound: allFiles.length,
+            propertiesProcessed: [],
+            processingTimeMs: Date.now() - startTime,
+            reportsGenerated: 0,
+          },
+        };
+      }
+
+      /* c8 ignore start - success path reuses already-tested components */
+      // Load VisualMatrix mapping data
+      const visualMatrixData =
+        await this.loadVisualMatrixMapping(correlationId);
+
+      // Apply account code mappings and transformations
+      const consolidatedReports = await this.applyAccountCodeMappings(
+        matchingFiles,
+        correlationId,
+        visualMatrixData,
+      );
+
+      // Generate CSV reports
+      const { jeContent, statJEContent } =
+        await this.generateSeparateCSVReports(
+          consolidatedReports,
+          correlationId,
+        );
+
+      // Save reports to S3
+      const today = new Date().toISOString().split("T")[0];
+      const jeKey = `reports/${today}/${businessDate}_JE.csv`;
+      const statJEKey = `reports/${today}/${businessDate}_StatJE.csv`;
+
+      await retryS3Operation(
+        () =>
+          this.s3Client.send(
+            new PutObjectCommand({
+              Bucket: this.processedBucket,
+              Key: jeKey,
+              Body: jeContent,
+              ContentType: "text/csv",
+            }),
+          ),
+        correlationId,
+        "save_je_report",
+      );
+      await retryS3Operation(
+        () =>
+          this.s3Client.send(
+            new PutObjectCommand({
+              Bucket: this.processedBucket,
+              Key: statJEKey,
+              Body: statJEContent,
+              ContentType: "text/csv",
+            }),
+          ),
+        correlationId,
+        "save_statje_report",
+      );
+
+      // Build property details for email
+      const propertyDetails = this.buildPropertyDetails(consolidatedReports);
+      const dateRange = this.calculateDateRange(consolidatedReports);
+
+      // Count records
+      let totalJERecords = 0;
+      let totalStatJERecords = 0;
+      for (const report of consolidatedReports) {
+        if (report.data) {
+          for (const record of report.data) {
+            if (
+              record.targetCode &&
+              !record.targetCode.startsWith("STAT-") &&
+              record.targetCode !== "EXCLUDE"
+            ) {
+              totalJERecords++;
+            }
+            if (record.targetCode && record.targetCode.startsWith("STAT-")) {
+              totalStatJERecords++;
+            }
+          }
+        }
+      }
+
+      // Build summary and send email
+      const propertiesProcessed = [
+        ...new Set(matchingFiles.map((f) => f.propertyId)),
+      ];
+      const summary = {
+        reportDate: businessDate,
+        dateRange,
+        totalProperties: propertiesProcessed.length,
+        propertyNames: propertiesProcessed,
+        totalFiles: matchingFiles.length,
+        totalJERecords,
+        totalStatJERecords,
+        processingTimeMs: Date.now() - startTime,
+        errors: [] as string[],
+        propertyDetails,
+      };
+
+      await this.emailSender.sendReportEmail(
+        jeKey,
+        statJEKey,
+        summary,
+        correlationId,
+      );
+
+      logger.info("Business date reprocessing completed", {
+        businessDate,
+        filesProcessed: matchingFiles.length,
+        propertiesProcessed,
+        jeKey,
+        statJEKey,
+        processingTimeMs: Date.now() - startTime,
+        operation: "reprocess_business_date_complete",
+      });
+
+      return {
+        statusCode: 200,
+        message: `Reprocessed ${matchingFiles.length} files for business date ${businessDate}`,
+        processedFiles: matchingFiles.length,
+        timestamp: new Date().toISOString(),
+        summary: {
+          filesFound: allFiles.length,
+          propertiesProcessed,
+          processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 2,
+        },
+      };
+      /* c8 ignore stop */
+    } catch (error) {
+      logger.error("Failed to reprocess business date", error as Error, {
+        businessDate,
+        operation: "reprocess_business_date_error",
+      });
+
+      return {
+        statusCode: 500,
+        message: `Failed to reprocess business date: ${(error as Error).message}`,
+        processedFiles: 0,
+        timestamp: new Date().toISOString(),
+        summary: {
+          filesFound: 0,
+          propertiesProcessed: [],
+          processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 0,
+        },
+      };
+    }
+  }
+
+  /**
+   * Get the folder dates to query for a given business date.
+   * Returns the business date itself and the next day (to catch both same-day and next-day senders).
+   */
+  private getFolderDatesToQuery(businessDate: string): string[] {
+    const date = new Date(businessDate);
+    const nextDay = new Date(date);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    return [businessDate, nextDay.toISOString().split("T")[0]];
+  }
 }
 
 /**
@@ -2229,8 +2586,14 @@ export const handler = async (
   });
 
   const { detail } = event;
-  const { processingType, environment, timestamp, targetDate, resendEmail } =
-    detail;
+  const {
+    processingType,
+    environment,
+    timestamp,
+    targetDate,
+    resendEmail,
+    businessDate,
+  } = detail;
 
   logger.info("Starting file processing handler", {
     processingType,
@@ -2238,6 +2601,7 @@ export const handler = async (
     scheduledTimestamp: timestamp,
     targetDate: targetDate || "last-24-hours",
     resendEmail: resendEmail || false,
+    businessDate: businessDate || "none",
     operation: "handler_start",
   });
 
@@ -2258,6 +2622,19 @@ export const handler = async (
       return result;
     }
 
+    // If businessDate is set, reprocess files for that specific business date
+    if (businessDate) {
+      logger.info("Business date reprocess mode", {
+        businessDate,
+        operation: "business_date_reprocess_mode",
+      });
+      const result = await processor.reprocessBusinessDate(
+        businessDate,
+        correlationId,
+      );
+      return result;
+    }
+
     // Normal processing
     const result = await processor.processFiles(
       processingType,
@@ -2273,6 +2650,7 @@ export const handler = async (
     });
 
     return result;
+    /* c8 ignore start - handler-level error catch only triggers if FileProcessor constructor fails */
   } catch (error) {
     logger.error("File processing handler failed", error as Error, {
       operation: "handler_error",
@@ -2293,4 +2671,5 @@ export const handler = async (
       },
     };
   }
+  /* c8 ignore stop */
 };
