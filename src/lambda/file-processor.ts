@@ -1794,7 +1794,7 @@ export class FileProcessor {
       if (!parseResult.success || !parseResult.data) {
         logger.warn("Failed to parse file", {
           fileKey: file.key,
-          errors: parseResult.errors,
+          error: parseResult.error,
           operation: "parse_failed",
         });
         return null;
@@ -1819,9 +1819,9 @@ export class FileProcessor {
         fileKey: file.key,
         propertyId: finalPropertyId,
         originalContent: JSON.stringify(parseResult.data),
-        parsedContent: parseResult.data,
-        processingTimeMs: 0,
-        errors: parseResult.errors || [],
+        transformedData: [],
+        processingTime: 0,
+        errors: parseResult.error ? [parseResult.error.message] : [],
       };
     } catch (error) {
       logger.error("Error downloading/parsing file", error as Error, {
@@ -2452,15 +2452,23 @@ export class FileProcessor {
       );
 
       // Build property details for email
-      const propertyDetails = this.buildPropertyDetails(consolidatedReports);
-      const dateRange = this.calculateDateRange(consolidatedReports);
+      const propertyDetails = this.buildPropertyDetails(
+        consolidatedReports as Array<{
+          propertyId: string;
+          propertyName: string;
+          reportDate: string;
+          data?: Array<{ targetCode?: string; sourceCode?: string }>;
+        }>,
+      );
+      const reportDates = consolidatedReports.map((r) => r.reportDate);
+      const dateRange = this.calculateDateRange(reportDates);
 
       // Count records
       let totalJERecords = 0;
       let totalStatJERecords = 0;
       for (const report of consolidatedReports) {
         if (report.data) {
-          for (const record of report.data) {
+          for (const record of report.data as Array<{ targetCode?: string }>) {
             if (
               record.targetCode &&
               !record.targetCode.startsWith("STAT-") &&
