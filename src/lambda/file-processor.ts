@@ -19,6 +19,7 @@ import {
   ListObjectsV2Command,
   GetObjectCommand,
   PutObjectCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { EventBridgeEvent, Context } from "aws-lambda";
 import { createCorrelatedLogger } from "../utils/logger";
@@ -56,6 +57,18 @@ export interface FileProcessingEvent {
   environment: string;
   timestamp: string;
   scheduleExpression: string;
+  /**
+   * Optional target date for reprocessing a specific day (YYYY-MM-DD format).
+   * If provided, processes files from that date's folder instead of last 24 hours.
+   * Useful for reprocessing after bug fixes or handling missed days.
+   */
+  targetDate?: string;
+  /**
+   * Optional flag to resend email for existing reports without reprocessing files.
+   * Requires targetDate to be set. Looks for existing reports in S3 and sends them.
+   * Useful when email delivery failed but reports were generated successfully.
+   */
+  resendEmail?: boolean;
 }
 
 /**
@@ -188,10 +201,14 @@ export class FileProcessor {
 
   /**
    * Process files for the given processing type and time window
+   * @param processingType - Type of processing (daily-batch or weekly-report)
+   * @param correlationId - Correlation ID for logging
+   * @param targetDate - Optional specific date to process (YYYY-MM-DD). If not provided, processes last 24 hours.
    */
   async processFiles(
     processingType: "daily-batch" | "weekly-report",
     correlationId: string,
+    targetDate?: string,
   ): Promise<FileProcessingResult> {
     const startTime = Date.now();
     const logger = createCorrelatedLogger(correlationId, {
@@ -201,12 +218,15 @@ export class FileProcessor {
     logger.info("Starting file processing", {
       processingType,
       incomingBucket: this.incomingBucket,
+      targetDate: targetDate || "last-24-hours",
       operation: "process_files_start",
     });
 
     try {
-      // Step 1: Query S3 for files from the last 24 hours
-      const files = await this.getFilesFromLast24Hours(correlationId);
+      // Step 1: Query S3 for files (either from specific date or last 24 hours)
+      const files = targetDate
+        ? await this.getFilesFromTargetDate(targetDate, correlationId)
+        : await this.getFilesFromLast24Hours(correlationId);
 
       logger.info("Files retrieved from S3", {
         fileCount: files.length,
@@ -484,6 +504,84 @@ export class FileProcessor {
       logger.error("Failed to query S3 for files", error as Error, {
         bucket: this.incomingBucket,
         operation: "s3_query_error",
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Query S3 for files from a specific target date across all properties.
+   * Used for reprocessing a specific day's data.
+   * @param targetDate - Date to query in YYYY-MM-DD format
+   * @param correlationId - Correlation ID for logging
+   */
+  private async getFilesFromTargetDate(
+    targetDate: string,
+    correlationId: string,
+  ): Promise<S3FileInfo[]> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "get_files_target_date",
+    });
+
+    const files: S3FileInfo[] = [];
+
+    logger.info("Querying S3 for files from target date", {
+      bucket: this.incomingBucket,
+      targetDate,
+      operation: "s3_query_target_date_start",
+    });
+
+    try {
+      // List all objects in daily-files prefix to find all properties
+      const command = new ListObjectsV2Command({
+        Bucket: this.incomingBucket,
+        Prefix: "daily-files/",
+      });
+
+      const response = await retryS3Operation(
+        () => this.s3Client.send(command),
+        correlationId,
+        "list_daily_files_target_date",
+      );
+
+      if (!response.Contents) {
+        logger.info("No files found in S3", {
+          operation: "s3_query_target_date_empty",
+        });
+        return files;
+      }
+
+      // Filter files by the target date in the S3 path
+      // Path format: daily-files/{propertyId}/{YYYY-MM-DD}/{filename}
+      for (const object of response.Contents) {
+        if (!object.Key || !object.LastModified || !object.Size) continue;
+
+        const parts = object.Key.split("/");
+        if (parts.length >= 4 && parts[2] === targetDate) {
+          const fileInfo = this.parseS3FileKey(
+            object.Key,
+            object.LastModified,
+            object.Size,
+          );
+          if (fileInfo) {
+            files.push(fileInfo);
+          }
+        }
+      }
+
+      logger.info("S3 target date query completed", {
+        targetDate,
+        totalObjects: response.Contents.length,
+        matchingFiles: files.length,
+        operation: "s3_query_target_date_complete",
+      });
+
+      return files;
+    } catch (error) {
+      logger.error("Failed to query S3 for target date files", error as Error, {
+        bucket: this.incomingBucket,
+        targetDate,
+        operation: "s3_query_target_date_error",
       });
       throw error;
     }
@@ -1967,6 +2065,138 @@ export class FileProcessor {
     };
     return `${formatDate(uniqueDates[0])} - ${formatDate(uniqueDates[uniqueDates.length - 1])}`;
   }
+
+  /**
+   * Resend email for existing reports without reprocessing files.
+   * Looks for existing JE and StatJE reports in S3 for the given date and sends them.
+   *
+   * @param targetDate - Date to resend reports for (YYYY-MM-DD format)
+   * @param correlationId - Correlation ID for logging
+   * @returns Processing result
+   */
+  async resendEmailForDate(
+    targetDate: string,
+    correlationId: string,
+  ): Promise<FileProcessingResult> {
+    const startTime = Date.now();
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "resend_email",
+    });
+
+    logger.info("Starting email resend for existing reports", {
+      targetDate,
+      operation: "resend_email_start",
+    });
+
+    try {
+      // Calculate the report folder date (reports are stored in folder for the day AFTER the business date)
+      // e.g., reports for 2026-01-13 are in folder 2026-01-14
+      const businessDate = new Date(targetDate);
+      const reportFolderDate = new Date(businessDate);
+      reportFolderDate.setDate(reportFolderDate.getDate() + 1);
+      const reportFolderDateStr = reportFolderDate.toISOString().split("T")[0];
+
+      // Construct expected report keys
+      const jeReportKey = `reports/${reportFolderDateStr}/${targetDate}_JE.csv`;
+      const statJEReportKey = `reports/${reportFolderDateStr}/${targetDate}_StatJE.csv`;
+
+      logger.info("Looking for existing reports", {
+        jeReportKey,
+        statJEReportKey,
+        operation: "check_existing_reports",
+      });
+
+      // Verify reports exist in S3
+      const headCommand = new HeadObjectCommand({
+        Bucket: this.processedBucket,
+        Key: jeReportKey,
+      });
+
+      try {
+        await this.s3Client.send(headCommand);
+      } catch {
+        logger.error(
+          "JE report not found in S3",
+          new Error("Report not found"),
+          {
+            jeReportKey,
+            operation: "report_not_found",
+          },
+        );
+        return {
+          statusCode: 404,
+          message: `Reports not found for date ${targetDate}. Expected: ${jeReportKey}`,
+          processedFiles: 0,
+          timestamp: new Date().toISOString(),
+          summary: {
+            filesFound: 0,
+            propertiesProcessed: [],
+            processingTimeMs: Date.now() - startTime,
+            reportsGenerated: 0,
+          },
+        };
+      }
+
+      // Build a simple summary for the email
+      const summary = {
+        reportDate: targetDate,
+        totalProperties: 0,
+        propertyNames: [] as string[],
+        totalFiles: 0,
+        totalJERecords: 0,
+        totalStatJERecords: 0,
+        processingTimeMs: Date.now() - startTime,
+        errors: [] as string[],
+      };
+
+      // Send the email
+      await this.emailSender.sendReportEmail(
+        jeReportKey,
+        statJEReportKey,
+        summary,
+        correlationId,
+      );
+
+      logger.info("Email resent successfully", {
+        targetDate,
+        jeReportKey,
+        statJEReportKey,
+        processingTimeMs: Date.now() - startTime,
+        operation: "resend_email_success",
+      });
+
+      return {
+        statusCode: 200,
+        message: `Email resent successfully for reports from ${targetDate}`,
+        processedFiles: 0,
+        timestamp: new Date().toISOString(),
+        summary: {
+          filesFound: 0,
+          propertiesProcessed: [],
+          processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 2,
+        },
+      };
+    } catch (error) {
+      logger.error("Failed to resend email", error as Error, {
+        targetDate,
+        operation: "resend_email_error",
+      });
+
+      return {
+        statusCode: 500,
+        message: `Failed to resend email: ${(error as Error).message}`,
+        processedFiles: 0,
+        timestamp: new Date().toISOString(),
+        summary: {
+          filesFound: 0,
+          propertiesProcessed: [],
+          processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 0,
+        },
+      };
+    }
+  }
 }
 
 /**
@@ -1999,19 +2229,41 @@ export const handler = async (
   });
 
   const { detail } = event;
-  const { processingType, environment, timestamp } = detail;
+  const { processingType, environment, timestamp, targetDate, resendEmail } =
+    detail;
 
   logger.info("Starting file processing handler", {
     processingType,
     environment,
     scheduledTimestamp: timestamp,
+    targetDate: targetDate || "last-24-hours",
+    resendEmail: resendEmail || false,
     operation: "handler_start",
   });
 
   try {
-    // Create file processor instance and delegate processing
+    // Create file processor instance
     const processor = new FileProcessor();
-    const result = await processor.processFiles(processingType, correlationId);
+
+    // If resendEmail is true, skip processing and just send email for existing reports
+    if (resendEmail && targetDate) {
+      logger.info("Resend email mode - skipping file processing", {
+        targetDate,
+        operation: "resend_email_mode",
+      });
+      const result = await processor.resendEmailForDate(
+        targetDate,
+        correlationId,
+      );
+      return result;
+    }
+
+    // Normal processing
+    const result = await processor.processFiles(
+      processingType,
+      correlationId,
+      targetDate,
+    );
 
     logger.info("File processing handler completed successfully", {
       statusCode: result.statusCode,

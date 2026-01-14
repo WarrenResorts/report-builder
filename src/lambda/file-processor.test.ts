@@ -72,6 +72,8 @@ const createMockLambdaContext = (): Context => ({
 // Helper function to create mock EventBridge event
 const createMockEventBridgeEvent = (
   processingType: "daily-batch" | "weekly-report" = "daily-batch",
+  targetDate?: string,
+  resendEmail?: boolean,
 ): EventBridgeEvent<string, FileProcessingEvent> => ({
   version: "0",
   id: "test-event-id",
@@ -86,6 +88,8 @@ const createMockEventBridgeEvent = (
     environment: "test",
     timestamp: "2024-01-15T10:00:00Z",
     scheduleExpression: "rate(1 day)",
+    targetDate,
+    resendEmail,
   },
 });
 
@@ -222,6 +226,116 @@ describe("File Processor Lambda", () => {
       // Verify the S3 command would be created correctly
       const s3OperationFn = mockRetryS3Operation.mock.calls[0][0];
       expect(s3OperationFn).toBeDefined();
+    });
+
+    it("should process files from specific targetDate when provided", async () => {
+      const targetDate = "2026-01-12";
+
+      // Mock S3 response with files from various dates
+      mockRetryS3Operation.mockResolvedValue({
+        Contents: [
+          // Files matching target date
+          {
+            Key: `daily-files/PROP123/${targetDate}/DailyReport.pdf`,
+            LastModified: new Date("2026-01-12T10:00:00Z"),
+            Size: 1024,
+          },
+          {
+            Key: `daily-files/PROP456/${targetDate}/Report.pdf`,
+            LastModified: new Date("2026-01-12T11:00:00Z"),
+            Size: 2048,
+          },
+          // Files from different dates (should be filtered out)
+          {
+            Key: "daily-files/PROP123/2026-01-11/OldReport.pdf",
+            LastModified: new Date("2026-01-11T10:00:00Z"),
+            Size: 1024,
+          },
+          {
+            Key: "daily-files/PROP789/2026-01-13/FutureReport.pdf",
+            LastModified: new Date("2026-01-13T10:00:00Z"),
+            Size: 1024,
+          },
+        ],
+      });
+
+      const event = createMockEventBridgeEvent("daily-batch", targetDate);
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      // Should only process files from target date (2 files)
+      expect(result.processedFiles).toBe(2);
+      expect(result.summary.filesFound).toBe(2);
+      expect(result.summary.propertiesProcessed).toContain("PROP123");
+      expect(result.summary.propertiesProcessed).toContain("PROP456");
+      // Should NOT include files from other dates
+      expect(result.summary.propertiesProcessed).not.toContain("PROP789");
+
+      // Verify S3 was queried with target date operation
+      expect(mockRetryS3Operation).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.any(String),
+        "list_daily_files_target_date",
+      );
+    });
+
+    it("should use last 24 hours when targetDate is not provided", async () => {
+      mockRetryS3Operation.mockResolvedValue({
+        Contents: createMockS3Objects(),
+      });
+
+      const event = createMockEventBridgeEvent("daily-batch"); // No targetDate
+      const context = createMockLambdaContext();
+
+      await handler(event, context);
+
+      // Should use the 24-hour query, not target date query
+      expect(mockRetryS3Operation).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.any(String),
+        "list_daily_files", // Not "list_daily_files_target_date"
+      );
+    });
+
+    it("should resend email without processing when resendEmail flag is set", async () => {
+      const targetDate = "2026-01-13";
+
+      // Mock S3 HeadObject to return success (report exists)
+      mockS3Client.send.mockResolvedValueOnce({}); // HeadObjectCommand succeeds
+
+      const event = createMockEventBridgeEvent("daily-batch", targetDate, true);
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      // Should return success for email resend
+      expect(result.statusCode).toBe(200);
+      expect(result.message).toContain("Email resent successfully");
+      expect(result.message).toContain(targetDate);
+      // Should NOT call the file listing operation
+      expect(mockRetryS3Operation).not.toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.any(String),
+        "list_daily_files",
+      );
+    });
+
+    it("should return 404 when resendEmail is set but reports do not exist", async () => {
+      const targetDate = "2026-01-13";
+
+      // Mock S3 HeadObject to throw error (report doesn't exist)
+      mockS3Client.send.mockRejectedValueOnce(new Error("Not Found"));
+
+      const event = createMockEventBridgeEvent("daily-batch", targetDate, true);
+      const context = createMockLambdaContext();
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(404);
+      expect(result.message).toContain("Reports not found");
+      expect(result.message).toContain(targetDate);
     });
   });
 
