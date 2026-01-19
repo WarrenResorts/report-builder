@@ -100,6 +100,10 @@ export class AccountLineParser {
     // Format: [Category with spaces]|[Count]|[Amount]|... (category contains spaces, distinguishing from embeddedTransactionCode)
     categorySummaryLine:
       /^([A-Za-z]+(?:\s+[A-Za-z]+)+)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/,
+    // Detail Listing Summary lines: "CITY 017|31|($1,793.87)|..." or "GUEST 024|9|($2,042.46)|..."
+    // Format: [Category] [Number]|[Count]|[Amount]|... (category followed by numeric code, then count and amount)
+    detailListingSummaryLine:
+      /^(CITY|GUEST|TOTAL)\s*(\d*)\|(\d+)\|(\$[\d,.-]+|\([$]?[\d,.-]+\))/i,
     // Amount patterns - more strict, must be complete numbers
     amount: /([-$]?[\d,]+\.?\d*|\([\d,]+\.?\d*\))/g,
     // Payment method patterns
@@ -467,6 +471,39 @@ export class AccountLineParser {
         description: sourceCode,
         amount,
         paymentMethod: this.detectPaymentMethod(line),
+        originalLine: line,
+        lineNumber,
+      };
+    }
+
+    // Try Detail Listing Summary lines: "CITY 017|31|($1,793.87)|..." or "GUEST 024|9|($2,042.46)|..."
+    const detailSummaryMatch = line.match(
+      this.patterns.detailListingSummaryLine,
+    );
+    if (detailSummaryMatch) {
+      // Destructure: [fullMatch, category, categoryNumber, count, amount]
+      // We skip count (_count) as it's not needed for output
+      const [, category, categoryNumber, _count, amountStr] =
+        detailSummaryMatch;
+
+      // Combine category and number for source code (e.g., "CITY 017")
+      const sourceCode = categoryNumber
+        ? `${category.toUpperCase()} ${categoryNumber}`
+        : category.toUpperCase();
+      const amount = this.parseAmount(amountStr);
+
+      if (
+        Math.abs(amount) < (this.config.minimumAmount || 0.01) &&
+        !this.config.includeZeroAmounts
+      ) {
+        return null;
+      }
+
+      return {
+        sourceCode,
+        description: `${sourceCode} Summary`,
+        amount,
+        paymentMethod: undefined,
         originalLine: line,
         lineNumber,
       };

@@ -292,6 +292,72 @@ DIRECT BILLS|3|$385.36|$630.22|($32,565.04)
     });
   });
 
+  describe("Detail Listing Summary Line Parsing", () => {
+    it("should parse CITY summary lines with advance deposit amounts", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+CITY 017|31|($1,793.87)|($1,793.87)|($40,407.42)|$0.04
+CITY 016|0|$0.00|$0.00|$0.00|$0.00
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Only CITY 017 should be parsed (CITY 016 has $0.00 amount)
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        sourceCode: "CITY 017",
+        description: "CITY 017 Summary",
+        amount: -1793.87,
+        paymentMethod: undefined,
+        originalLine: "CITY 017|31|($1,793.87)|($1,793.87)|($40,407.42)|$0.04",
+        lineNumber: 2,
+      });
+    });
+
+    it("should parse GUEST summary lines with negative amounts", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+GUEST 024|9|($2,042.46)|($20,493.36)|($14,810.39)|$1.38
+GUEST 010|30|$2,882.66|$32,338.59|$30,322.85|$1.07
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(2);
+      expect(result[0].sourceCode).toBe("GUEST 024");
+      expect(result[0].amount).toBe(-2042.46);
+      expect(result[1].sourceCode).toBe("GUEST 010");
+      expect(result[1].amount).toBe(2882.66);
+    });
+
+    it("should parse TOTAL summary lines", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+TOTAL|31|($1,793.87)|($1,793.87)|($40,373.72)|$0.04
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].sourceCode).toBe("TOTAL");
+      expect(result[0].description).toBe("TOTAL Summary");
+      expect(result[0].amount).toBe(-1793.87);
+    });
+
+    it("should skip zero amount summary lines", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+CITY 002|0|$0.00|$0.00|$0.00|$0.00
+GUEST 003|0|$0.00|$0.00|$0.00|$0.00
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Both should be skipped due to zero amounts
+      expect(result).toHaveLength(0);
+    });
+  });
+
   describe("Configuration Options", () => {
     it("should skip lines below minimum amount threshold", () => {
       const parser = new AccountLineParser({ minimumAmount: 100.0 });
