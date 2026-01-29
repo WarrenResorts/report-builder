@@ -1223,6 +1223,9 @@ export class FileProcessor {
         continue;
       }
 
+      // Declare businessDate outside try block so it's available in catch for error reporting
+      let businessDate: string | undefined;
+
       try {
         logger.info("Processing file with VisualMatrix mappings", {
           fileKey: file.fileKey,
@@ -1231,7 +1234,6 @@ export class FileProcessor {
 
         // Extract property name and business date from the parsed data
         let propertyName = file.propertyId; // Default fallback
-        let businessDate: string | undefined;
         let parsedData;
         try {
           parsedData = JSON.parse(file.originalContent);
@@ -1281,10 +1283,13 @@ export class FileProcessor {
           propertyConfig,
         );
 
+        // Key by propertyId AND reportDate to handle multiple business dates from same property
+        const reportKey = `${file.propertyId}|${reportDate}`;
+
         if (mappedRecords.length > 0) {
-          // Initialize or update property report
-          if (!reportsByProperty[file.propertyId]) {
-            reportsByProperty[file.propertyId] = {
+          // Initialize or update property report for this specific date
+          if (!reportsByProperty[reportKey]) {
+            reportsByProperty[reportKey] = {
               propertyId: file.propertyId,
               propertyName: propertyName, // Store property name
               reportDate: reportDate, // Use extracted business date
@@ -1300,7 +1305,7 @@ export class FileProcessor {
             };
           }
 
-          const report = reportsByProperty[file.propertyId];
+          const report = reportsByProperty[reportKey];
           report.totalFiles++;
           report.totalRecords += mappedRecords.length;
           report.data.push(...mappedRecords);
@@ -1310,22 +1315,22 @@ export class FileProcessor {
           logger.info("File VisualMatrix mapping completed", {
             fileKey: file.fileKey,
             propertyId: file.propertyId,
+            reportDate: reportDate,
             recordsMapped: mappedRecords.length,
             operation: "mapping_success",
           });
         } else {
           file.errors.push("VisualMatrix mapping failed - no records produced");
 
-          if (reportsByProperty[file.propertyId]) {
-            reportsByProperty[file.propertyId].summary.failedFiles++;
-            reportsByProperty[file.propertyId].summary.errors.push(
-              ...file.errors,
-            );
+          if (reportsByProperty[reportKey]) {
+            reportsByProperty[reportKey].summary.failedFiles++;
+            reportsByProperty[reportKey].summary.errors.push(...file.errors);
           }
 
           logger.warn("File VisualMatrix mapping failed", {
             fileKey: file.fileKey,
             propertyId: file.propertyId,
+            reportDate: reportDate,
             errors: file.errors,
             operation: "mapping_error",
           });
@@ -1334,9 +1339,12 @@ export class FileProcessor {
         const errorMsg = `Transformation error: ${(error as Error).message}`;
         file.errors.push(errorMsg);
 
-        if (reportsByProperty[file.propertyId]) {
-          reportsByProperty[file.propertyId].summary.failedFiles++;
-          reportsByProperty[file.propertyId].summary.errors.push(errorMsg);
+        // Note: reportKey may not be defined if error occurred before it was set
+        // In that case, we can't associate the error with a specific report
+        const errorReportKey = `${file.propertyId}|${businessDate || "unknown"}`;
+        if (reportsByProperty[errorReportKey]) {
+          reportsByProperty[errorReportKey].summary.failedFiles++;
+          reportsByProperty[errorReportKey].summary.errors.push(errorMsg);
         }
 
         logger.error("VisualMatrix mapping processing failed", error as Error, {

@@ -2319,4 +2319,154 @@ Room Revenue: 500.00`;
       expect(dateRange).toBeUndefined();
     });
   });
+
+  describe("Multiple files from same property with different business dates", () => {
+    it("should create separate reports for each business date from the same property", async () => {
+      const processor = new FileProcessor();
+
+      // Simulate 3 files from Sawtooth Inn received on the same day
+      // but with different business dates (01/23, 01/24, 01/25)
+      const mockFiles = [
+        {
+          fileKey: "daily-files/sawtooth-inn/2026-01-26/DailyReport_aaa.pdf",
+          propertyId: "sawtooth-inn",
+          originalContent: JSON.stringify({
+            propertyName: "Best Western Sawtooth Inn & Suites",
+            businessDate: "2026-01-24",
+            accountLines: [
+              {
+                sourceCode: "RC",
+                description: "ROOM CHARGE",
+                amount: 2913.6,
+                originalLine: "RC|ROOM CHARGE|33|$2,913.60",
+                lineNumber: 1,
+              },
+            ],
+          }),
+          transformedData: null,
+          errors: [],
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/sawtooth-inn/2026-01-26/DailyReport_bbb.pdf",
+          propertyId: "sawtooth-inn",
+          originalContent: JSON.stringify({
+            propertyName: "Best Western Sawtooth Inn & Suites",
+            businessDate: "2026-01-25",
+            accountLines: [
+              {
+                sourceCode: "RC",
+                description: "ROOM CHARGE",
+                amount: 2278.28,
+                originalLine: "RC|ROOM CHARGE|26|$2,278.28",
+                lineNumber: 1,
+              },
+            ],
+          }),
+          transformedData: null,
+          errors: [],
+          processingTime: 100,
+        },
+        {
+          fileKey: "daily-files/sawtooth-inn/2026-01-26/DailyReport_ccc.pdf",
+          propertyId: "sawtooth-inn",
+          originalContent: JSON.stringify({
+            propertyName: "Best Western Sawtooth Inn & Suites",
+            businessDate: "2026-01-23",
+            accountLines: [
+              {
+                sourceCode: "RC",
+                description: "ROOM CHARGE",
+                amount: 7796.52,
+                originalLine: "RC|ROOM CHARGE|74|$7,796.52",
+                lineNumber: 1,
+              },
+            ],
+          }),
+          transformedData: null,
+          errors: [],
+          processingTime: 100,
+        },
+      ];
+
+      // Mock property config
+      mockParameterStore.getPropertyMapping.mockResolvedValue({
+        "sawtooth-inn": {
+          propertyName: "Best Western Sawtooth Inn & Suites",
+          propertyId: "sawtooth-inn",
+          subsidiaryId: "14",
+          locationInternalId: "16",
+          emailAddresses: [],
+        },
+      });
+
+      // Mock the mapping file with basic mapping for RC (Room Charge)
+      const mockWorkbook = new ExcelJS.Workbook();
+      const mockWorksheet = mockWorkbook.addWorksheet("Sheet1");
+      mockWorksheet.addRow([
+        "Visual Matrix",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Xref Key",
+        "Acct Code",
+      ]);
+      mockWorksheet.addRow(["RC", "", "", "", "", "", "RC", "40110"]);
+
+      // Create mock VisualMatrix data to pass directly (avoids S3 mocking complexity)
+      const mockMapping = {
+        recId: 1,
+        srcAcctCode: "RC",
+        srcAcctDesc: "Room Charge Revenue",
+        xrefKey: "RC",
+        acctId: 1,
+        propertyId: 0,
+        propertyName: "",
+        acctCode: "40110",
+        acctSuffix: "",
+        acctName: "Revenue - Direct Booking",
+        multiplier: 1,
+        created: new Date(),
+        updated: new Date(),
+      };
+      const mockVisualMatrixData = {
+        mappings: [mockMapping],
+        metadata: {
+          totalMappings: 1,
+          uniqueSourceCodes: 1,
+          uniqueTargetCodes: 1,
+          lastUpdated: new Date(),
+          hasPropertySpecificMappings: false,
+        },
+        sourceCodeMap: new Map([["RC", mockMapping]]),
+        targetCodeMap: new Map([["40110", mockMapping]]),
+      };
+
+      // Call the internal applyAccountCodeMappings method directly
+      const consolidatedReports = await (
+        processor as any
+      ).applyAccountCodeMappings(
+        mockFiles,
+        "test-correlation-id",
+        mockVisualMatrixData,
+      );
+
+      // FIXED BEHAVIOR: Should have 3 separate reports, one for each business date
+      // The keying is now by propertyId|businessDate instead of just propertyId
+      expect(consolidatedReports.length).toBe(3);
+
+      // Each report should have the correct business date
+      const reportDates = consolidatedReports.map((r: any) => r.reportDate);
+      expect(reportDates).toContain("2026-01-23");
+      expect(reportDates).toContain("2026-01-24");
+      expect(reportDates).toContain("2026-01-25");
+
+      // Each report should have 1 file (not 3 files consolidated incorrectly)
+      consolidatedReports.forEach((r: any) => {
+        expect(r.totalFiles).toBe(1);
+      });
+    });
+  });
 });
