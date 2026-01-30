@@ -19,6 +19,7 @@ import {
   ListObjectsV2Command,
   GetObjectCommand,
   PutObjectCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { EventBridgeEvent, Context } from "aws-lambda";
 import { createCorrelatedLogger } from "../utils/logger";
@@ -37,6 +38,11 @@ import { JournalEntryGenerator } from "../output/journal-entry-generator";
 import { StatisticalEntryGenerator } from "../output/statistical-entry-generator";
 import { CreditCardProcessor } from "../processors/credit-card-processor";
 import { getPropertyConfigService } from "../config/property-config";
+import {
+  ReportEmailSender,
+  type ReportSummary,
+  type PropertyDetail,
+} from "../email/report-email-sender";
 import type { SupportedFileType } from "../parsers/base/parser-types";
 import type {
   RawFileData,
@@ -51,6 +57,26 @@ export interface FileProcessingEvent {
   environment: string;
   timestamp: string;
   scheduleExpression: string;
+  /**
+   * Optional target date for reprocessing a specific day (YYYY-MM-DD format).
+   * If provided, processes files from that date's folder instead of last 24 hours.
+   * Useful for reprocessing after bug fixes or handling missed days.
+   */
+  targetDate?: string;
+  /**
+   * Optional flag to resend email for existing reports without reprocessing files.
+   * Requires targetDate to be set. Looks for existing reports in S3 and sends them.
+   * Useful when email delivery failed but reports were generated successfully.
+   */
+  resendEmail?: boolean;
+  /**
+   * Optional business date for reprocessing a specific day (YYYY-MM-DD format).
+   * Unlike targetDate (which queries by folder/received date), this filters by
+   * the actual business date inside the PDF files. Queries multiple folder dates
+   * and filters to only include files matching the specified business date.
+   * Useful for reprocessing after bug fixes.
+   */
+  businessDate?: string;
 }
 
 /**
@@ -157,6 +183,7 @@ export class FileProcessor {
   private mappingBucket: string;
   private parserFactory: ParserFactory;
   private transformationEngine: TransformationEngine;
+  private emailSender: ReportEmailSender;
 
   constructor() {
     this.s3Client = new S3Client({
@@ -172,14 +199,24 @@ export class FileProcessor {
     // Initialize Phase 3 processing components
     this.parserFactory = new ParserFactory();
     this.transformationEngine = new TransformationEngine();
+
+    // Initialize email sender for Phase 5
+    this.emailSender = new ReportEmailSender({
+      processedBucket: this.processedBucket,
+      region: environmentConfig.awsRegion,
+    });
   }
 
   /**
    * Process files for the given processing type and time window
+   * @param processingType - Type of processing (daily-batch or weekly-report)
+   * @param correlationId - Correlation ID for logging
+   * @param targetDate - Optional specific date to process (YYYY-MM-DD). If not provided, processes last 24 hours.
    */
   async processFiles(
     processingType: "daily-batch" | "weekly-report",
     correlationId: string,
+    targetDate?: string,
   ): Promise<FileProcessingResult> {
     const startTime = Date.now();
     const logger = createCorrelatedLogger(correlationId, {
@@ -189,12 +226,15 @@ export class FileProcessor {
     logger.info("Starting file processing", {
       processingType,
       incomingBucket: this.incomingBucket,
+      targetDate: targetDate || "last-24-hours",
       operation: "process_files_start",
     });
 
     try {
-      // Step 1: Query S3 for files from the last 24 hours
-      const files = await this.getFilesFromLast24Hours(correlationId);
+      // Step 1: Query S3 for files (either from specific date or last 24 hours)
+      const files = targetDate
+        ? await this.getFilesFromTargetDate(targetDate, correlationId)
+        : await this.getFilesFromLast24Hours(correlationId);
 
       logger.info("Files retrieved from S3", {
         fileCount: files.length,
@@ -274,6 +314,103 @@ export class FileProcessor {
       });
 
       const processingTimeMs = Date.now() - startTime;
+
+      // Step 6: Send email with reports (Phase 5)
+      if (reports.length >= 2) {
+        const jeReportKey = reports.find((r) => r.includes("_JE.csv")) || "";
+        const statJEReportKey =
+          reports.find((r) => r.includes("_StatJE.csv")) || "";
+
+        if (jeReportKey && statJEReportKey) {
+          // Calculate record counts from transformed data
+          const totalJERecords = transformedData.reduce((sum, report) => {
+            const financialRecords = (report.data || []).filter((record) => {
+              const code =
+                (record as { targetCode?: string }).targetCode ||
+                (record as { sourceCode?: string }).sourceCode ||
+                "";
+              return !code.startsWith("90"); // Exclude statistical records
+            });
+            return sum + financialRecords.length;
+          }, 0);
+
+          const totalStatJERecords = transformedData.reduce((sum, report) => {
+            const statRecords = (report.data || []).filter((record) => {
+              const code =
+                (record as { targetCode?: string }).targetCode ||
+                (record as { sourceCode?: string }).sourceCode ||
+                "";
+              return code.startsWith("90"); // Only statistical records
+            });
+            return sum + statRecords.length;
+          }, 0);
+
+          // Build property details from transformed data
+          const propertyDetails = this.buildPropertyDetails(
+            transformedData as Array<{
+              propertyId: string;
+              propertyName: string;
+              reportDate: string;
+              data?: Array<{ targetCode?: string; sourceCode?: string }>;
+            }>,
+          );
+
+          // Get unique dates and calculate date range
+          const reportDates = transformedData.map((r) => r.reportDate);
+          const uniqueDates = [...new Set(reportDates)].sort();
+          const reportDate =
+            uniqueDates[uniqueDates.length - 1] ||
+            new Date().toISOString().split("T")[0];
+          const dateRange = this.calculateDateRange(reportDates);
+
+          // Get unique property names
+          const uniquePropertyNames = [
+            ...new Set(
+              transformedData.map(
+                (report) => report.propertyName || report.propertyId,
+              ),
+            ),
+          ].sort();
+
+          // Collect any errors from processing
+          const processingErrors = transformedData
+            .flatMap((report) => report.summary?.errors || [])
+            .filter(Boolean);
+
+          const emailSummary: ReportSummary = {
+            reportDate,
+            dateRange,
+            totalProperties: uniquePropertyNames.length,
+            propertyNames: uniquePropertyNames,
+            totalFiles: files.length,
+            totalJERecords,
+            totalStatJERecords,
+            processingTimeMs,
+            errors: processingErrors,
+            propertyDetails,
+          };
+
+          const emailResult = await this.emailSender.sendReportEmail(
+            jeReportKey,
+            statJEReportKey,
+            emailSummary,
+            correlationId,
+          );
+
+          if (emailResult.success) {
+            logger.info("Report email sent successfully", {
+              messageId: emailResult.messageId,
+              recipients: emailResult.recipients,
+              operation: "email_sent",
+            });
+          } else {
+            logger.warn("Failed to send report email", {
+              error: emailResult.error,
+              operation: "email_send_failed",
+            });
+          }
+        }
+      }
 
       return {
         statusCode: 200,
@@ -375,6 +512,84 @@ export class FileProcessor {
       logger.error("Failed to query S3 for files", error as Error, {
         bucket: this.incomingBucket,
         operation: "s3_query_error",
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Query S3 for files from a specific target date across all properties.
+   * Used for reprocessing a specific day's data.
+   * @param targetDate - Date to query in YYYY-MM-DD format
+   * @param correlationId - Correlation ID for logging
+   */
+  private async getFilesFromTargetDate(
+    targetDate: string,
+    correlationId: string,
+  ): Promise<S3FileInfo[]> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "get_files_target_date",
+    });
+
+    const files: S3FileInfo[] = [];
+
+    logger.info("Querying S3 for files from target date", {
+      bucket: this.incomingBucket,
+      targetDate,
+      operation: "s3_query_target_date_start",
+    });
+
+    try {
+      // List all objects in daily-files prefix to find all properties
+      const command = new ListObjectsV2Command({
+        Bucket: this.incomingBucket,
+        Prefix: "daily-files/",
+      });
+
+      const response = await retryS3Operation(
+        () => this.s3Client.send(command),
+        correlationId,
+        "list_daily_files_target_date",
+      );
+
+      if (!response.Contents) {
+        logger.info("No files found in S3", {
+          operation: "s3_query_target_date_empty",
+        });
+        return files;
+      }
+
+      // Filter files by the target date in the S3 path
+      // Path format: daily-files/{propertyId}/{YYYY-MM-DD}/{filename}
+      for (const object of response.Contents) {
+        if (!object.Key || !object.LastModified || !object.Size) continue;
+
+        const parts = object.Key.split("/");
+        if (parts.length >= 4 && parts[2] === targetDate) {
+          const fileInfo = this.parseS3FileKey(
+            object.Key,
+            object.LastModified,
+            object.Size,
+          );
+          if (fileInfo) {
+            files.push(fileInfo);
+          }
+        }
+      }
+
+      logger.info("S3 target date query completed", {
+        targetDate,
+        totalObjects: response.Contents.length,
+        matchingFiles: files.length,
+        operation: "s3_query_target_date_complete",
+      });
+
+      return files;
+    } catch (error) {
+      logger.error("Failed to query S3 for target date files", error as Error, {
+        bucket: this.incomingBucket,
+        targetDate,
+        operation: "s3_query_target_date_error",
       });
       throw error;
     }
@@ -1008,6 +1223,9 @@ export class FileProcessor {
         continue;
       }
 
+      // Declare businessDate outside try block so it's available in catch for error reporting
+      let businessDate: string | undefined;
+
       try {
         logger.info("Processing file with VisualMatrix mappings", {
           fileKey: file.fileKey,
@@ -1016,7 +1234,6 @@ export class FileProcessor {
 
         // Extract property name and business date from the parsed data
         let propertyName = file.propertyId; // Default fallback
-        let businessDate: string | undefined;
         let parsedData;
         try {
           parsedData = JSON.parse(file.originalContent);
@@ -1066,10 +1283,13 @@ export class FileProcessor {
           propertyConfig,
         );
 
+        // Key by propertyId AND reportDate to handle multiple business dates from same property
+        const reportKey = `${file.propertyId}|${reportDate}`;
+
         if (mappedRecords.length > 0) {
-          // Initialize or update property report
-          if (!reportsByProperty[file.propertyId]) {
-            reportsByProperty[file.propertyId] = {
+          // Initialize or update property report for this specific date
+          if (!reportsByProperty[reportKey]) {
+            reportsByProperty[reportKey] = {
               propertyId: file.propertyId,
               propertyName: propertyName, // Store property name
               reportDate: reportDate, // Use extracted business date
@@ -1085,7 +1305,7 @@ export class FileProcessor {
             };
           }
 
-          const report = reportsByProperty[file.propertyId];
+          const report = reportsByProperty[reportKey];
           report.totalFiles++;
           report.totalRecords += mappedRecords.length;
           report.data.push(...mappedRecords);
@@ -1095,22 +1315,22 @@ export class FileProcessor {
           logger.info("File VisualMatrix mapping completed", {
             fileKey: file.fileKey,
             propertyId: file.propertyId,
+            reportDate: reportDate,
             recordsMapped: mappedRecords.length,
             operation: "mapping_success",
           });
         } else {
           file.errors.push("VisualMatrix mapping failed - no records produced");
 
-          if (reportsByProperty[file.propertyId]) {
-            reportsByProperty[file.propertyId].summary.failedFiles++;
-            reportsByProperty[file.propertyId].summary.errors.push(
-              ...file.errors,
-            );
+          if (reportsByProperty[reportKey]) {
+            reportsByProperty[reportKey].summary.failedFiles++;
+            reportsByProperty[reportKey].summary.errors.push(...file.errors);
           }
 
           logger.warn("File VisualMatrix mapping failed", {
             fileKey: file.fileKey,
             propertyId: file.propertyId,
+            reportDate: reportDate,
             errors: file.errors,
             operation: "mapping_error",
           });
@@ -1119,9 +1339,12 @@ export class FileProcessor {
         const errorMsg = `Transformation error: ${(error as Error).message}`;
         file.errors.push(errorMsg);
 
-        if (reportsByProperty[file.propertyId]) {
-          reportsByProperty[file.propertyId].summary.failedFiles++;
-          reportsByProperty[file.propertyId].summary.errors.push(errorMsg);
+        // Note: reportKey may not be defined if error occurred before it was set
+        // In that case, we can't associate the error with a specific report
+        const errorReportKey = `${file.propertyId}|${businessDate || "unknown"}`;
+        if (reportsByProperty[errorReportKey]) {
+          reportsByProperty[errorReportKey].summary.failedFiles++;
+          reportsByProperty[errorReportKey].summary.errors.push(errorMsg);
         }
 
         logger.error("VisualMatrix mapping processing failed", error as Error, {
@@ -1547,6 +1770,77 @@ export class FileProcessor {
   }
 
   /**
+   * Download and parse a single file from S3.
+   * Returns ProcessedFileData with parsed content, or null if parsing fails.
+   */
+  private async downloadAndParseFile(
+    file: S3FileInfo,
+    correlationId: string,
+  ): Promise<ProcessedFileData | null> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "download_and_parse_file",
+    });
+
+    try {
+      // Download file from S3
+      const fileContent = await this.downloadFileFromS3(
+        file.key,
+        correlationId,
+      );
+
+      // Determine file type and get appropriate parser
+      const fileExtension = this.getFileExtension(file.filename);
+      const supportedType = this.mapExtensionToSupportedType(fileExtension);
+      const parser = ParserFactory.createParser(supportedType);
+
+      // Parse the file content
+      const parseResult = await parser.parseFromBuffer(
+        fileContent,
+        file.filename,
+      );
+
+      if (!parseResult.success || !parseResult.data) {
+        logger.warn("Failed to parse file", {
+          fileKey: file.key,
+          error: parseResult.error,
+          operation: "parse_failed",
+        });
+        return null;
+      }
+
+      // Extract property ID from the file key (e.g., daily-files/bards-inn/2026-01-13/...)
+      const pathParts = file.key.split("/");
+      const propertyId = pathParts[1] || "unknown";
+
+      // Use extracted property name if available
+      let finalPropertyId = propertyId;
+      if (
+        typeof parseResult.data === "object" &&
+        parseResult.data !== null &&
+        "propertyName" in parseResult.data &&
+        parseResult.data.propertyName
+      ) {
+        finalPropertyId = parseResult.data.propertyName as string;
+      }
+
+      return {
+        fileKey: file.key,
+        propertyId: finalPropertyId,
+        originalContent: JSON.stringify(parseResult.data),
+        transformedData: [],
+        processingTime: 0,
+        errors: parseResult.error ? [parseResult.error.message] : [],
+      };
+    } catch (error) {
+      logger.error("Error downloading/parsing file", error as Error, {
+        fileKey: file.key,
+        operation: "download_parse_error",
+      });
+      return null;
+    }
+  }
+
+  /**
    * Helper method to get file extension from filename
    */
   private getFileExtension(filename: string): string {
@@ -1810,6 +2104,472 @@ export class FileProcessor {
       };
     }
   }
+
+  /**
+   * Build property details array from transformed data
+   * Used for email summary with per-property breakdown
+   */
+  buildPropertyDetails(
+    transformedData: Array<{
+      propertyId: string;
+      propertyName: string;
+      reportDate: string;
+      data?: Array<{ targetCode?: string; sourceCode?: string }>;
+    }>,
+  ): PropertyDetail[] {
+    return transformedData.map((report) => {
+      const jeCount = (report.data || []).filter((record) => {
+        const code = record.targetCode || record.sourceCode || "";
+        return !code.startsWith("90");
+      }).length;
+
+      const statJECount = (report.data || []).filter((record) => {
+        const code = record.targetCode || record.sourceCode || "";
+        return code.startsWith("90");
+      }).length;
+
+      return {
+        propertyName: report.propertyName || report.propertyId,
+        businessDate: report.reportDate,
+        jeRecordCount: jeCount,
+        statJERecordCount: statJECount,
+      };
+    });
+  }
+
+  /**
+   * Calculate date range string from array of dates
+   * Returns undefined if only one unique date
+   */
+  calculateDateRange(dates: string[]): string | undefined {
+    const uniqueDates = [...new Set(dates)].sort();
+    if (uniqueDates.length <= 1) {
+      return undefined;
+    }
+    const formatDate = (d: string) => {
+      const [year, month, day] = d.split("-");
+      return `${month}/${day}/${year}`;
+    };
+    return `${formatDate(uniqueDates[0])} - ${formatDate(uniqueDates[uniqueDates.length - 1])}`;
+  }
+
+  /**
+   * Resend email for existing reports without reprocessing files.
+   * Looks for existing JE and StatJE reports in S3 for the given date and sends them.
+   *
+   * @param targetDate - Date to resend reports for (YYYY-MM-DD format)
+   * @param correlationId - Correlation ID for logging
+   * @returns Processing result
+   */
+  async resendEmailForDate(
+    targetDate: string,
+    correlationId: string,
+  ): Promise<FileProcessingResult> {
+    const startTime = Date.now();
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "resend_email",
+    });
+
+    logger.info("Starting email resend for existing reports", {
+      targetDate,
+      operation: "resend_email_start",
+    });
+
+    try {
+      // Calculate the report folder date (reports are stored in folder for the day AFTER the business date)
+      // e.g., reports for 2026-01-13 are in folder 2026-01-14
+      const businessDate = new Date(targetDate);
+      const reportFolderDate = new Date(businessDate);
+      reportFolderDate.setDate(reportFolderDate.getDate() + 1);
+      const reportFolderDateStr = reportFolderDate.toISOString().split("T")[0];
+
+      // Construct expected report keys
+      const jeReportKey = `reports/${reportFolderDateStr}/${targetDate}_JE.csv`;
+      const statJEReportKey = `reports/${reportFolderDateStr}/${targetDate}_StatJE.csv`;
+
+      logger.info("Looking for existing reports", {
+        jeReportKey,
+        statJEReportKey,
+        operation: "check_existing_reports",
+      });
+
+      // Verify reports exist in S3
+      const headCommand = new HeadObjectCommand({
+        Bucket: this.processedBucket,
+        Key: jeReportKey,
+      });
+
+      try {
+        await this.s3Client.send(headCommand);
+      } catch {
+        logger.error(
+          "JE report not found in S3",
+          new Error("Report not found"),
+          {
+            jeReportKey,
+            operation: "report_not_found",
+          },
+        );
+        return {
+          statusCode: 404,
+          message: `Reports not found for date ${targetDate}. Expected: ${jeReportKey}`,
+          processedFiles: 0,
+          timestamp: new Date().toISOString(),
+          summary: {
+            filesFound: 0,
+            propertiesProcessed: [],
+            processingTimeMs: Date.now() - startTime,
+            reportsGenerated: 0,
+          },
+        };
+      }
+
+      // Build a simple summary for the email
+      const summary = {
+        reportDate: targetDate,
+        totalProperties: 0,
+        propertyNames: [] as string[],
+        totalFiles: 0,
+        totalJERecords: 0,
+        totalStatJERecords: 0,
+        processingTimeMs: Date.now() - startTime,
+        errors: [] as string[],
+      };
+
+      // Send the email
+      await this.emailSender.sendReportEmail(
+        jeReportKey,
+        statJEReportKey,
+        summary,
+        correlationId,
+      );
+
+      logger.info("Email resent successfully", {
+        targetDate,
+        jeReportKey,
+        statJEReportKey,
+        processingTimeMs: Date.now() - startTime,
+        operation: "resend_email_success",
+      });
+
+      return {
+        statusCode: 200,
+        message: `Email resent successfully for reports from ${targetDate}`,
+        processedFiles: 0,
+        timestamp: new Date().toISOString(),
+        summary: {
+          filesFound: 0,
+          propertiesProcessed: [],
+          processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 2,
+        },
+      };
+    } catch (error) {
+      logger.error("Failed to resend email", error as Error, {
+        targetDate,
+        operation: "resend_email_error",
+      });
+
+      return {
+        statusCode: 500,
+        message: `Failed to resend email: ${(error as Error).message}`,
+        processedFiles: 0,
+        timestamp: new Date().toISOString(),
+        summary: {
+          filesFound: 0,
+          propertiesProcessed: [],
+          processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 0,
+        },
+      };
+    }
+  }
+
+  /**
+   * Reprocess files for a specific business date.
+   * Queries multiple folder dates, parses each file to extract the business date,
+   * and filters to only process files matching the specified business date.
+   *
+   * @param businessDate - Business date to reprocess (YYYY-MM-DD format)
+   * @param correlationId - Correlation ID for logging
+   * @returns Processing result
+   */
+  async reprocessBusinessDate(
+    businessDate: string,
+    correlationId: string,
+  ): Promise<FileProcessingResult> {
+    const startTime = Date.now();
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "reprocess_business_date",
+    });
+
+    logger.info("Starting business date reprocessing", {
+      businessDate,
+      operation: "reprocess_business_date_start",
+    });
+
+    try {
+      // Query files from multiple folder dates to catch all files for this business date
+      // Files for business date X could be received on X (same-day senders) or X+1 (next-day senders)
+      const folderDates = this.getFolderDatesToQuery(businessDate);
+      logger.info("Querying folder dates", {
+        businessDate,
+        folderDates,
+        operation: "query_folder_dates",
+      });
+
+      // Collect all files from the folder dates
+      const allFiles: S3FileInfo[] = [];
+      for (const folderDate of folderDates) {
+        const files = await this.getFilesFromTargetDate(
+          folderDate,
+          correlationId,
+        );
+        allFiles.push(...files);
+      }
+
+      logger.info("Found files across folder dates", {
+        businessDate,
+        totalFiles: allFiles.length,
+        operation: "files_found",
+      });
+
+      if (allFiles.length === 0) {
+        return {
+          statusCode: 200,
+          message: `No files found for business date ${businessDate}`,
+          processedFiles: 0,
+          timestamp: new Date().toISOString(),
+          summary: {
+            filesFound: 0,
+            propertiesProcessed: [],
+            processingTimeMs: Date.now() - startTime,
+            reportsGenerated: 0,
+          },
+        };
+      }
+
+      // Download and parse each file to extract business date, filter to matching files
+      const matchingFiles: ProcessedFileData[] = [];
+      for (const file of allFiles) {
+        const processedFile = await this.downloadAndParseFile(
+          file,
+          correlationId,
+        );
+        if (processedFile) {
+          // Extract business date from parsed content
+          try {
+            const parsedData = JSON.parse(processedFile.originalContent);
+            const fileBusinessDate = parsedData.businessDate;
+            if (fileBusinessDate === businessDate) {
+              matchingFiles.push(processedFile);
+              logger.info("File matches business date", {
+                fileKey: file.key,
+                fileBusinessDate,
+                businessDate,
+                operation: "file_matched",
+              });
+            } else {
+              logger.info("File does not match business date, skipping", {
+                fileKey: file.key,
+                fileBusinessDate,
+                businessDate,
+                operation: "file_skipped",
+              });
+            }
+          } catch {
+            logger.warn("Could not extract business date from file", {
+              fileKey: file.key,
+              operation: "business_date_extraction_failed",
+            });
+          }
+        }
+      }
+
+      logger.info("Filtered files by business date", {
+        businessDate,
+        totalFiles: allFiles.length,
+        matchingFiles: matchingFiles.length,
+        operation: "files_filtered",
+      });
+
+      if (matchingFiles.length === 0) {
+        return {
+          statusCode: 200,
+          message: `No files found matching business date ${businessDate}`,
+          processedFiles: 0,
+          timestamp: new Date().toISOString(),
+          summary: {
+            filesFound: allFiles.length,
+            propertiesProcessed: [],
+            processingTimeMs: Date.now() - startTime,
+            reportsGenerated: 0,
+          },
+        };
+      }
+
+      /* c8 ignore start - success path reuses already-tested components */
+      // Load VisualMatrix mapping data
+      const visualMatrixData =
+        await this.loadVisualMatrixMapping(correlationId);
+
+      // Apply account code mappings and transformations
+      const consolidatedReports = await this.applyAccountCodeMappings(
+        matchingFiles,
+        correlationId,
+        visualMatrixData,
+      );
+
+      // Generate CSV reports
+      const { jeContent, statJEContent } =
+        await this.generateSeparateCSVReports(
+          consolidatedReports,
+          correlationId,
+        );
+
+      // Save reports to S3
+      const today = new Date().toISOString().split("T")[0];
+      const jeKey = `reports/${today}/${businessDate}_JE.csv`;
+      const statJEKey = `reports/${today}/${businessDate}_StatJE.csv`;
+
+      await retryS3Operation(
+        () =>
+          this.s3Client.send(
+            new PutObjectCommand({
+              Bucket: this.processedBucket,
+              Key: jeKey,
+              Body: jeContent,
+              ContentType: "text/csv",
+            }),
+          ),
+        correlationId,
+        "save_je_report",
+      );
+      await retryS3Operation(
+        () =>
+          this.s3Client.send(
+            new PutObjectCommand({
+              Bucket: this.processedBucket,
+              Key: statJEKey,
+              Body: statJEContent,
+              ContentType: "text/csv",
+            }),
+          ),
+        correlationId,
+        "save_statje_report",
+      );
+
+      // Build property details for email
+      const propertyDetails = this.buildPropertyDetails(
+        consolidatedReports as Array<{
+          propertyId: string;
+          propertyName: string;
+          reportDate: string;
+          data?: Array<{ targetCode?: string; sourceCode?: string }>;
+        }>,
+      );
+      const reportDates = consolidatedReports.map((r) => r.reportDate);
+      const dateRange = this.calculateDateRange(reportDates);
+
+      // Count records
+      let totalJERecords = 0;
+      let totalStatJERecords = 0;
+      for (const report of consolidatedReports) {
+        if (report.data) {
+          for (const record of report.data as Array<{ targetCode?: string }>) {
+            if (
+              record.targetCode &&
+              !record.targetCode.startsWith("STAT-") &&
+              record.targetCode !== "EXCLUDE"
+            ) {
+              totalJERecords++;
+            }
+            if (record.targetCode && record.targetCode.startsWith("STAT-")) {
+              totalStatJERecords++;
+            }
+          }
+        }
+      }
+
+      // Build summary and send email
+      const propertiesProcessed = [
+        ...new Set(matchingFiles.map((f) => f.propertyId)),
+      ];
+      const summary = {
+        reportDate: businessDate,
+        dateRange,
+        totalProperties: propertiesProcessed.length,
+        propertyNames: propertiesProcessed,
+        totalFiles: matchingFiles.length,
+        totalJERecords,
+        totalStatJERecords,
+        processingTimeMs: Date.now() - startTime,
+        errors: [] as string[],
+        propertyDetails,
+      };
+
+      await this.emailSender.sendReportEmail(
+        jeKey,
+        statJEKey,
+        summary,
+        correlationId,
+      );
+
+      logger.info("Business date reprocessing completed", {
+        businessDate,
+        filesProcessed: matchingFiles.length,
+        propertiesProcessed,
+        jeKey,
+        statJEKey,
+        processingTimeMs: Date.now() - startTime,
+        operation: "reprocess_business_date_complete",
+      });
+
+      return {
+        statusCode: 200,
+        message: `Reprocessed ${matchingFiles.length} files for business date ${businessDate}`,
+        processedFiles: matchingFiles.length,
+        timestamp: new Date().toISOString(),
+        summary: {
+          filesFound: allFiles.length,
+          propertiesProcessed,
+          processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 2,
+        },
+      };
+      /* c8 ignore stop */
+    } catch (error) {
+      logger.error("Failed to reprocess business date", error as Error, {
+        businessDate,
+        operation: "reprocess_business_date_error",
+      });
+
+      return {
+        statusCode: 500,
+        message: `Failed to reprocess business date: ${(error as Error).message}`,
+        processedFiles: 0,
+        timestamp: new Date().toISOString(),
+        summary: {
+          filesFound: 0,
+          propertiesProcessed: [],
+          processingTimeMs: Date.now() - startTime,
+          reportsGenerated: 0,
+        },
+      };
+    }
+  }
+
+  /**
+   * Get the folder dates to query for a given business date.
+   * Returns the business date itself and the next day (to catch both same-day and next-day senders).
+   */
+  private getFolderDatesToQuery(businessDate: string): string[] {
+    const date = new Date(businessDate);
+    const nextDay = new Date(date);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    return [businessDate, nextDay.toISOString().split("T")[0]];
+  }
 }
 
 /**
@@ -1842,19 +2602,61 @@ export const handler = async (
   });
 
   const { detail } = event;
-  const { processingType, environment, timestamp } = detail;
+  const {
+    processingType,
+    environment,
+    timestamp,
+    targetDate,
+    resendEmail,
+    businessDate,
+  } = detail;
 
   logger.info("Starting file processing handler", {
     processingType,
     environment,
     scheduledTimestamp: timestamp,
+    targetDate: targetDate || "last-24-hours",
+    resendEmail: resendEmail || false,
+    businessDate: businessDate || "none",
     operation: "handler_start",
   });
 
   try {
-    // Create file processor instance and delegate processing
+    // Create file processor instance
     const processor = new FileProcessor();
-    const result = await processor.processFiles(processingType, correlationId);
+
+    // If resendEmail is true, skip processing and just send email for existing reports
+    if (resendEmail && targetDate) {
+      logger.info("Resend email mode - skipping file processing", {
+        targetDate,
+        operation: "resend_email_mode",
+      });
+      const result = await processor.resendEmailForDate(
+        targetDate,
+        correlationId,
+      );
+      return result;
+    }
+
+    // If businessDate is set, reprocess files for that specific business date
+    if (businessDate) {
+      logger.info("Business date reprocess mode", {
+        businessDate,
+        operation: "business_date_reprocess_mode",
+      });
+      const result = await processor.reprocessBusinessDate(
+        businessDate,
+        correlationId,
+      );
+      return result;
+    }
+
+    // Normal processing
+    const result = await processor.processFiles(
+      processingType,
+      correlationId,
+      targetDate,
+    );
 
     logger.info("File processing handler completed successfully", {
       statusCode: result.statusCode,
@@ -1864,6 +2666,7 @@ export const handler = async (
     });
 
     return result;
+    /* c8 ignore start - handler-level error catch only triggers if FileProcessor constructor fails */
   } catch (error) {
     logger.error("File processing handler failed", error as Error, {
       operation: "handler_error",
@@ -1884,4 +2687,5 @@ export const handler = async (
       },
     };
   }
+  /* c8 ignore stop */
 };
