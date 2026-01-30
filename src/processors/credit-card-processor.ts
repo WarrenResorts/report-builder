@@ -55,8 +55,8 @@ export class CreditCardProcessor {
 
     for (const record of records) {
       const sourceCode = (record.sourceCode || "").toUpperCase().trim();
-      // Preserve sign for proper arithmetic when combining (e.g., Discover refunds are negative)
-      // We'll take absolute value later when generating the final deposit record
+      // Preserve sign for proper arithmetic when combining and for correct debit/credit handling
+      // Negative = deposit received, Positive = refund/adjustment
       const amount = record.sourceAmount || 0;
 
       // Match payment method summary lines from first page
@@ -86,6 +86,11 @@ export class CreditCardProcessor {
    * 1. VISA/MASTER + DISCOVER combined (they deposit together)
    * 2. AMEX separate
    *
+   * Sign handling:
+   * - In source PDFs, negative amounts (parentheses) = deposits received
+   * - Positive amounts = refunds/adjustments (money going out)
+   * - We negate amounts so: deposits become positive (Debit), refunds become negative (Credit)
+   *
    * @param totals - Credit card totals from first page
    * @param propertyConfig - Property configuration for deposit account
    * @returns Array of deposit records
@@ -98,17 +103,17 @@ export class CreditCardProcessor {
 
     // Combined VISA/MASTER + DISCOVER deposit
     // Amounts are signed (negative = payments/deposits, positive = refunds)
-    // Combined correctly handles Discover refunds (positive) reducing the total
+    // Negate to convert: negative deposits → positive (Debit), positive refunds → negative (Credit)
     const combinedAmount = totals.visaMaster + totals.discover;
-    const absCombined = Math.abs(combinedAmount);
-    if (absCombined > 0) {
+    const mappedCombined = -combinedAmount;
+    if (combinedAmount !== 0) {
       deposits.push({
         sourceCode: "VISA/MASTER",
         sourceDescription: "VISA/MASTER Credit Card Deposit",
-        sourceAmount: absCombined,
+        sourceAmount: mappedCombined,
         targetCode: propertyConfig.creditCardDepositAccount,
         targetDescription: "Cash in Bank : Credit Card Deposits",
-        mappedAmount: absCombined,
+        mappedAmount: mappedCombined,
         paymentMethod: "VISA/MASTER",
         isCreditCardDeposit: true,
       });
@@ -117,28 +122,29 @@ export class CreditCardProcessor {
         visaMaster: totals.visaMaster,
         discover: totals.discover,
         combined: combinedAmount,
-        absoluteDeposit: absCombined,
+        mappedAmount: mappedCombined,
         account: propertyConfig.creditCardDepositAccount,
       });
     }
 
     // Separate AMEX deposit
-    const absAmex = Math.abs(totals.amex);
-    if (absAmex > 0) {
+    // Negate to convert: negative deposits → positive (Debit), positive refunds → negative (Credit)
+    const mappedAmex = -totals.amex;
+    if (totals.amex !== 0) {
       deposits.push({
         sourceCode: "AMEX",
         sourceDescription: "AMEX Credit Card Deposit",
-        sourceAmount: absAmex,
+        sourceAmount: mappedAmex,
         targetCode: propertyConfig.creditCardDepositAccount,
         targetDescription: "Cash in Bank : Credit Card Deposits",
-        mappedAmount: absAmex,
+        mappedAmount: mappedAmex,
         paymentMethod: "AMEX",
         isCreditCardDeposit: true,
       });
 
       this.logger.info("Created AMEX deposit", {
         amex: totals.amex,
-        absoluteDeposit: absAmex,
+        mappedAmount: mappedAmex,
         account: propertyConfig.creditCardDepositAccount,
       });
     }
