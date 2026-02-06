@@ -108,6 +108,9 @@ Daily Schedule: EventBridge → Lambda → Process 24hr files → S3 (output) �
 - [x] **Transaction ID format**: `WRH{SubsidiaryID}` for StatJE entries
 - [x] **All 11 properties configured** with correct NetSuite IDs
 - [x] **Credit card deposit records** (VISA/MASTER+DISCOVER combined, AMEX separate)
+- [x] **Credit card sign handling fix** - AMEX refunds correctly show as Credits, deposits as Debits
+- [x] **Multi-date property consolidation fix** - Separate reports for each business date from same property
+- [x] **Detail Listing Summary parsing** - CITY 017, GUEST, TOTAL summary lines now captured
 
 ### Phase 5: Email Delivery ✅ **[COMPLETED]**
 - [x] SES email sending configuration
@@ -161,11 +164,15 @@ Daily Schedule: EventBridge → Lambda → Process 24hr files → S3 (output) �
 - [x] Unit tests for Lambda functions (email processor)
 - [x] Integration tests for DLQ infrastructure
 - [x] Basic CI/CD pipeline setup
-- [x] Comprehensive parser tests (373+ tests, all coverage thresholds met)
+- [x] Comprehensive parser tests (489+ tests, all coverage thresholds met)
 - [x] Integration tests for file processing logic
 - [x] **End-to-end testing with real data from all 11 properties**
 - [x] Development environment deployment
 - [x] Production environment deployment
+- [x] **Production SES configured** for `aws.warrenresorthotels.com` subdomain
+- [x] **Production Parameter Store configured** (incoming-address, from-address, recipients)
+- [x] **Production EventBridge schedules** aligned with development (1 PM MST daily)
+- [x] **npm audit vulnerabilities resolved** (fast-xml-parser override, removed unused dependencies)
 
 ### Phase 11: Code Quality Optimization 🎯 **[FUTURE]**
 - [ ] Achieve 100% test coverage across all thresholds
