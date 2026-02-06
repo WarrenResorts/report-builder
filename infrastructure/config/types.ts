@@ -8,6 +8,8 @@
 export interface DomainConfig {
   /** Primary domain name for SES (e.g., 'example.com') */
   domainName: string;
+  /** If true, reference an existing SES identity instead of creating one */
+  useExistingIdentity?: boolean;
 }
 
 /**
