@@ -88,11 +88,21 @@ export class SESConstruct extends Construct {
     // SES DOMAIN AND EMAIL CONFIGURATION
     // ===================================================================
     
-    // SES Domain Identity - verify domain ownership for sending/receiving emails
-    // Use the domain from Parameter Store email address to ensure consistency
-    this.domainIdentity = new ses.EmailIdentity(this, 'DomainIdentity', {
-      identity: ses.Identity.domain(emailDomain),
-    });
+    // SES Domain Identity - either create new or reference existing based on config
+    // When useExistingIdentity is true, we skip creation and just store the domain for IAM permissions
+    if (config.domain.useExistingIdentity) {
+      // Don't create - identity already exists and is verified outside of CDK
+      // We'll use the domain directly for IAM permissions
+      // Create a minimal implementation that provides what we need
+      this.domainIdentity = {
+        emailIdentityName: emailDomain,
+      } as ses.IEmailIdentity;
+    } else {
+      // Create new SES Domain Identity - verify domain ownership for sending/receiving emails
+      this.domainIdentity = new ses.EmailIdentity(this, 'DomainIdentity', {
+        identity: ses.Identity.domain(emailDomain),
+      });
+    }
 
     // SES Configuration Set - for email sending configuration and tracking
     this.configurationSet = new ses.ConfigurationSet(this, 'SESConfigurationSet', {
