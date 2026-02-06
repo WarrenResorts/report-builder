@@ -227,6 +227,8 @@ export class SESConstruct extends Construct {
   public createSESPermissions() {
     return {
       // Permissions for Lambda to send emails through SES
+      // Note: In sandbox mode, SES requires permission for both sender AND recipient identities
+      // Using identity/* allows sending to any verified identity (required for sandbox mode)
       sendEmail: new cdk.aws_iam.PolicyStatement({
         effect: cdk.aws_iam.Effect.ALLOW,
         actions: [
@@ -234,7 +236,11 @@ export class SESConstruct extends Construct {
           'ses:SendRawEmail',
         ],
         resources: [
+          // Allow sending from our domain
           `arn:aws:ses:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:identity/${this.domainIdentity.emailIdentityName}`,
+          // Allow sending to any verified identity (required in sandbox mode)
+          `arn:aws:ses:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:identity/*`,
+          // Allow using our configuration set
           `arn:aws:ses:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:configuration-set/${this.configurationSet.configurationSetName}`,
         ],
       }),

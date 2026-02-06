@@ -62,6 +62,28 @@ MS|MISC. CHARGE|0|$0.00|$27.25|$28.75
       expect(result[4].sourceCode).toBe("91");
     });
 
+    it("should skip REFUND AD lines (refunds of advance deposits)", () => {
+      const parser = new AccountLineParser({ includeZeroAmounts: true });
+      const pdfText = `
+7V|ADV DEP VISA|5|($512.33)|($5,426.36)|($4,887.35)
+8A|REFUND AD AMEX|0|$0.00|$0.00|$0.00
+8B|REFUND AD JCB|0|$0.00|$0.00|$0.00
+8C|REFUND AD CASH|0|$0.00|$0.00|$0.00
+8G|REFUND AD DINER|0|$0.00|$0.00|$0.00
+8H|REFUND AD CK|0|$0.00|$0.00|$0.00
+8I|REFUND AD DISCV|0|$0.00|$0.00|$0.00
+8P|REFUND PREPAID|0|$0.00|$0.00|$0.00
+8V|REFUND AD VISA|0|$0.00|$0.00|$124.85
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Should only include ADV DEP VISA, not any REFUND AD lines
+      expect(result).toHaveLength(1);
+      expect(result[0].sourceCode).toBe("7V");
+      expect(result[0].description).toBe("ADV DEP VISA");
+    });
+
     it("should handle mixed case source codes like Pet", () => {
       const parser = new AccountLineParser();
       const pdfText = `
@@ -267,6 +289,72 @@ DIRECT BILLS|3|$385.36|$630.22|($32,565.04)
         originalLine: "DIRECT BILLS|3|$385.36|$630.22|($32,565.04)",
         lineNumber: 3,
       });
+    });
+  });
+
+  describe("Detail Listing Summary Line Parsing", () => {
+    it("should parse CITY summary lines with advance deposit amounts", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+CITY 017|31|($1,793.87)|($1,793.87)|($40,407.42)|$0.04
+CITY 016|0|$0.00|$0.00|$0.00|$0.00
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Only CITY 017 should be parsed (CITY 016 has $0.00 amount)
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        sourceCode: "CITY 017",
+        description: "CITY 017 Summary",
+        amount: -1793.87,
+        paymentMethod: undefined,
+        originalLine: "CITY 017|31|($1,793.87)|($1,793.87)|($40,407.42)|$0.04",
+        lineNumber: 2,
+      });
+    });
+
+    it("should parse GUEST summary lines with negative amounts", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+GUEST 024|9|($2,042.46)|($20,493.36)|($14,810.39)|$1.38
+GUEST 010|30|$2,882.66|$32,338.59|$30,322.85|$1.07
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(2);
+      expect(result[0].sourceCode).toBe("GUEST 024");
+      expect(result[0].amount).toBe(-2042.46);
+      expect(result[1].sourceCode).toBe("GUEST 010");
+      expect(result[1].amount).toBe(2882.66);
+    });
+
+    it("should parse TOTAL summary lines", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+TOTAL|31|($1,793.87)|($1,793.87)|($40,373.72)|$0.04
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].sourceCode).toBe("TOTAL");
+      expect(result[0].description).toBe("TOTAL Summary");
+      expect(result[0].amount).toBe(-1793.87);
+    });
+
+    it("should skip zero amount summary lines", () => {
+      const parser = new AccountLineParser();
+      const pdfText = `
+CITY 002|0|$0.00|$0.00|$0.00|$0.00
+GUEST 003|0|$0.00|$0.00|$0.00|$0.00
+      `;
+
+      const result = parser.parseAccountLines(pdfText);
+
+      // Both should be skipped due to zero amounts
+      expect(result).toHaveLength(0);
     });
   });
 
