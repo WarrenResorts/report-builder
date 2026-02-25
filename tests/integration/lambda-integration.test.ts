@@ -42,7 +42,7 @@ describe('Lambda Integration Tests', () => {
       
       expect(response.Configuration).toBeDefined();
       expect(response.Configuration?.FunctionName).toContain('email-processor');
-      expect(response.Configuration?.Runtime).toBe('nodejs20.x');
+      expect(response.Configuration?.Runtime).toBe('nodejs22.x');
       expect(response.Configuration?.State).toBe('Active');
     });
 
