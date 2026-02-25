@@ -62,7 +62,7 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Run KICS Security Scan
-      uses: checkmarx/kics-github-action@v2.1.0
+      uses: checkmarx/kics-github-action@v2.1.15
       with:
         path: '.'
         output_path: 'kics-results'
