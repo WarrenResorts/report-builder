@@ -3,6 +3,7 @@ import {
   GetObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { randomUUID } from "crypto";
 import { SESEvent, SESMail, Context } from "aws-lambda";
 import { simpleParser, ParsedMail, Attachment } from "mailparser";
 import { ParameterStoreConfig } from "../config/parameter-store";
@@ -299,7 +300,7 @@ export class EmailProcessor {
 
       logger.debug("Email parsed successfully", {
         subject: parsedEmail.subject,
-        from: parsedEmail.from?.text,
+        from: parsedEmail.from?.value?.[0]?.address || parsedEmail.from?.text,
         to: Array.isArray(parsedEmail.to)
           ? parsedEmail.to.map((addr) => addr.text)
           : parsedEmail.to?.text,
@@ -448,16 +449,23 @@ export class EmailProcessor {
     });
 
     // Determine property ID from sender email (will use mapping later)
+    // Extract just the email address without display name
+    const senderEmail =
+      parsedEmail.from?.value?.[0]?.address ||
+      parsedEmail.from?.text ||
+      "unknown-sender";
     const propertyId = await this.getPropertyIdFromSender(
-      parsedEmail.from?.text || "unknown-sender",
+      senderEmail,
       correlationId,
     );
 
-    // Generate S3 key with organized structure
+    // Generate S3 key with organized structure and unique identifier
+    // Add a unique ID to prevent overwrites when multiple files have the same name
     const sanitizedFilename = this.sanitizeFilename(
       attachment.filename || "unknown",
     );
-    const s3Key = `daily-files/${propertyId}/${new Date().toISOString().split("T")[0]}/${sanitizedFilename}`;
+    const uniqueFilename = this.addUniqueIdentifier(sanitizedFilename);
+    const s3Key = `daily-files/${propertyId}/${new Date().toISOString().split("T")[0]}/${uniqueFilename}`;
 
     logger.debug("Storing attachment in S3", {
       bucket: this.incomingBucket,
@@ -473,7 +481,7 @@ export class EmailProcessor {
         ContentType: attachment.contentType || "application/octet-stream",
         Metadata: {
           originalFilename: attachment.filename || "unknown",
-          senderEmail: parsedEmail.from?.text || "unknown-sender",
+          senderEmail: senderEmail,
           messageId: sesMessage.messageId,
           receivedDate: new Date().toISOString(),
           propertyId: propertyId,
@@ -582,6 +590,40 @@ export class EmailProcessor {
   }
 
   /**
+   * Adds a unique identifier to a filename to prevent S3 overwrites.
+   *
+   * This ensures that files with the same name (e.g., multiple DailyReport.pdf files)
+   * are stored as separate objects in S3, allowing the file processor to perform
+   * content-based duplicate detection.
+   *
+   * @param filename - Sanitized filename to add unique ID to
+   * @returns Filename with unique ID inserted before the extension
+   *
+   * @example
+   * addUniqueIdentifier("DailyReport.pdf") => "DailyReport_a1b2c3d4.pdf"
+   * addUniqueIdentifier("report") => "report_a1b2c3d4"
+   *
+   * @private
+   */
+  private addUniqueIdentifier(filename: string): string {
+    // Generate a short unique ID (first 8 characters of UUID)
+    const uniqueId = randomUUID().substring(0, 8);
+
+    // Find the last dot to separate name from extension
+    const lastDotIndex = filename.lastIndexOf(".");
+
+    if (lastDotIndex === -1) {
+      // No extension, append unique ID to end
+      return `${filename}_${uniqueId}`;
+    }
+
+    // Insert unique ID before the extension
+    const name = filename.substring(0, lastDotIndex);
+    const extension = filename.substring(lastDotIndex);
+    return `${name}_${uniqueId}${extension}`;
+  }
+
+  /**
    * Stores comprehensive email metadata in S3 for tracking and debugging purposes.
    *
    * Metadata includes sender, recipient, subject, attachment info, and processing timestamps.
@@ -607,7 +649,7 @@ export class EmailProcessor {
 
     const metadata = {
       messageId: sesMessage.messageId,
-      from: parsedEmail.from?.text,
+      from: parsedEmail.from?.value?.[0]?.address || parsedEmail.from?.text,
       to: Array.isArray(parsedEmail.to)
         ? parsedEmail.to.map((addr) => addr.text).join(", ")
         : parsedEmail.to?.text,

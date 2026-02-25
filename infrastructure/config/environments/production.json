@@ -1,7 +1,8 @@
 {
   "environment": "production",
   "domain": {
-    "domainName": "example.com"
+    "domainName": "example.com",
+    "useExistingIdentity": true
   },
   "naming": {
     "projectPrefix": "report-builder",

@@ -73,4 +73,23 @@ describe("Environment Configuration", () => {
       process.env.NODE_ENV = originalNodeEnv;
     }
   });
+
+  it("should throw error for invalid NODE_ENV value", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "invalid-environment";
+
+    vi.resetModules();
+
+    // Should throw when importing with invalid NODE_ENV
+    await expect(import("./environment?v=" + Date.now())).rejects.toThrow(
+      /Invalid NODE_ENV/,
+    );
+
+    // Restore original value
+    if (originalNodeEnv) {
+      process.env.NODE_ENV = originalNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+  });
 });

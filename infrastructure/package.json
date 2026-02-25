@@ -11,17 +11,17 @@
     "cdk": "cdk"
   },
   "devDependencies": {
-    "@types/node": "22.7.9",
-    "@typescript-eslint/eslint-plugin": "^5.0.0",
-    "@typescript-eslint/parser": "^5.0.0",
-    "aws-cdk": "2.1018.1",
+    "@types/node": "^22.17.2",
+    "@typescript-eslint/eslint-plugin": "^8.40.0",
+    "@typescript-eslint/parser": "^8.40.0",
+    "aws-cdk": "2.1025.0",
     "eslint": "^8.0.0",
     "ts-node": "^10.9.2",
     "typescript": "~5.6.3"
   },
   "dependencies": {
     "@aws-cdk/aws-lambda-nodejs": "^1.204.0",
-    "aws-cdk-lib": "2.200.1",
+    "aws-cdk-lib": "2.212.0",
     "constructs": "^10.0.0"
   }
 }

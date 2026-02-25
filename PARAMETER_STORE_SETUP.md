@@ -1,8 +1,12 @@
 # Parameter Store Setup Guide
 
+## ⚠️ CRITICAL: Setup Required BEFORE Deployment
+
+**IMPORTANT**: All Parameter Store parameters must be created manually BEFORE deploying the infrastructure. The CDK no longer creates these parameters automatically to avoid overwriting your existing values.
+
 ## Required Parameters for Email Processing
 
-Based on your infrastructure configuration, you need to populate these Parameter Store values in AWS:
+You need to populate these Parameter Store values in AWS BEFORE running `cdk deploy`:
 
 ### Environment: Development
 **Parameter Path Prefix:** `/report-builder/development/`
@@ -92,10 +96,12 @@ aws ssm put-parameter \
 
 ## Important Notes
 
-1. **Property Mapping**: You'll need to replace the example sender emails with the actual email addresses from your 14 property management systems
-2. **Property IDs**: Use consistent property identifiers that match your mapping file structure
-3. **Recipients**: Replace with the actual email addresses that should receive the consolidated reports
-4. **Environment**: If deploying to production, create the same parameters with `/report-builder/production/` prefix
+1. **DEPLOYMENT DEPENDENCY**: The CDK deployment will FAIL if these parameters don't exist. Create them first!
+2. **SES Domain Consistency**: The SES domain identity will be automatically derived from your incoming email address parameter
+3. **Property Mapping**: Replace the example sender emails with actual email addresses from your property management systems
+4. **Property IDs**: Use consistent property identifiers that match your mapping file structure
+5. **Recipients**: Replace with actual email addresses that should receive the consolidated reports
+6. **Environment**: For production, create the same parameters with `/report-builder/production/` prefix
 
 ## Production Environment
 For production deployment, create identical parameters with the prefix:

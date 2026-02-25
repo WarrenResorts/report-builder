@@ -58,6 +58,7 @@ coverage/
 *.js
 # Removed - using Vitest instead of Jest
 !.eslintrc.js
+!eslint.config.js
 *.d.ts
 
 # AWS
