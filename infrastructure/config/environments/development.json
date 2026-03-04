@@ -21,7 +21,8 @@
   "storage": {
     "incomingFiles": {
       "transitionToIADays": 30,
-      "transitionToGlacierDays": 60
+      "transitionToGlacierDays": 60,
+      "expirationDays": 90
     },
     "processedFiles": {
       "transitionToIADays": 30,

@@ -52,6 +52,8 @@ export interface StorageConfig {
     transitionToIADays: number;
     /** Days before transitioning to Glacier */
     transitionToGlacierDays: number;
+    /** Days before deleting daily-files (optional, requires hotel confirmation) */
+    expirationDays?: number;
   };
   /** Processed files bucket lifecycle rules */
   processedFiles: {
