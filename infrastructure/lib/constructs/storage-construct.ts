@@ -46,28 +46,39 @@ export class StorageConstruct extends Construct {
     // ===================================================================
     
     // Incoming files bucket: stores raw emails and extracted attachments
+    const incomingLifecycleRules: s3.LifecycleRule[] = [
+      {
+        id: 'incoming-files-lifecycle',
+        enabled: true,
+        transitions: [
+          {
+            storageClass: s3.StorageClass.INFREQUENT_ACCESS,
+            transitionAfter: cdk.Duration.days(config.storage.incomingFiles.transitionToIADays),
+          },
+          {
+            storageClass: s3.StorageClass.GLACIER,
+            transitionAfter: cdk.Duration.days(config.storage.incomingFiles.transitionToGlacierDays),
+          },
+        ],
+      },
+    ];
+
+    if (config.storage.incomingFiles.expirationDays) {
+      incomingLifecycleRules.push({
+        id: 'daily-files-expiration',
+        enabled: true,
+        prefix: 'daily-files/',
+        expiration: cdk.Duration.days(config.storage.incomingFiles.expirationDays),
+        noncurrentVersionExpiration: cdk.Duration.days(config.storage.incomingFiles.expirationDays + 7),
+      });
+    }
+
     this.incomingFilesBucket = new s3.Bucket(this, 'IncomingFilesBucket', {
       bucketName: `${config.naming.projectPrefix}${config.naming.separator}incoming-files${config.naming.separator}${environment}-v2`,
-      versioned: true, // Enable versioning for data protection
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, // Security: block all public access
+      versioned: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: environment === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-      lifecycleRules: [
-        {
-          id: 'incoming-files-lifecycle',
-          enabled: true,
-          // Transition to Infrequent Access and Glacier based on config
-          transitions: [
-            {
-              storageClass: s3.StorageClass.INFREQUENT_ACCESS,
-              transitionAfter: cdk.Duration.days(config.storage.incomingFiles.transitionToIADays),
-            },
-            {
-              storageClass: s3.StorageClass.GLACIER,
-              transitionAfter: cdk.Duration.days(config.storage.incomingFiles.transitionToGlacierDays),
-            },
-          ],
-        },
-      ],
+      lifecycleRules: incomingLifecycleRules,
     });
 
     // Processed files bucket: stores transformed and organized files

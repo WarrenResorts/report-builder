@@ -446,7 +446,8 @@ export class FileProcessor {
   }
 
   /**
-   * Query S3 for files from the last 24 hours in the daily-files prefix
+   * Query S3 for files from the last 24 hours in the daily-files prefix.
+   * Handles pagination to ensure all objects are returned regardless of bucket size.
    */
   private async getFilesFromLast24Hours(
     correlationId: string,
@@ -455,7 +456,7 @@ export class FileProcessor {
       operation: "get_files_24h",
     });
 
-    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const files: S3FileInfo[] = [];
 
     logger.info("Querying S3 for recent files", {
@@ -465,44 +466,48 @@ export class FileProcessor {
     });
 
     try {
-      // List objects with the daily-files prefix (where email processor stores attachments)
-      const command = new ListObjectsV2Command({
-        Bucket: this.incomingBucket,
-        Prefix: "daily-files/",
-      });
+      let continuationToken: string | undefined;
+      let totalObjects = 0;
 
-      const response = await retryS3Operation(
-        () => this.s3Client.send(command),
-        correlationId,
-        "list_daily_files",
-      );
-
-      if (!response.Contents) {
-        logger.info("No files found in S3", {
-          operation: "s3_query_empty",
+      do {
+        const command = new ListObjectsV2Command({
+          Bucket: this.incomingBucket,
+          Prefix: "daily-files/",
+          ContinuationToken: continuationToken,
         });
-        return files;
-      }
 
-      // Filter files by last modified time and extract metadata
-      for (const object of response.Contents) {
-        if (!object.Key || !object.LastModified || !object.Size) continue;
+        const response = await retryS3Operation(
+          () => this.s3Client.send(command),
+          correlationId,
+          "list_daily_files",
+        );
 
-        // Only include files modified in the last 24 hours
-        if (object.LastModified >= cutoffTime) {
-          const fileInfo = this.parseS3FileKey(
-            object.Key,
-            object.LastModified,
-            object.Size,
-          );
-          if (fileInfo) {
-            files.push(fileInfo);
+        if (response.Contents) {
+          totalObjects += response.Contents.length;
+
+          for (const object of response.Contents) {
+            if (!object.Key || !object.LastModified || !object.Size) continue;
+
+            if (object.LastModified >= cutoffTime) {
+              const fileInfo = this.parseS3FileKey(
+                object.Key,
+                object.LastModified,
+                object.Size,
+              );
+              if (fileInfo) {
+                files.push(fileInfo);
+              }
+            }
           }
         }
-      }
+
+        continuationToken = response.IsTruncated
+          ? response.NextContinuationToken
+          : undefined;
+      } while (continuationToken);
 
       logger.info("S3 query completed", {
-        totalObjects: response.Contents.length,
+        totalObjects,
         recentFiles: files.length,
         operation: "s3_query_complete",
       });
@@ -519,7 +524,7 @@ export class FileProcessor {
 
   /**
    * Query S3 for files from a specific target date across all properties.
-   * Used for reprocessing a specific day's data.
+   * Handles pagination to ensure all objects are returned regardless of bucket size.
    * @param targetDate - Date to query in YYYY-MM-DD format
    * @param correlationId - Correlation ID for logging
    */
@@ -540,46 +545,50 @@ export class FileProcessor {
     });
 
     try {
-      // List all objects in daily-files prefix to find all properties
-      const command = new ListObjectsV2Command({
-        Bucket: this.incomingBucket,
-        Prefix: "daily-files/",
-      });
+      let continuationToken: string | undefined;
+      let totalObjects = 0;
 
-      const response = await retryS3Operation(
-        () => this.s3Client.send(command),
-        correlationId,
-        "list_daily_files_target_date",
-      );
-
-      if (!response.Contents) {
-        logger.info("No files found in S3", {
-          operation: "s3_query_target_date_empty",
+      do {
+        const command = new ListObjectsV2Command({
+          Bucket: this.incomingBucket,
+          Prefix: "daily-files/",
+          ContinuationToken: continuationToken,
         });
-        return files;
-      }
 
-      // Filter files by the target date in the S3 path
-      // Path format: daily-files/{propertyId}/{YYYY-MM-DD}/{filename}
-      for (const object of response.Contents) {
-        if (!object.Key || !object.LastModified || !object.Size) continue;
+        const response = await retryS3Operation(
+          () => this.s3Client.send(command),
+          correlationId,
+          "list_daily_files_target_date",
+        );
 
-        const parts = object.Key.split("/");
-        if (parts.length >= 4 && parts[2] === targetDate) {
-          const fileInfo = this.parseS3FileKey(
-            object.Key,
-            object.LastModified,
-            object.Size,
-          );
-          if (fileInfo) {
-            files.push(fileInfo);
+        if (response.Contents) {
+          totalObjects += response.Contents.length;
+
+          for (const object of response.Contents) {
+            if (!object.Key || !object.LastModified || !object.Size) continue;
+
+            const parts = object.Key.split("/");
+            if (parts.length >= 4 && parts[2] === targetDate) {
+              const fileInfo = this.parseS3FileKey(
+                object.Key,
+                object.LastModified,
+                object.Size,
+              );
+              if (fileInfo) {
+                files.push(fileInfo);
+              }
+            }
           }
         }
-      }
+
+        continuationToken = response.IsTruncated
+          ? response.NextContinuationToken
+          : undefined;
+      } while (continuationToken);
 
       logger.info("S3 target date query completed", {
         targetDate,
-        totalObjects: response.Contents.length,
+        totalObjects,
         matchingFiles: files.length,
         operation: "s3_query_target_date_complete",
       });
