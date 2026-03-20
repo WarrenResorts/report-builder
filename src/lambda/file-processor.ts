@@ -2394,6 +2394,7 @@ export class FileProcessor {
             propertiesProcessed: [],
             processingTimeMs: Date.now() - startTime,
             reportsGenerated: 0,
+            skippedDuplicates: [],
           },
         };
       }
@@ -2436,6 +2437,7 @@ export class FileProcessor {
           propertiesProcessed: [],
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 2,
+          skippedDuplicates: [],
         },
       };
     } catch (error) {
@@ -2454,6 +2456,7 @@ export class FileProcessor {
           propertiesProcessed: [],
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 0,
+          skippedDuplicates: [],
         },
       };
     }
@@ -2519,6 +2522,7 @@ export class FileProcessor {
             propertiesProcessed: [],
             processingTimeMs: Date.now() - startTime,
             reportsGenerated: 0,
+            skippedDuplicates: [],
           },
         };
       }
@@ -2578,6 +2582,7 @@ export class FileProcessor {
             propertiesProcessed: [],
             processingTimeMs: Date.now() - startTime,
             reportsGenerated: 0,
+            skippedDuplicates: [],
           },
         };
       }
@@ -2588,11 +2593,12 @@ export class FileProcessor {
         await this.loadVisualMatrixMapping(correlationId);
 
       // Apply account code mappings and transformations
-      const consolidatedReports = await this.applyAccountCodeMappings(
-        matchingFiles,
-        correlationId,
-        visualMatrixData,
-      );
+      const { reports: consolidatedReports } =
+        await this.applyAccountCodeMappings(
+          matchingFiles,
+          correlationId,
+          visualMatrixData,
+        );
 
       // Generate CSV reports
       const { jeContent, statJEContent } =
@@ -2709,6 +2715,7 @@ export class FileProcessor {
           propertiesProcessed,
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 2,
+          skippedDuplicates: [],
         },
       };
       /* c8 ignore stop */
@@ -2728,6 +2735,7 @@ export class FileProcessor {
           propertiesProcessed: [],
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 0,
+          skippedDuplicates: [],
         },
       };
     }
@@ -2858,6 +2866,7 @@ export const handler = async (
         propertiesProcessed: [],
         processingTimeMs: 0,
         reportsGenerated: 0,
+        skippedDuplicates: [],
       },
     };
   }
