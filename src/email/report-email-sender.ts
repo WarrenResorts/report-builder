@@ -16,6 +16,7 @@ import { retryOperation } from "../utils/retry";
 import { ParameterStoreConfig } from "../config/parameter-store";
 import { environmentConfig } from "../config/environment";
 import { RetryConfig } from "../types/errors";
+import type { SkippedDuplicate } from "../lambda/file-processor";
 
 /**
  * Details for a single property/date combination
@@ -55,6 +56,8 @@ export interface ReportSummary {
   errors: string[];
   /** Detailed breakdown by property and date (optional for backwards compatibility) */
   propertyDetails?: PropertyDetail[];
+  /** Files skipped because the property+date was already processed */
+  skippedDuplicates?: SkippedDuplicate[];
 }
 
 /**
@@ -375,6 +378,8 @@ export class ReportEmailSender {
     const hasErrors = summary.errors && summary.errors.length > 0;
     const hasPropertyDetails =
       summary.propertyDetails && summary.propertyDetails.length > 0;
+    const hasSkippedDuplicates =
+      summary.skippedDuplicates && summary.skippedDuplicates.length > 0;
 
     // Use detailed view if propertyDetails available, otherwise simple list
     const propertiesSection = hasPropertyDetails
@@ -389,6 +394,26 @@ export class ReportEmailSender {
         <ul style="color: #856404; background-color: #fff3cd; padding: 15px; border-radius: 4px;">
           ${summary.errors.map((e) => `<li>${this.escapeHtml(e)}</li>`).join("\n")}
         </ul>
+      `
+      : "";
+
+    const skippedSection = hasSkippedDuplicates
+      ? `
+        <h3 style="color: #6c757d;">Skipped (Already Processed)</h3>
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; border-left: 4px solid #6c757d;">
+          <p style="margin: 0 0 10px 0; font-size: 13px; color: #555;">
+            The following properties were skipped because they were already processed in a previous run.
+            To reprocess, send from the configured override email address.
+          </p>
+          <ul style="margin: 0;">
+            ${summary
+              .skippedDuplicates!.map(
+                (d) =>
+                  `<li><strong>${this.escapeHtml(d.propertyName)}</strong> — ${this.formatDateForDisplay(d.businessDate)}</li>`,
+              )
+              .join("\n")}
+          </ul>
+        </div>
       `
       : "";
 
@@ -452,6 +477,8 @@ export class ReportEmailSender {
         ${hasPropertyDetails ? propertiesSection : `<ul>${propertiesSection}</ul>`}
       </div>
 
+      ${skippedSection}
+
       ${errorSection}
 
       <h3>Attachments</h3>
@@ -477,6 +504,8 @@ export class ReportEmailSender {
   private generateTextBody(summary: ReportSummary): string {
     const dateFormatted = this.formatDateForDisplay(summary.reportDate);
     const hasErrors = summary.errors && summary.errors.length > 0;
+    const hasSkippedDuplicates =
+      summary.skippedDuplicates && summary.skippedDuplicates.length > 0;
 
     const propertyList = summary.propertyNames
       .map((name) => `  - ${name}`)
@@ -484,6 +513,15 @@ export class ReportEmailSender {
 
     const errorSection = hasErrors
       ? `\nPROCESSING WARNINGS:\n${summary.errors.map((e) => `  ! ${e}`).join("\n")}\n`
+      : "";
+
+    const skippedSection = hasSkippedDuplicates
+      ? `\nSKIPPED (ALREADY PROCESSED):\n${summary
+          .skippedDuplicates!.map(
+            (d) =>
+              `  - ${d.propertyName} (${this.formatDateForDisplay(d.businessDate)})`,
+          )
+          .join("\n")}\n`
       : "";
 
     return `
@@ -502,7 +540,7 @@ Processing Time:     ${(summary.processingTimeMs / 1000).toFixed(2)} seconds
 PROPERTIES INCLUDED
 -------------------
 ${propertyList}
-${errorSection}
+${skippedSection}${errorSection}
 ATTACHMENTS
 -----------
 - ${summary.reportDate}_JE.csv - Journal Entry file for NetSuite import

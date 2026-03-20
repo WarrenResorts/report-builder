@@ -37,6 +37,10 @@ import { TransformationEngine } from "../transformation/transformation-engine";
 import { JournalEntryGenerator } from "../output/journal-entry-generator";
 import { StatisticalEntryGenerator } from "../output/statistical-entry-generator";
 import { CreditCardProcessor } from "../processors/credit-card-processor";
+import {
+  DuplicateDetector,
+  type ProcessedMarkerMetadata,
+} from "../processors/duplicate-detector";
 import { getPropertyConfigService } from "../config/property-config";
 import {
   ReportEmailSender,
@@ -110,6 +114,16 @@ interface ConsolidatedReport {
 }
 
 /**
+ * A property+date combination that was skipped because it was already processed
+ */
+export interface SkippedDuplicate {
+  propertyName: string;
+  businessDate: string;
+  fileKey: string;
+  reason: "already_processed";
+}
+
+/**
  * Interface for the file processing result
  */
 interface FileProcessingResult {
@@ -122,6 +136,7 @@ interface FileProcessingResult {
     propertiesProcessed: string[];
     processingTimeMs: number;
     reportsGenerated: number;
+    skippedDuplicates: SkippedDuplicate[];
   };
 }
 
@@ -184,6 +199,7 @@ export class FileProcessor {
   private parserFactory: ParserFactory;
   private transformationEngine: TransformationEngine;
   private emailSender: ReportEmailSender;
+  private duplicateDetector: DuplicateDetector;
 
   constructor() {
     this.s3Client = new S3Client({
@@ -205,6 +221,12 @@ export class FileProcessor {
       processedBucket: this.processedBucket,
       region: environmentConfig.awsRegion,
     });
+
+    // Initialize duplicate detector for Phase 6
+    this.duplicateDetector = new DuplicateDetector(
+      this.s3Client,
+      this.processedBucket,
+    );
   }
 
   /**
@@ -287,39 +309,55 @@ export class FileProcessor {
         operation: "files_processed",
       });
 
-      // Step 4: Apply VisualMatrix account code mappings (Phase 3C)
-      const transformedData = await this.applyAccountCodeMappings(
-        processedFiles,
-        correlationId,
-        visualMatrixData, // Pass the already-loaded mapping data
-      );
+      // Step 4: Apply VisualMatrix account code mappings (Phase 3C) with duplicate detection (Phase 6)
+      const { reports: transformedData, skippedDuplicates } =
+        await this.applyAccountCodeMappings(
+          processedFiles,
+          correlationId,
+          visualMatrixData,
+        );
 
       logger.info("Data transformations applied", {
         totalRecordsTransformed: transformedData.reduce(
           (sum, p) => sum + p.totalRecords,
           0,
         ),
+        skippedDuplicatesCount: skippedDuplicates.length,
         operation: "transformations_applied",
       });
 
       // Step 5: Generate consolidated reports (Phase 3D)
-      const reports = await this.generateConsolidatedReports(
+      const reportKeys = await this.generateConsolidatedReports(
         transformedData,
         correlationId,
       );
 
       logger.info("Consolidated reports generated", {
-        reportsGenerated: reports.length,
+        reportsGenerated: reportKeys.length,
         operation: "reports_generated",
       });
+
+      // Step 5.5: Write processed markers for duplicate detection on future runs (Phase 6)
+      if (reportKeys.length >= 2) {
+        const jeReportKey = reportKeys.find((r) => r.includes("_JE.csv")) || "";
+        const statJEReportKey =
+          reportKeys.find((r) => r.includes("_StatJE.csv")) || "";
+
+        await this.writeProcessedMarkers(
+          transformedData,
+          jeReportKey,
+          statJEReportKey,
+          correlationId,
+        );
+      }
 
       const processingTimeMs = Date.now() - startTime;
 
       // Step 6: Send email with reports (Phase 5)
-      if (reports.length >= 2) {
-        const jeReportKey = reports.find((r) => r.includes("_JE.csv")) || "";
+      if (reportKeys.length >= 2) {
+        const jeReportKey = reportKeys.find((r) => r.includes("_JE.csv")) || "";
         const statJEReportKey =
-          reports.find((r) => r.includes("_StatJE.csv")) || "";
+          reportKeys.find((r) => r.includes("_StatJE.csv")) || "";
 
         if (jeReportKey && statJEReportKey) {
           // Calculate record counts from transformed data
@@ -388,6 +426,7 @@ export class FileProcessor {
             processingTimeMs,
             errors: processingErrors,
             propertyDetails,
+            skippedDuplicates,
           };
 
           const emailResult = await this.emailSender.sendReportEmail(
@@ -421,7 +460,8 @@ export class FileProcessor {
           filesFound: files.length,
           propertiesProcessed,
           processingTimeMs,
-          reportsGenerated: reports.length,
+          reportsGenerated: reportKeys.length,
+          skippedDuplicates,
         },
       };
     } catch (error) {
@@ -440,6 +480,7 @@ export class FileProcessor {
           propertiesProcessed: [],
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 0,
+          skippedDuplicates: [],
         },
       };
     }
@@ -1183,13 +1224,18 @@ export class FileProcessor {
   }
 
   /**
-   * Step 4: Apply VisualMatrix account code mappings to processed files
+   * Step 4: Apply VisualMatrix account code mappings to processed files.
+   * Includes duplicate detection (Phase 6) - skips files already processed
+   * unless sender matches the override email address.
    */
   private async applyAccountCodeMappings(
     processedFiles: ProcessedFileData[],
     correlationId: string,
     visualMatrixData?: VisualMatrixData | null,
-  ): Promise<ConsolidatedReport[]> {
+  ): Promise<{
+    reports: ConsolidatedReport[];
+    skippedDuplicates: SkippedDuplicate[];
+  }> {
     const logger = createCorrelatedLogger(correlationId, {
       operation: "apply_account_code_mappings",
     });
@@ -1203,8 +1249,11 @@ export class FileProcessor {
       logger.error(
         "No VisualMatrix mapping data available - cannot process files",
       );
-      return [];
+      return { reports: [], skippedDuplicates: [] };
     }
+
+    // Load override emails once for the entire batch (cached by Parameter Store)
+    const overrideEmails = await this.parameterStore.getOverrideEmails();
 
     // Step 4.1: Post-parse duplicate detection
     // Deduplicate based on propertyName|businessDate from PDF content
@@ -1222,6 +1271,7 @@ export class FileProcessor {
     });
 
     const reportsByProperty: { [propertyId: string]: ConsolidatedReport } = {};
+    const skippedDuplicates: SkippedDuplicate[] = [];
 
     for (const file of deduplicatedFiles) {
       if (file.errors.length > 0) {
@@ -1272,6 +1322,55 @@ export class FileProcessor {
           reportDate,
           usedFallback: !businessDate,
         });
+
+        // Phase 6: Duplicate detection
+        // Check if this property+date has already been processed in a previous run
+        const duplicateCheck = await this.duplicateDetector.checkIfProcessed(
+          propertyName,
+          reportDate,
+          correlationId,
+        );
+
+        if (duplicateCheck.isAlreadyProcessed) {
+          // Check if this file came from one of the override senders
+          const senderEmail = await this.getSenderEmailFromMetadata(
+            file.fileKey,
+            correlationId,
+          );
+          const isOverride =
+            overrideEmails.length > 0 &&
+            senderEmail !== null &&
+            overrideEmails.includes(senderEmail.toLowerCase());
+
+          if (isOverride) {
+            logger.info(
+              "Duplicate detected but override sender - reprocessing",
+              {
+                fileKey: file.fileKey,
+                propertyName,
+                reportDate,
+                senderEmail,
+                operation: "override_reprocessing",
+              },
+            );
+          } else {
+            logger.info("Duplicate detected - skipping file", {
+              fileKey: file.fileKey,
+              propertyName,
+              reportDate,
+              markerKey: duplicateCheck.markerKey,
+              operation: "duplicate_skipped",
+            });
+
+            skippedDuplicates.push({
+              propertyName,
+              businessDate: reportDate,
+              fileKey: file.fileKey,
+              reason: "already_processed",
+            });
+            continue;
+          }
+        }
 
         // Get property config
         const propertyConfigService = getPropertyConfigService();
@@ -1364,7 +1463,73 @@ export class FileProcessor {
       }
     }
 
-    return Object.values(reportsByProperty);
+    return { reports: Object.values(reportsByProperty), skippedDuplicates };
+  }
+
+  /**
+   * Write processed markers for all successfully processed property+date combinations.
+   * Called after reports are generated so the marker points to the actual report keys.
+   */
+  private async writeProcessedMarkers(
+    transformedData: ConsolidatedReport[],
+    jeReportKey: string,
+    statJEReportKey: string,
+    correlationId: string,
+  ): Promise<void> {
+    for (const report of transformedData) {
+      const metadata: ProcessedMarkerMetadata = {
+        propertyName: report.propertyName || report.propertyId,
+        businessDate: report.reportDate,
+        processedAt: new Date().toISOString(),
+        reportKeys: {
+          je: jeReportKey,
+          statJE: statJEReportKey,
+        },
+        recordCount: report.totalRecords,
+        correlationId,
+      };
+
+      await this.duplicateDetector.markAsProcessed(metadata, correlationId);
+    }
+  }
+
+  /**
+   * Retrieve the sender email address from S3 object metadata.
+   * The email processor stores senderEmail in object metadata when saving attachments.
+   * Returns null if metadata is unavailable or the file has no sender info.
+   */
+  private async getSenderEmailFromMetadata(
+    fileKey: string,
+    correlationId: string,
+  ): Promise<string | null> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "get_sender_email",
+      fileKey,
+    });
+
+    try {
+      const response = await this.s3Client.send(
+        new HeadObjectCommand({
+          Bucket: this.incomingBucket,
+          Key: fileKey,
+        }),
+      );
+
+      const senderEmail = response.Metadata?.senderEmail || null;
+
+      logger.debug("Retrieved sender email from S3 metadata", {
+        fileKey,
+        senderEmail,
+      });
+
+      return senderEmail;
+    } catch (error) {
+      logger.warn("Could not retrieve sender email from S3 metadata", {
+        fileKey,
+        error: (error as Error).message,
+      });
+      return null;
+    }
   }
 
   /**

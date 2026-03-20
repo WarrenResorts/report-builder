@@ -121,15 +121,17 @@ Daily Schedule: EventBridge → Lambda → Process 24hr files → S3 (output) �
 - [x] **Enhanced email body** with detailed property breakdown (property name, business date, JE/StatJE record counts)
 - [x] **Date range display** for multi-day processing batches
 
-### Phase 6: Duplicate Detection & Reprocessing Override 🔜 **[NEXT]**
-- [ ] Check incoming files against historical processed files
-- [ ] Duplicate detection based on **property ID + business date** (not file content)
-- [ ] O(1) lookup using S3 HeadObject (scales infinitely, ~50ms per check)
-- [ ] Skip duplicate files to prevent reprocessing same property/date
-- [ ] **Override email address** configuration in Parameter Store
-- [ ] Allow reprocessing when file comes from designated override email
-- [ ] Include skipped duplicates in email summary
-- [ ] Logging for duplicate detection decisions
+### Phase 6: Duplicate Detection & Reprocessing Override ✅ **[COMPLETE]**
+- [x] Check incoming files against historical processed files
+- [x] Duplicate detection based on **property name + business date** (not file content)
+- [x] O(1) lookup using S3 HeadObject (scales infinitely, ~50ms per check)
+- [x] Skip duplicate files to prevent reprocessing same property/date
+- [x] **Override email address** configuration in Parameter Store (`/report-builder/{env}/email/override-sender`)
+- [x] Allow reprocessing when file comes from designated override email
+- [x] Include skipped duplicates in email summary (HTML + plain text)
+- [x] Logging for duplicate detection decisions
+- [x] Processed markers written to `processed-markers/{businessDate}/{property}.json` in S3
+- [x] `DuplicateDetector` service with full unit test coverage
 
 ### Phase 7: Day-to-Day Comparison Engine
 - [ ] Enhanced S3 storage structure for processed daily data
@@ -383,10 +385,12 @@ Enhanced S3 Structure:
 2. **✅ COMPLETED**: End-to-end testing with real data from all 11 properties
 3. **✅ COMPLETED**: JE and StatJE file generation with correct NetSuite format
 4. **✅ COMPLETED**: Phase 5 - Email Delivery with enhanced property breakdown
-5. **🚀 NEXT: Phase 6 - Duplicate Detection & Reprocessing Override**:
-   - Check if property + business date already processed (O(1) lookup)
-   - Skip duplicates to prevent reprocessing
-   - Override email allows forced reprocessing
+5. **✅ COMPLETE: Phase 6 - Duplicate Detection & Reprocessing Override**:
+   - Check if property + business date already processed (O(1) S3 HeadObject lookup)
+   - Skip duplicates to prevent reprocessing same property/date
+   - Override email from Parameter Store allows forced reprocessing
+   - Skipped duplicates surfaced in email summary
+6. **🚀 NEXT: Phase 7 - Day-to-Day Comparison Engine**
    - ~$0.01/year additional cost, ~50ms per file check
    - Scales infinitely (same performance at 100 files or 100 million)
 6. **Future: Phase 7 - Day-to-Day Comparison**:

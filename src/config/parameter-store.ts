@@ -88,6 +88,23 @@ export class ParameterStoreConfig {
   }
 
   /**
+   * Get override sender email addresses for forcing reprocessing of duplicate files.
+   * When a file arrives from any of these addresses, it bypasses duplicate detection.
+   * Supports a comma-separated list of emails in the parameter value.
+   * Example parameter value: "override@company.com,gm@hotel.com"
+   * @returns Array of lowercase override email addresses, or empty array if not configured
+   */
+  async getOverrideEmails(): Promise<string[]> {
+    const paramName = `/report-builder/${environmentConfig.environment}/email/override-sender`;
+    const value = await this.getParameter(paramName);
+    if (!value) return [];
+    return value
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter((email) => email.length > 0);
+  }
+
+  /**
    * Get SES configuration set name
    * @returns SES configuration set name for the current environment
    */
