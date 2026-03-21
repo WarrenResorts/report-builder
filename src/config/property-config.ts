@@ -120,6 +120,14 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     locationName: "Best Western Windsor Inn",
     creditCardDepositAccount: "10290-707",
   },
+  {
+    propertyName: "FRANCISCAN INN & SUITES",
+    locationInternalId: "36",
+    subsidiaryInternalId: "5",
+    subsidiaryFullName: "FRANCISCAN INN & SUITES",
+    locationName: "Franciscan Inn & Suites",
+    creditCardDepositAccount: "10010-528",
+  },
 ];
 
 /**

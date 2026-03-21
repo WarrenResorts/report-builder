@@ -31,6 +31,15 @@ vi.mock("../config/environment", () => ({
   },
 }));
 vi.mock("../utils/retry");
+vi.mock("../processors/duplicate-detector", () => ({
+  DuplicateDetector: vi.fn().mockImplementation(() => ({
+    checkIfProcessed: vi.fn().mockResolvedValue({
+      isAlreadyProcessed: false,
+      markerKey: "test-marker",
+    }),
+    markAsProcessed: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
 
 const mockS3Client = {
   send: vi.fn(),
@@ -38,6 +47,7 @@ const mockS3Client = {
 
 const mockParameterStore = {
   getPropertyMapping: vi.fn(),
+  getOverrideEmails: vi.fn().mockResolvedValue([]),
 };
 
 // Mock constructors
@@ -2445,7 +2455,7 @@ Room Revenue: 500.00`;
       };
 
       // Call the internal applyAccountCodeMappings method directly
-      const consolidatedReports = await (
+      const { reports: consolidatedReports, skippedDuplicates } = await (
         processor as any
       ).applyAccountCodeMappings(
         mockFiles,
@@ -2456,6 +2466,7 @@ Room Revenue: 500.00`;
       // FIXED BEHAVIOR: Should have 3 separate reports, one for each business date
       // The keying is now by propertyId|businessDate instead of just propertyId
       expect(consolidatedReports.length).toBe(3);
+      expect(skippedDuplicates).toEqual([]);
 
       // Each report should have the correct business date
       const reportDates = consolidatedReports.map((r: any) => r.reportDate);
