@@ -551,5 +551,48 @@ describe("ReportEmailSender", () => {
       expect(rawEmail).toContain("THE BARD&#39;S INN HOTEL");
       expect(rawEmail).toContain("Crown City Inn");
     });
+
+    it("should render skipped duplicates section in both HTML and text parts", async () => {
+      const summaryWithSkipped: ReportSummary = {
+        ...mockSummary,
+        skippedDuplicates: [
+          {
+            propertyName: "Crown City Inn",
+            businessDate: "2025-01-05",
+            fileKey: "attachments/2025-01-06/crown-city-inn.pdf",
+            reason: "already_processed",
+          },
+          {
+            propertyName: "Driftwood Inn",
+            businessDate: "2025-01-05",
+            fileKey: "attachments/2025-01-06/driftwood-inn.pdf",
+            reason: "already_processed",
+          },
+        ],
+      };
+
+      const sender = new ReportEmailSender({
+        processedBucket: "test-processed-bucket",
+        region: "us-east-1",
+      });
+
+      const result = await sender.sendReportEmail(
+        "reports/2025-01-07/2025-01-06_JE.csv",
+        "reports/2025-01-07/2025-01-06_StatJE.csv",
+        summaryWithSkipped,
+        "test-correlation-id",
+      );
+
+      expect(result.success).toBe(true);
+
+      const sendCall = mockSESSend.mock.calls[0][0];
+      const rawEmail = sendCall.RawMessage.Data.toString();
+
+      // HTML part should contain the skipped section with property names
+      expect(rawEmail).toContain("Crown City Inn");
+      expect(rawEmail).toContain("Driftwood Inn");
+      // Should indicate these were skipped/already processed
+      expect(rawEmail).toContain("Skipped");
+    });
   });
 });

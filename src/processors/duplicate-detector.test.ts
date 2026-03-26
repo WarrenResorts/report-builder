@@ -239,4 +239,24 @@ describe("DuplicateDetector", () => {
       expect(callArg.input.Metadata.correlationId).toBe(CORRELATION_ID);
     });
   });
+
+  describe("isNotFoundError (via checkIfProcessed)", () => {
+    it("returns false (fails open) when a non-Error value is thrown", async () => {
+      // Throw a plain string instead of an Error instance — exercises the
+      // `return false` branch inside isNotFoundError for non-Error throws
+      const s3Client = makeS3Client(() => {
+        throw "unexpected string error"; // non-Error value exercises the isNotFoundError false branch
+      });
+
+      const detector = new DuplicateDetector(s3Client, PROCESSED_BUCKET);
+      const result = await detector.checkIfProcessed(
+        "Test Property",
+        "2026-02-26",
+        CORRELATION_ID,
+      );
+
+      // Fails open — allows processing rather than blocking
+      expect(result.isAlreadyProcessed).toBe(false);
+    });
+  });
 });
