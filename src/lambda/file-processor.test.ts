@@ -32,13 +32,15 @@ vi.mock("../config/environment", () => ({
 }));
 vi.mock("../utils/retry");
 vi.mock("../processors/duplicate-detector", () => ({
-  DuplicateDetector: vi.fn().mockImplementation(() => ({
-    checkIfProcessed: vi.fn().mockResolvedValue({
-      isAlreadyProcessed: false,
-      markerKey: "test-marker",
-    }),
-    markAsProcessed: vi.fn().mockResolvedValue(undefined),
-  })),
+  DuplicateDetector: vi.fn().mockImplementation(function () {
+    return {
+      checkIfProcessed: vi.fn().mockResolvedValue({
+        isAlreadyProcessed: false,
+        markerKey: "test-marker",
+      }),
+      markAsProcessed: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
 }));
 
 const mockS3Client = {
@@ -51,8 +53,12 @@ const mockParameterStore = {
 };
 
 // Mock constructors
-(S3Client as Mock).mockImplementation(() => mockS3Client);
-(ParameterStoreConfig as Mock).mockImplementation(() => mockParameterStore);
+(S3Client as Mock).mockImplementation(function () {
+  return mockS3Client;
+});
+(ParameterStoreConfig as Mock).mockImplementation(function () {
+  return mockParameterStore;
+});
 
 // Mock retry utility
 vi.mock("../utils/retry", () => ({

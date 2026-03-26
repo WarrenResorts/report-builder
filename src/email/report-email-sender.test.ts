@@ -11,24 +11,28 @@ const mockGetEmailConfiguration = vi.fn();
 
 // Mock AWS SDK clients before imports
 vi.mock("@aws-sdk/client-ses", () => ({
-  SESClient: vi.fn().mockImplementation(() => ({
-    send: mockSESSend,
-  })),
-  SendRawEmailCommand: vi.fn().mockImplementation((input) => input),
+  SESClient: vi.fn().mockImplementation(function () {
+    return { send: mockSESSend };
+  }),
+  SendRawEmailCommand: vi.fn().mockImplementation(function (input) {
+    return input;
+  }),
 }));
 
 vi.mock("@aws-sdk/client-s3", () => ({
-  S3Client: vi.fn().mockImplementation(() => ({
-    send: mockS3Send,
-  })),
-  GetObjectCommand: vi.fn().mockImplementation((input) => input),
+  S3Client: vi.fn().mockImplementation(function () {
+    return { send: mockS3Send };
+  }),
+  GetObjectCommand: vi.fn().mockImplementation(function (input) {
+    return input;
+  }),
 }));
 
 // Mock Parameter Store with factory function
 vi.mock("../config/parameter-store", () => ({
-  ParameterStoreConfig: vi.fn().mockImplementation(() => ({
-    getEmailConfiguration: () => mockGetEmailConfiguration(),
-  })),
+  ParameterStoreConfig: vi.fn().mockImplementation(function () {
+    return { getEmailConfiguration: () => mockGetEmailConfiguration() };
+  }),
 }));
 
 // Mock environment config

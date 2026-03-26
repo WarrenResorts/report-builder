@@ -12,9 +12,9 @@ vi.mock("./environment", () => ({
 
 // Mock the AWS SDK
 vi.mock("@aws-sdk/client-ssm", () => ({
-  SSMClient: vi.fn(() => ({
-    send: vi.fn(),
-  })),
+  SSMClient: vi.fn(function () {
+    return { send: vi.fn() };
+  }),
   GetParameterCommand: vi.fn(),
   GetParametersCommand: vi.fn(),
 }));

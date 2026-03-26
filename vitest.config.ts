@@ -29,7 +29,6 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],
-      all: true,  // Include all files in coverage
       include: ['src/**/*.ts'],  // Only include src TypeScript files in coverage
       exclude: [
         '**/index.ts',  // Exclude index.ts files (they're just re-exports)

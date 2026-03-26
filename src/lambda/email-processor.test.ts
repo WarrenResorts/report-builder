@@ -26,8 +26,12 @@ const mockParameterStore = {
 };
 
 // Mock constructors
-(S3Client as Mock).mockImplementation(() => mockS3Client);
-(ParameterStoreConfig as Mock).mockImplementation(() => mockParameterStore);
+(S3Client as Mock).mockImplementation(function () {
+  return mockS3Client;
+});
+(ParameterStoreConfig as Mock).mockImplementation(function () {
+  return mockParameterStore;
+});
 
 // Common SES receipt verdicts for test fixtures
 const defaultReceiptVerdicts = {

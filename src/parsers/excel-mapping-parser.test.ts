@@ -102,11 +102,13 @@ describe("ExcelMappingParser", () => {
       getWorksheet: vi.fn(),
     };
 
-    (MockWorkbook as any).mockImplementation(() => mockWorkbookInstance);
+    (MockWorkbook as any).mockImplementation(function () {
+      return mockWorkbookInstance;
+    });
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("canParse", () => {
