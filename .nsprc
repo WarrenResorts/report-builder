@@ -1,0 +1,3 @@
+{
+  "1115432": "brace-expansion via exceljs->archiver->readdir-glob (GHSA-f886-m6hf-6m8v). exceljs@4.4.0 is the latest version and has not yet updated its archiver dependency. Attack vector requires controlling internal archiver glob patterns which is not possible in our Lambda environment. Remove once exceljs releases a fix."
+}

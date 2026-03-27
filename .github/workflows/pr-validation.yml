@@ -148,7 +148,7 @@ jobs:
         run: npm ci
 
       - name: Run npm audit
-        run: npm audit --audit-level=moderate
+        run: npx better-npm-audit audit --level moderate
 
       - name: Run Semgrep security scan
         uses: semgrep/semgrep-action@v1
