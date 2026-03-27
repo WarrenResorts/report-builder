@@ -261,6 +261,15 @@ export class LambdaConstruct extends Construct {
         format: lambdaNodejs.OutputFormat.ESM,
         target: 'es2022',
         sourceMap: true,
+        commandHooks: {
+          beforeBundling(): string[] { return []; },
+          beforeInstall(_inputDir: string, outputDir: string): string[] {
+            return [
+              `node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('${outputDir}/package.json','utf8'));p.overrides={'brace-expansion':'^5.0.5'};fs.writeFileSync('${outputDir}/package.json',JSON.stringify(p));"`,
+            ];
+          },
+          afterBundling(): string[] { return []; },
+        },
       },
       environment: {
         NODE_ENV: environment,
@@ -308,8 +317,10 @@ export class LambdaConstruct extends Construct {
               `cp ${inputDir}/test/data/05-versions-space.pdf ${outputDir}/test/data/05-versions-space.pdf`,
             ];
           },
-          beforeInstall(inputDir: string, outputDir: string): string[] {
-            return [];
+          beforeInstall(_inputDir: string, outputDir: string): string[] {
+            return [
+              `node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('${outputDir}/package.json','utf8'));p.overrides={'brace-expansion':'^5.0.5'};fs.writeFileSync('${outputDir}/package.json',JSON.stringify(p));"`,
+            ];
           },
           afterBundling(inputDir: string, outputDir: string): string[] {
             return [];
