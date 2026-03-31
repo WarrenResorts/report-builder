@@ -253,6 +253,7 @@ export class TransformationEngine {
 
       throw new Error(
         `Data transformation failed: ${(error as Error).message}`,
+        { cause: error },
       );
     }
   }
@@ -375,6 +376,7 @@ export class TransformationEngine {
         if (rule.required) {
           throw new Error(
             `Required field transformation failed: ${rule.targetField} - ${(error as Error).message}`,
+            { cause: error },
           );
         } else {
           recordWarnings.push(
@@ -512,7 +514,7 @@ export class TransformationEngine {
           return value;
       }
     } catch (error) {
-      throw new Error(`Type conversion failed: ${(error as Error).message}`);
+      throw new Error(`Type conversion failed: ${(error as Error).message}`, { cause: error });
     }
   }
 

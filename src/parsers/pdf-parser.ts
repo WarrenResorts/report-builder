@@ -460,6 +460,7 @@ export class PDFParser extends BaseFileParser {
       // No fallback for real PDFs - fail clearly with the real error
       throw new Error(
         `Failed to parse PDF with pdf-parse library: ${(error as Error).message}`,
+        { cause: error },
       );
     }
   }
