@@ -514,7 +514,9 @@ export class TransformationEngine {
           return value;
       }
     } catch (error) {
-      throw new Error(`Type conversion failed: ${(error as Error).message}`, { cause: error });
+      throw new Error(`Type conversion failed: ${(error as Error).message}`, {
+        cause: error,
+      });
     }
   }
 
