@@ -308,10 +308,10 @@ export class LambdaConstruct extends Construct {
               `cp ${inputDir}/test/data/05-versions-space.pdf ${outputDir}/test/data/05-versions-space.pdf`,
             ];
           },
-          beforeInstall(inputDir: string, outputDir: string): string[] {
+          beforeInstall(_inputDir: string, _outputDir: string): string[] {
             return [];
           },
-          afterBundling(inputDir: string, outputDir: string): string[] {
+          afterBundling(_inputDir: string, _outputDir: string): string[] {
             return [];
           },
         },
