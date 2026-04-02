@@ -288,7 +288,7 @@ export class JournalEntryGenerator {
     const accountType = this.getAccountType(accountPrefix);
 
     // Determine if this should be a debit or credit based on account type and sign
-    let isDebit = false;
+    let isDebit: boolean;
 
     switch (accountType) {
       case "asset":

@@ -9,11 +9,13 @@ import type { TransformedData } from "../transformation/transformation-engine";
 
 // Mock the logger
 vi.mock("../utils/logger", () => ({
-  Logger: vi.fn().mockImplementation(() => ({
-    info: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  })),
+  Logger: vi.fn().mockImplementation(function () {
+    return {
+      info: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn(),
+    };
+  }),
 }));
 
 describe("CSV Generator Unit Tests", () => {

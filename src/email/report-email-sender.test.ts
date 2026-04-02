@@ -11,24 +11,28 @@ const mockGetEmailConfiguration = vi.fn();
 
 // Mock AWS SDK clients before imports
 vi.mock("@aws-sdk/client-ses", () => ({
-  SESClient: vi.fn().mockImplementation(() => ({
-    send: mockSESSend,
-  })),
-  SendRawEmailCommand: vi.fn().mockImplementation((input) => input),
+  SESClient: vi.fn().mockImplementation(function () {
+    return { send: mockSESSend };
+  }),
+  SendRawEmailCommand: vi.fn().mockImplementation(function (input) {
+    return input;
+  }),
 }));
 
 vi.mock("@aws-sdk/client-s3", () => ({
-  S3Client: vi.fn().mockImplementation(() => ({
-    send: mockS3Send,
-  })),
-  GetObjectCommand: vi.fn().mockImplementation((input) => input),
+  S3Client: vi.fn().mockImplementation(function () {
+    return { send: mockS3Send };
+  }),
+  GetObjectCommand: vi.fn().mockImplementation(function (input) {
+    return input;
+  }),
 }));
 
 // Mock Parameter Store with factory function
 vi.mock("../config/parameter-store", () => ({
-  ParameterStoreConfig: vi.fn().mockImplementation(() => ({
-    getEmailConfiguration: () => mockGetEmailConfiguration(),
-  })),
+  ParameterStoreConfig: vi.fn().mockImplementation(function () {
+    return { getEmailConfiguration: () => mockGetEmailConfiguration() };
+  }),
 }));
 
 // Mock environment config
@@ -546,6 +550,49 @@ describe("ReportEmailSender", () => {
       // Should contain property names in simple list format
       expect(rawEmail).toContain("THE BARD&#39;S INN HOTEL");
       expect(rawEmail).toContain("Crown City Inn");
+    });
+
+    it("should render skipped duplicates section in both HTML and text parts", async () => {
+      const summaryWithSkipped: ReportSummary = {
+        ...mockSummary,
+        skippedDuplicates: [
+          {
+            propertyName: "Crown City Inn",
+            businessDate: "2025-01-05",
+            fileKey: "attachments/2025-01-06/crown-city-inn.pdf",
+            reason: "already_processed",
+          },
+          {
+            propertyName: "Driftwood Inn",
+            businessDate: "2025-01-05",
+            fileKey: "attachments/2025-01-06/driftwood-inn.pdf",
+            reason: "already_processed",
+          },
+        ],
+      };
+
+      const sender = new ReportEmailSender({
+        processedBucket: "test-processed-bucket",
+        region: "us-east-1",
+      });
+
+      const result = await sender.sendReportEmail(
+        "reports/2025-01-07/2025-01-06_JE.csv",
+        "reports/2025-01-07/2025-01-06_StatJE.csv",
+        summaryWithSkipped,
+        "test-correlation-id",
+      );
+
+      expect(result.success).toBe(true);
+
+      const sendCall = mockSESSend.mock.calls[0][0];
+      const rawEmail = sendCall.RawMessage.Data.toString();
+
+      // HTML part should contain the skipped section with property names
+      expect(rawEmail).toContain("Crown City Inn");
+      expect(rawEmail).toContain("Driftwood Inn");
+      // Should indicate these were skipped/already processed
+      expect(rawEmail).toContain("Skipped");
     });
   });
 });

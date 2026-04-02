@@ -88,6 +88,18 @@ describe("ParserFactory", () => {
       expect(parser).toBeInstanceOf(PDFParser);
     });
 
+    it("should create TXT parser for .dat files via extension inference", () => {
+      // .dat is not handled by any parser's canParse() directly, so it falls
+      // through to inferFileTypeFromExtension which maps it to "txt"
+      const parser = ParserFactory.createParserForFile("data.dat");
+      expect(parser).toBeInstanceOf(TXTParser);
+    });
+
+    it("should create TXT parser for .asc files via extension inference", () => {
+      const parser = ParserFactory.createParserForFile("export.asc");
+      expect(parser).toBeInstanceOf(TXTParser);
+    });
+
     it("should throw error for unsupported files", () => {
       expect(() => {
         ParserFactory.createParserForFile("document.unknown");

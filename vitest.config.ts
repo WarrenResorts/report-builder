@@ -8,15 +8,8 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.ts'],
     // Use forks instead of threads - they clean up more reliably
     pool: 'forks',
-    // Pool options to ensure proper cleanup
-    poolOptions: {
-      forks: {
-        // Kill workers after they finish to prevent orphans
-        singleFork: false,
-        // Isolate each test file
-        isolate: true,
-      },
-    },
+    // Isolate each test file in its own fork (v4: was poolOptions.forks.isolate)
+    isolate: true,
     // Timeout settings to prevent hanging tests
     testTimeout: 30000, // 30 seconds per test
     hookTimeout: 30000, // 30 seconds for setup/teardown hooks
@@ -29,7 +22,6 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],
-      all: true,  // Include all files in coverage
       include: ['src/**/*.ts'],  // Only include src TypeScript files in coverage
       exclude: [
         '**/index.ts',  // Exclude index.ts files (they're just re-exports)

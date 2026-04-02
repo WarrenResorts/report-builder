@@ -182,7 +182,9 @@ export class ParameterStoreConfig {
       }
 
       console.error(`Error retrieving parameter ${parameterName}:`, error);
-      throw new Error(`Failed to retrieve parameter: ${parameterName}`);
+      throw new Error(`Failed to retrieve parameter: ${parameterName}`, {
+        cause: error,
+      });
     }
   }
 
@@ -217,7 +219,9 @@ export class ParameterStoreConfig {
       return result;
     } catch (error) {
       console.error("Error retrieving multiple parameters:", error);
-      throw new Error("Failed to retrieve parameters from Parameter Store");
+      throw new Error("Failed to retrieve parameters from Parameter Store", {
+        cause: error,
+      });
     }
   }
 

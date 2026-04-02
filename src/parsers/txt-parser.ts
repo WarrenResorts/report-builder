@@ -275,6 +275,7 @@ export class TXTParser extends BaseFileParser {
     } catch (error) {
       throw new Error(
         `Failed to decode text file: ${(error as Error).message}`,
+        { cause: error },
       );
     }
   }
