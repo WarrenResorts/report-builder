@@ -95,7 +95,7 @@ jobs:
         cache: 'npm'
     
     - name: Configure AWS credentials for Development
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         role-to-assume: arn:aws:iam::237124340260:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
@@ -157,7 +157,7 @@ jobs:
         cache: 'npm'
     
     - name: Configure AWS credentials for Production
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         role-to-assume: arn:aws:iam::400534944857:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
