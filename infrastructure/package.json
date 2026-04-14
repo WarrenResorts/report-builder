@@ -11,18 +11,18 @@
     "cdk": "cdk"
   },
   "devDependencies": {
-    "@types/node": "^25.5.2",
-    "@typescript-eslint/eslint-plugin": "^8.58.0",
-    "@typescript-eslint/parser": "^8.58.0",
-    "aws-cdk": "2.1117.0",
+    "@types/node": "^25.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.2",
+    "@typescript-eslint/parser": "^8.58.2",
+    "aws-cdk": "2.1118.0",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.2.0",
-    "typescript-eslint": "^8.58.0",
+    "typescript-eslint": "^8.58.2",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.2"
   },
   "dependencies": {
-    "aws-cdk-lib": "2.248.0",
+    "aws-cdk-lib": "2.249.0",
     "constructs": "^10.0.0"
   }
 }
