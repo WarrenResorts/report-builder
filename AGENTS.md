@@ -15,4 +15,5 @@ Rules that must be followed in every session without exception.
 
 ## Documentation
 
-- When making changes that affect the property onboarding process (email routing, PDF parsing, property config, SSM parameters, S3 structure, SES setup, or deployment), update `docs/adding-a-new-property.md` to reflect those changes in the same commit.
+- When making changes that affect **onboarding a new property on the existing Visual Matrix PDF pipeline** (email routing, PDF parsing, property config, SSM parameters, S3 structure, SES setup, or deployment for that flow), update `docs/adding-a-new-property.md` to reflect those changes in the same commit.
+- When making changes that affect the **Opera / IHG text pipeline** (parsers, Opera mapping format, S3 prefix for Opera workbooks, slug-based config for that path), update `docs/opera-ihg-pipeline.md` and `PROJECT_PLAN.md` (Phase 12) as appropriate in the same commit.

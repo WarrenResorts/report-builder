@@ -52,6 +52,14 @@ import type {
   RawFileData,
   FieldValue,
 } from "../transformation/transformation-engine";
+import {
+  loadOperaMapping,
+  parseTrialBalance,
+  parseStatDmySeg,
+  transformTrialBalanceToJERecords,
+  transformStatDmySegToStatJERecords,
+  type OperaMapping,
+} from "../opera";
 
 /**
  * Interface for the file processing event
@@ -124,6 +132,18 @@ export interface SkippedDuplicate {
 }
 
 /**
+ * An Opera property that is missing one of its required paired files.
+ * Surfaced as a red notice in the outbound email.
+ */
+export interface MissingOperaFile {
+  propertyName: string;
+  /** S3 folder date (YYYY-MM-DD) used as proxy when business date is unavailable */
+  folderDate: string;
+  /** Which file type was not received */
+  missingFileType: "trial_balance" | "stat_dmy_seg";
+}
+
+/**
  * Interface for the file processing result
  */
 interface FileProcessingResult {
@@ -137,6 +157,7 @@ interface FileProcessingResult {
     processingTimeMs: number;
     reportsGenerated: number;
     skippedDuplicates: SkippedDuplicate[];
+    missingOperaFiles: MissingOperaFile[];
   };
 }
 
@@ -297,6 +318,12 @@ export class FileProcessor {
           )
         : undefined;
 
+      // Load Opera mapping if any Opera files are present in the batch
+      const operaMapping = await this.loadOperaMappingIfNeeded(
+        organizedFiles,
+        correlationId,
+      );
+
       // Step 3: Process each property's files (Phase 3B)
       const processedFiles = await this.processPropertyFiles(
         organizedFiles,
@@ -309,13 +336,19 @@ export class FileProcessor {
         operation: "files_processed",
       });
 
-      // Step 4: Apply VisualMatrix account code mappings (Phase 3C) with duplicate detection (Phase 6)
-      const { reports: transformedData, skippedDuplicates } =
-        await this.applyAccountCodeMappings(
-          processedFiles,
-          correlationId,
-          visualMatrixData,
-        );
+      // Step 4: Apply account code mappings (Phase 3C) with duplicate detection (Phase 6)
+      // Routes Opera files to the Opera path; all others use the VisualMatrix path.
+      const {
+        reports: transformedData,
+        skippedDuplicates,
+        missingOperaFiles,
+      } = await this.applyAccountCodeMappings(
+        processedFiles,
+        organizedFiles,
+        correlationId,
+        visualMatrixData,
+        operaMapping,
+      );
 
       logger.info("Data transformations applied", {
         totalRecordsTransformed: transformedData.reduce(
@@ -427,6 +460,7 @@ export class FileProcessor {
             errors: processingErrors,
             propertyDetails,
             skippedDuplicates,
+            missingOperaFiles,
           };
 
           const emailResult = await this.emailSender.sendReportEmail(
@@ -462,6 +496,7 @@ export class FileProcessor {
           processingTimeMs,
           reportsGenerated: reportKeys.length,
           skippedDuplicates,
+          missingOperaFiles,
         },
       };
     } catch (error) {
@@ -481,6 +516,7 @@ export class FileProcessor {
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 0,
           skippedDuplicates: [],
+          missingOperaFiles: [],
         },
       };
     }
@@ -1224,17 +1260,21 @@ export class FileProcessor {
   }
 
   /**
-   * Step 4: Apply VisualMatrix account code mappings to processed files.
-   * Includes duplicate detection (Phase 6) - skips files already processed
-   * unless sender matches the override email address.
+   * Step 4: Apply account code mappings to processed files.
+   * Routes Opera files (trial_balance*.txt / stat_dmy_seg*.txt) to the Opera
+   * transformation path; all other files use the VisualMatrix path.
+   * Includes duplicate detection (Phase 6).
    */
   private async applyAccountCodeMappings(
     processedFiles: ProcessedFileData[],
+    organizedFiles: OrganizedFiles,
     correlationId: string,
     visualMatrixData?: VisualMatrixData | null,
+    operaMapping?: OperaMapping | null,
   ): Promise<{
     reports: ConsolidatedReport[];
     skippedDuplicates: SkippedDuplicate[];
+    missingOperaFiles: MissingOperaFile[];
   }> {
     const logger = createCorrelatedLogger(correlationId, {
       operation: "apply_account_code_mappings",
@@ -1249,7 +1289,7 @@ export class FileProcessor {
       logger.error(
         "No VisualMatrix mapping data available - cannot process files",
       );
-      return { reports: [], skippedDuplicates: [] };
+      return { reports: [], skippedDuplicates: [], missingOperaFiles: [] };
     }
 
     // Load override emails once for the entire batch (cached by Parameter Store)
@@ -1272,8 +1312,27 @@ export class FileProcessor {
 
     const reportsByProperty: { [propertyId: string]: ConsolidatedReport } = {};
     const skippedDuplicates: SkippedDuplicate[] = [];
+    const missingOperaFiles: MissingOperaFile[] = [];
 
-    for (const file of deduplicatedFiles) {
+    // --- Opera file processing ---
+    // Group Opera files by property+date and process pairs before the VM loop.
+    const operaResults = await this.processOperaFilePairs(
+      deduplicatedFiles,
+      organizedFiles,
+      operaMapping ?? null,
+      overrideEmails,
+      reportsByProperty,
+      skippedDuplicates,
+      missingOperaFiles,
+      correlationId,
+    );
+
+    // Exclude Opera files from the VM loop below
+    const vmFiles = deduplicatedFiles.filter(
+      (f) => getOperaFileType(f.fileKey) === null,
+    );
+
+    for (const file of vmFiles) {
       if (file.errors.length > 0) {
         logger.warn("Skipping file with parsing errors", {
           fileKey: file.fileKey,
@@ -1463,7 +1522,12 @@ export class FileProcessor {
       }
     }
 
-    return { reports: Object.values(reportsByProperty), skippedDuplicates };
+    void operaResults; // result already merged into reportsByProperty
+    return {
+      reports: Object.values(reportsByProperty),
+      skippedDuplicates,
+      missingOperaFiles,
+    };
   }
 
   /**
@@ -2101,6 +2165,287 @@ export class FileProcessor {
   }
 
   /**
+   * Load the Opera mapping from S3 only when at least one Opera file is present
+   * in the current batch (avoids an unnecessary S3 call on VM-only batches).
+   */
+  private async loadOperaMappingIfNeeded(
+    organizedFiles: OrganizedFiles,
+    correlationId: string,
+  ): Promise<OperaMapping | null> {
+    const hasOperaFiles = Object.values(organizedFiles).some((dateMap) =>
+      Object.values(dateMap).some((files) =>
+        files.some((f) => getOperaFileType(f.filename) !== null),
+      ),
+    );
+
+    if (!hasOperaFiles) return null;
+
+    return loadOperaMapping(this.s3Client, this.mappingBucket, correlationId);
+  }
+
+  /**
+   * Process Opera trial_balance / stat_dmy_seg file pairs for all properties.
+   *
+   * For each property+date that contains Opera files:
+   *   - If both files are present → full JE + StatJE output
+   *   - If only trial_balance → JE only, queue missing-file notice for stat
+   *   - If only stat_dmy_seg → StatJE only, queue missing-file notice for trial balance
+   *
+   * Results are merged directly into `reportsByProperty`.
+   */
+  private async processOperaFilePairs(
+    processedFiles: ProcessedFileData[],
+    organizedFiles: OrganizedFiles,
+    operaMapping: OperaMapping | null,
+    overrideEmails: string[],
+    reportsByProperty: { [key: string]: ConsolidatedReport },
+    skippedDuplicates: SkippedDuplicate[],
+    missingOperaFiles: MissingOperaFile[],
+    correlationId: string,
+  ): Promise<void> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "process_opera_file_pairs",
+    });
+
+    // Index processed files by S3 key for fast lookup
+    const fileByKey = new Map<string, ProcessedFileData>(
+      processedFiles.map((f) => [f.fileKey, f]),
+    );
+
+    // Iterate over organised structure to find Opera file pairs per property+date
+    for (const [propertyId, dateMap] of Object.entries(organizedFiles)) {
+      for (const [folderDate, s3Files] of Object.entries(dateMap)) {
+        const trialBalanceS3 = s3Files.find(
+          (f) => getOperaFileType(f.filename) === "trial_balance",
+        );
+        const statS3 = s3Files.find(
+          (f) => getOperaFileType(f.filename) === "stat_dmy_seg",
+        );
+
+        if (!trialBalanceS3 && !statS3) continue; // no Opera files this day
+
+        const trialBalanceFile = trialBalanceS3
+          ? fileByKey.get(trialBalanceS3.key)
+          : undefined;
+        const statFile = statS3 ? fileByKey.get(statS3.key) : undefined;
+
+        // Track missing files
+        if (!trialBalanceS3) {
+          missingOperaFiles.push({
+            propertyName: propertyId,
+            folderDate,
+            missingFileType: "trial_balance",
+          });
+        }
+        if (!statS3) {
+          missingOperaFiles.push({
+            propertyName: propertyId,
+            folderDate,
+            missingFileType: "stat_dmy_seg",
+          });
+        }
+
+        // Need at least the trial balance to generate JE records
+        if (!trialBalanceFile || trialBalanceFile.errors.length > 0) {
+          logger.warn(
+            "Opera trial balance file missing or failed — skipping JE generation",
+            {
+              propertyId,
+              folderDate,
+            },
+          );
+          // Still try to produce StatJE if stat file is present
+          if (statFile && statFile.errors.length === 0 && operaMapping) {
+            await this.processOperaStatOnly(
+              statFile,
+              propertyId,
+              folderDate,
+              reportsByProperty,
+              correlationId,
+            );
+          }
+          continue;
+        }
+
+        // Parse trial balance content
+        let trialBalanceData;
+        try {
+          trialBalanceData = parseTrialBalance(
+            trialBalanceFile.originalContent,
+          );
+        } catch (err) {
+          logger.error("Failed to parse trial balance", err as Error, {
+            fileKey: trialBalanceFile.fileKey,
+          });
+          continue;
+        }
+
+        const businessDate = trialBalanceData.businessDate;
+        const reportKey = `${propertyId}|${businessDate}`;
+
+        const duplicateCheck = await this.duplicateDetector.checkIfProcessed(
+          propertyId,
+          businessDate,
+          correlationId,
+        );
+
+        if (duplicateCheck.isAlreadyProcessed) {
+          const senderEmail = await this.getSenderEmailFromMetadata(
+            trialBalanceFile.fileKey,
+            correlationId,
+          );
+          const isOverride =
+            overrideEmails.length > 0 &&
+            senderEmail !== null &&
+            overrideEmails.includes(senderEmail.toLowerCase());
+
+          if (!isOverride) {
+            skippedDuplicates.push({
+              propertyName: propertyId,
+              businessDate,
+              fileKey: trialBalanceFile.fileKey,
+              reason: "already_processed",
+            });
+            continue;
+          }
+        }
+
+        // Get property config
+        const propertyConfigService = getPropertyConfigService();
+        const propertyConfig =
+          propertyConfigService.getPropertyConfigOrDefault(propertyId);
+
+        // Build JE records from trial balance
+        const jeRecords = operaMapping
+          ? transformTrialBalanceToJERecords(
+              trialBalanceData,
+              operaMapping,
+              propertyConfig,
+            )
+          : [];
+
+        // Build StatJE records from stat file (if present)
+        const statJERecords: ReturnType<
+          typeof transformStatDmySegToStatJERecords
+        > = [];
+        if (statFile && statFile.errors.length === 0) {
+          try {
+            const statData = parseStatDmySeg(statFile.originalContent);
+            statJERecords.push(
+              ...transformStatDmySegToStatJERecords(statData, propertyConfig),
+            );
+          } catch (err) {
+            logger.error("Failed to parse stat file", err as Error, {
+              fileKey: statFile.fileKey,
+            });
+          }
+        }
+
+        // Combine into the shape ConsolidatedReport.data uses (same as VM path)
+        const allRecords = [
+          ...jeRecords.map((r) => ({ ...r, propertyId })),
+          ...statJERecords.map((r) => ({ ...r, propertyId })),
+        ];
+
+        if (allRecords.length > 0) {
+          if (!reportsByProperty[reportKey]) {
+            reportsByProperty[reportKey] = {
+              propertyId,
+              propertyName: propertyConfig.locationName,
+              reportDate: businessDate,
+              totalFiles: 0,
+              totalRecords: 0,
+              data: [],
+              summary: {
+                processingTime: 0,
+                errors: [],
+                successfulFiles: 0,
+                failedFiles: 0,
+              },
+            };
+          }
+          const report = reportsByProperty[reportKey];
+          report.totalFiles++;
+          report.totalRecords += allRecords.length;
+          report.data.push(...allRecords);
+          report.summary.successfulFiles++;
+
+          logger.info("Opera property processed", {
+            propertyId,
+            businessDate,
+            jeRecords: jeRecords.length,
+            statJERecords: statJERecords.length,
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Process a stat-only Opera file (no trial balance received).
+   * Generates StatJE records without any JE records.
+   */
+  private async processOperaStatOnly(
+    statFile: ProcessedFileData,
+    propertyId: string,
+    folderDate: string,
+    reportsByProperty: { [key: string]: ConsolidatedReport },
+    correlationId: string,
+  ): Promise<void> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "process_opera_stat_only",
+    });
+
+    try {
+      const statData = parseStatDmySeg(statFile.originalContent);
+      const propertyConfigService = getPropertyConfigService();
+      const propertyConfig =
+        propertyConfigService.getPropertyConfigOrDefault(propertyId);
+
+      const statJERecords = transformStatDmySegToStatJERecords(
+        statData,
+        propertyConfig,
+      );
+
+      if (statJERecords.length === 0) return;
+
+      const reportKey = `${propertyId}|${folderDate}`;
+      if (!reportsByProperty[reportKey]) {
+        reportsByProperty[reportKey] = {
+          propertyId,
+          propertyName: propertyConfig.locationName,
+          reportDate: folderDate,
+          totalFiles: 0,
+          totalRecords: 0,
+          data: [],
+          summary: {
+            processingTime: 0,
+            errors: [],
+            successfulFiles: 0,
+            failedFiles: 0,
+          },
+        };
+      }
+
+      const report = reportsByProperty[reportKey];
+      report.totalFiles++;
+      report.totalRecords += statJERecords.length;
+      report.data.push(...statJERecords.map((r) => ({ ...r, propertyId })));
+      report.summary.successfulFiles++;
+
+      logger.info("Opera stat-only processed", {
+        propertyId,
+        folderDate,
+        statJERecords: statJERecords.length,
+      });
+    } catch (err) {
+      logger.error("Failed to process Opera stat-only file", err as Error, {
+        fileKey: statFile.fileKey,
+      });
+    }
+  }
+
+  /**
    * Helper method to load VisualMatrix mapping configuration
    */
   private async loadVisualMatrixMapping(
@@ -2127,9 +2472,11 @@ export class FileProcessor {
       const mappingFiles = (listResult.Contents || [])
         .filter(
           (obj) =>
-            obj.Key?.toLowerCase().endsWith(".xlsx") ||
-            obj.Key?.toLowerCase().endsWith(".xls") ||
-            obj.Key?.toLowerCase().endsWith(".csv"), // Also support CSV files that are actually Excel
+            // Exclude Opera mapping files (under opera/ prefix)
+            !obj.Key?.startsWith("opera/") &&
+            (obj.Key?.toLowerCase().endsWith(".xlsx") ||
+              obj.Key?.toLowerCase().endsWith(".xls") ||
+              obj.Key?.toLowerCase().endsWith(".csv")), // Also support CSV files that are actually Excel
         )
         .sort(
           (a, b) =>
@@ -2395,6 +2742,8 @@ export class FileProcessor {
             processingTimeMs: Date.now() - startTime,
             reportsGenerated: 0,
             skippedDuplicates: [],
+
+            missingOperaFiles: [],
           },
         };
       }
@@ -2438,6 +2787,8 @@ export class FileProcessor {
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 2,
           skippedDuplicates: [],
+
+          missingOperaFiles: [],
         },
       };
     } catch (error) {
@@ -2457,6 +2808,8 @@ export class FileProcessor {
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 0,
           skippedDuplicates: [],
+
+          missingOperaFiles: [],
         },
       };
     }
@@ -2523,6 +2876,8 @@ export class FileProcessor {
             processingTimeMs: Date.now() - startTime,
             reportsGenerated: 0,
             skippedDuplicates: [],
+
+            missingOperaFiles: [],
           },
         };
       }
@@ -2583,6 +2938,8 @@ export class FileProcessor {
             processingTimeMs: Date.now() - startTime,
             reportsGenerated: 0,
             skippedDuplicates: [],
+
+            missingOperaFiles: [],
           },
         };
       }
@@ -2593,9 +2950,11 @@ export class FileProcessor {
         await this.loadVisualMatrixMapping(correlationId);
 
       // Apply account code mappings and transformations
+      // reprocessBusinessDate uses an empty organizedFiles since files are already parsed
       const { reports: consolidatedReports } =
         await this.applyAccountCodeMappings(
           matchingFiles,
+          {},
           correlationId,
           visualMatrixData,
         );
@@ -2716,6 +3075,8 @@ export class FileProcessor {
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 2,
           skippedDuplicates: [],
+
+          missingOperaFiles: [],
         },
       };
       /* c8 ignore stop */
@@ -2736,6 +3097,8 @@ export class FileProcessor {
           processingTimeMs: Date.now() - startTime,
           reportsGenerated: 0,
           skippedDuplicates: [],
+
+          missingOperaFiles: [],
         },
       };
     }
@@ -2867,8 +3230,23 @@ export const handler = async (
         processingTimeMs: 0,
         reportsGenerated: 0,
         skippedDuplicates: [],
+        missingOperaFiles: [],
       },
     };
   }
   /* c8 ignore stop */
 };
+
+/**
+ * Determine whether a filename is an Opera file and what type it is.
+ * Returns "trial_balance", "stat_dmy_seg", or null.
+ */
+export function getOperaFileType(
+  filenameOrKey: string,
+): "trial_balance" | "stat_dmy_seg" | null {
+  // Use only the final filename component (handles full S3 keys)
+  const name = filenameOrKey.split("/").pop() ?? filenameOrKey;
+  if (/^trial_balance.*\.txt$/i.test(name)) return "trial_balance";
+  if (/^stat_dmy_seg.*\.txt$/i.test(name)) return "stat_dmy_seg";
+  return null;
+}

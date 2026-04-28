@@ -14,6 +14,8 @@ The system processes properties in two stages:
 
 Adding a new property requires changes in **three places**: the codebase, AWS SSM Parameter Store, and S3.
 
+> **Note:** A separate **Opera / IHG** pipeline (text exports instead of this PDF flow) is in design. That work is documented in **`docs/opera-ihg-pipeline.md`** and **`PROJECT_PLAN.md`** (Phase 12)—not in this file.
+
 ---
 
 ## Step 1: Add the Property Config (Code Change)

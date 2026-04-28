@@ -16,7 +16,10 @@ import { retryOperation } from "../utils/retry";
 import { ParameterStoreConfig } from "../config/parameter-store";
 import { environmentConfig } from "../config/environment";
 import { RetryConfig } from "../types/errors";
-import type { SkippedDuplicate } from "../lambda/file-processor";
+import type {
+  SkippedDuplicate,
+  MissingOperaFile,
+} from "../lambda/file-processor";
 
 /**
  * Details for a single property/date combination
@@ -58,6 +61,11 @@ export interface ReportSummary {
   propertyDetails?: PropertyDetail[];
   /** Files skipped because the property+date was already processed */
   skippedDuplicates?: SkippedDuplicate[];
+  /**
+   * Opera properties that received only one of the two expected daily files.
+   * Each entry generates a red notice in the outbound email.
+   */
+  missingOperaFiles?: MissingOperaFile[];
 }
 
 /**
@@ -380,6 +388,8 @@ export class ReportEmailSender {
       summary.propertyDetails && summary.propertyDetails.length > 0;
     const hasSkippedDuplicates =
       summary.skippedDuplicates && summary.skippedDuplicates.length > 0;
+    const hasMissingOperaFiles =
+      summary.missingOperaFiles && summary.missingOperaFiles.length > 0;
 
     // Use detailed view if propertyDetails available, otherwise simple list
     const propertiesSection = hasPropertyDetails
@@ -410,6 +420,26 @@ export class ReportEmailSender {
               .skippedDuplicates!.map(
                 (d) =>
                   `<li><strong>${this.escapeHtml(d.propertyName)}</strong> — ${this.formatDateForDisplay(d.businessDate)}</li>`,
+              )
+              .join("\n")}
+          </ul>
+        </div>
+      `
+      : "";
+
+    const missingOperaSection = hasMissingOperaFiles
+      ? `
+        <h3 style="color: #dc3545;">⚠ Missing Opera Files</h3>
+        <div style="background-color: #fff5f5; padding: 15px; border-radius: 4px; border-left: 4px solid #dc3545;">
+          <p style="margin: 0 0 10px 0; font-size: 13px; color: #dc3545; font-weight: bold;">
+            The following Opera files were NOT received and could not be included in today's report.
+            The hotel should be contacted to confirm delivery.
+          </p>
+          <ul style="margin: 0; color: #dc3545;">
+            ${summary
+              .missingOperaFiles!.map(
+                (m) =>
+                  `<li><strong>${this.escapeHtml(m.propertyName)}</strong> — missing <strong>${m.missingFileType === "trial_balance" ? "trial_balance*.txt" : "stat_dmy_seg*.txt"}</strong> (folder date: ${this.escapeHtml(m.folderDate)})</li>`,
               )
               .join("\n")}
           </ul>
@@ -479,6 +509,8 @@ export class ReportEmailSender {
 
       ${skippedSection}
 
+      ${missingOperaSection}
+
       ${errorSection}
 
       <h3>Attachments</h3>
@@ -506,6 +538,8 @@ export class ReportEmailSender {
     const hasErrors = summary.errors && summary.errors.length > 0;
     const hasSkippedDuplicates =
       summary.skippedDuplicates && summary.skippedDuplicates.length > 0;
+    const hasMissingOperaFilesText =
+      summary.missingOperaFiles && summary.missingOperaFiles.length > 0;
 
     const propertyList = summary.propertyNames
       .map((name) => `  - ${name}`)
@@ -520,6 +554,15 @@ export class ReportEmailSender {
           .skippedDuplicates!.map(
             (d) =>
               `  - ${d.propertyName} (${this.formatDateForDisplay(d.businessDate)})`,
+          )
+          .join("\n")}\n`
+      : "";
+
+    const missingOperaTextSection = hasMissingOperaFilesText
+      ? `\n*** MISSING OPERA FILES ***\n${summary
+          .missingOperaFiles!.map(
+            (m) =>
+              `  ! ${m.propertyName} — MISSING ${m.missingFileType === "trial_balance" ? "trial_balance*.txt" : "stat_dmy_seg*.txt"} (folder date: ${m.folderDate})`,
           )
           .join("\n")}\n`
       : "";
@@ -540,7 +583,7 @@ Processing Time:     ${(summary.processingTimeMs / 1000).toFixed(2)} seconds
 PROPERTIES INCLUDED
 -------------------
 ${propertyList}
-${skippedSection}${errorSection}
+${skippedSection}${missingOperaTextSection}${errorSection}
 ATTACHMENTS
 -----------
 - ${summary.reportDate}_JE.csv - Journal Entry file for NetSuite import

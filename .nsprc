@@ -1,3 +1,4 @@
 {
-  "1115432": "brace-expansion via exceljs->archiver->readdir-glob (GHSA-f886-m6hf-6m8v). exceljs@4.4.0 is the latest version and has not yet updated its archiver dependency. Attack vector requires controlling internal archiver glob patterns which is not possible in our Lambda environment. Remove once exceljs releases a fix."
+  "1115432": "brace-expansion via exceljs->archiver->readdir-glob (GHSA-f886-m6hf-6m8v). exceljs@4.4.0 is the latest version and has not yet updated its archiver dependency. Attack vector requires controlling internal archiver glob patterns which is not possible in our Lambda environment. Remove once exceljs releases a fix.",
+  "1116970": "uuid < 14.0.0 via exceljs (GHSA-w5hq-g745-h8pq). Fix requires downgrading to exceljs@3.4.0 which is a breaking change. The buf parameter code path that triggers the bounds issue is not exercised in our Lambda workload. Remove once exceljs updates its uuid dependency."
 }
