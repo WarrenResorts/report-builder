@@ -951,7 +951,18 @@ export class FileProcessor {
         businessDate = yesterday.toISOString().split("T")[0];
       }
 
-      const deduplicationKey = `${propertyName}|${businessDate}`;
+      // For Opera files, include the file type in the key so trial_balance and
+      // stat_dmy_seg files for the same property/date are not treated as duplicates
+      // of each other — they are a required pair, not copies of the same report.
+      const fileName = file.fileKey.split("/").pop() ?? "";
+      const operaFileType = fileName.startsWith("trial_balance")
+        ? "trial_balance"
+        : fileName.startsWith("stat_dmy_seg")
+          ? "stat_dmy_seg"
+          : null;
+      const deduplicationKey = operaFileType
+        ? `${propertyName}|${businessDate}|${operaFileType}`
+        : `${propertyName}|${businessDate}`;
 
       identities.push({
         file,
