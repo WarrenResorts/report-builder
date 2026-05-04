@@ -2090,6 +2090,26 @@ export class FileProcessor {
   }
 
   /**
+   * Extract raw text from a ProcessedFileData originalContent string.
+   *
+   * The txt parser stores its output as JSON ({ text, lines, ... }).
+   * Opera parsers (parseTrialBalance, parseStatDmySeg) need the plain text,
+   * so we unwrap it here. For files where originalContent is already plain
+   * text (or not valid JSON), the value is returned as-is.
+   */
+  private extractRawText(originalContent: string): string {
+    try {
+      const parsed = JSON.parse(originalContent);
+      if (parsed && typeof parsed.text === "string") {
+        return parsed.text;
+      }
+    } catch {
+      // Not JSON — already plain text
+    }
+    return originalContent;
+  }
+
+  /**
    * Helper method to get file extension from filename
    */
   private getFileExtension(filename: string): string {
@@ -2278,11 +2298,11 @@ export class FileProcessor {
           continue;
         }
 
-        // Parse trial balance content
+        // Parse trial balance content (unwrap txt-parser JSON envelope first)
         let trialBalanceData;
         try {
           trialBalanceData = parseTrialBalance(
-            trialBalanceFile.originalContent,
+            this.extractRawText(trialBalanceFile.originalContent),
           );
         } catch (err) {
           logger.error("Failed to parse trial balance", err as Error, {
@@ -2341,7 +2361,9 @@ export class FileProcessor {
         > = [];
         if (statFile && statFile.errors.length === 0) {
           try {
-            const statData = parseStatDmySeg(statFile.originalContent);
+            const statData = parseStatDmySeg(
+              this.extractRawText(statFile.originalContent),
+            );
             statJERecords.push(
               ...transformStatDmySegToStatJERecords(statData, propertyConfig),
             );
@@ -2408,7 +2430,9 @@ export class FileProcessor {
     });
 
     try {
-      const statData = parseStatDmySeg(statFile.originalContent);
+      const statData = parseStatDmySeg(
+        this.extractRawText(statFile.originalContent),
+      );
       const propertyConfigService = getPropertyConfigService();
       const propertyConfig =
         propertyConfigService.getPropertyConfigOrDefault(propertyId);

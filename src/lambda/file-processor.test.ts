@@ -2489,7 +2489,8 @@ Room Revenue: 500.00`;
   });
 
   describe("Opera file pair processing", () => {
-    const TRIAL_BALANCE_CONTENT = [
+    // Raw text content as it exists in the actual files
+    const TRIAL_BALANCE_RAW = [
       "TRX_NO,TRX_TYPE,TRX_TYPE_DESC,MULT,TB_AMOUNT,TRX_CODE,ACTUAL_TRX_CODE,DESCRIPTION,NET_AMOUNT,TRX_DATE,GUEST_LED_DEBIT,GUEST_LED_CREDIT,GUEST_LED_NET,AR_LED_DEBIT,AR_LED_CREDIT,AR_LED_NET,HOUSE_LED_DEBIT,HOUSE_LED_CREDIT,HOUSE_LED_NET,DEP_LED_DEBIT,DEP_LED_CREDIT,DEP_LED_NET,ADV_DEP_LED_DEBIT,ADV_DEP_LED_CREDIT,ADV_DEP_LED_NET,PAK_LED_DEBIT,PAK_LED_CREDIT,PAK_LED_NET,BALANCE_TODAY",
       "1,REVENUE,Revenue,1,1000.00,1000,1000,Accommodation,1000.00,07-APR-26,1000.00,0,1000.00,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
       "CHK_BAL_GUEST_LEDGER,1000.00",
@@ -2497,12 +2498,17 @@ Room Revenue: 500.00`;
       "100.00,1000.00",
     ].join("\n");
 
-    const STAT_CONTENT = [
+    const STAT_RAW = [
       "GRP2_CODE,SUB_GRP_CODE_DESC,DESCRIPTION,ROOMS_DAY,EXTRA",
       "D,Discount,Discount - D,20,0",
       "S_DAY_ROOMS,S_DAY_PERSONS",
       "20,25",
     ].join("\n");
+
+    // The TXTParser stores content as JSON({ text, lines, ... }) — mirror that here
+    // so tests exercise the same extractRawText unwrapping that happens at runtime.
+    const TRIAL_BALANCE_CONTENT = JSON.stringify({ text: TRIAL_BALANCE_RAW });
+    const STAT_CONTENT = JSON.stringify({ text: STAT_RAW });
 
     it("produces JE and StatJE records from a complete Opera file pair", async () => {
       const processor = new FileProcessor();
