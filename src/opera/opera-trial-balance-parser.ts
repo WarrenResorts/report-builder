@@ -128,8 +128,19 @@ export function parseTrialBalance(rawContent: string): TrialBalanceData {
     if (line.startsWith("CHK_BAL_")) continue;
 
     // Block 1: transaction rows
+    // Only require enough columns to reach the last needed index; the actual
+    // files have many trailing C_* columns that are sparsely populated, so
+    // data rows often have far fewer columns than the header.
     const cols = splitCsvRow(line);
-    if (cols.length < headers.length - 5) continue;
+    const minRequired =
+      Math.max(
+        idxTRXCode,
+        idxTBAmount,
+        idxTRXDate,
+        idxDescription,
+        idxTRXType,
+      ) + 1;
+    if (cols.length < minRequired) continue;
 
     const tRXCode = (cols[idxTRXCode] ?? "").trim();
     const tRXType = (cols[idxTRXType] ?? "").trim();
