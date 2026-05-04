@@ -23,6 +23,12 @@ export interface PropertyConfig {
   locationName: string;
   /** Cash account code for credit card deposits (e.g., "10070-696") */
   creditCardDepositAccount: string;
+  /**
+   * Total rooms available (hotel inventory).
+   * Required for Opera/IHG properties to populate the StatJE Rooms Available line.
+   * Not needed for Visual Matrix properties (extracted from PDF).
+   */
+  roomsAvailable?: number;
 }
 
 /**
@@ -127,6 +133,18 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "FRANCISCAN INN & SUITES",
     locationName: "Franciscan Inn & Suites",
     creditCardDepositAccount: "10010-528",
+  },
+  {
+    // Opera/IHG property — email slug used as propertyName for routing
+    // Sender: HSAOR-DoNotReply@hotels.ihg.com → slug: holiday-inn-express-clover-lane
+    propertyName: "holiday-inn-express-clover-lane",
+    locationInternalId: "5",
+    subsidiaryInternalId: "10",
+    subsidiaryFullName:
+      "Parent Company : Warren Family Hotels : Warren Resort Hotels of Clover Lane, Inc.",
+    locationName: "Holiday Inn Express - Clover Lane",
+    creditCardDepositAccount: "10030-531",
+    roomsAvailable: 65,
   },
 ];
 

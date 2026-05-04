@@ -2465,6 +2465,7 @@ Room Revenue: 500.00`;
         processor as any
       ).applyAccountCodeMappings(
         mockFiles,
+        {}, // organizedFiles — empty; no Opera files in this test
         "test-correlation-id",
         mockVisualMatrixData,
       );
@@ -2484,6 +2485,488 @@ Room Revenue: 500.00`;
       consolidatedReports.forEach((r: any) => {
         expect(r.totalFiles).toBe(1);
       });
+    });
+  });
+
+  describe("Opera file pair processing", () => {
+    // Raw text content as it exists in the actual files
+    const TRIAL_BALANCE_RAW = [
+      "TRX_NO,TRX_TYPE,TRX_TYPE_DESC,MULT,TB_AMOUNT,TRX_CODE,ACTUAL_TRX_CODE,DESCRIPTION,NET_AMOUNT,TRX_DATE,GUEST_LED_DEBIT,GUEST_LED_CREDIT,GUEST_LED_NET,AR_LED_DEBIT,AR_LED_CREDIT,AR_LED_NET,HOUSE_LED_DEBIT,HOUSE_LED_CREDIT,HOUSE_LED_NET,DEP_LED_DEBIT,DEP_LED_CREDIT,DEP_LED_NET,ADV_DEP_LED_DEBIT,ADV_DEP_LED_CREDIT,ADV_DEP_LED_NET,PAK_LED_DEBIT,PAK_LED_CREDIT,PAK_LED_NET,BALANCE_TODAY",
+      "1,REVENUE,Revenue,1,1000.00,1000,1000,Accommodation,1000.00,07-APR-26,1000.00,0,1000.00,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+      "CHK_BAL_GUEST_LEDGER,1000.00",
+      "CS_TB_AMOUNT_REP,CS_GL2",
+      "100.00,1000.00",
+    ].join("\n");
+
+    const STAT_RAW = [
+      "GRP2_CODE,SUB_GRP_CODE_DESC,DESCRIPTION,ROOMS_DAY,EXTRA",
+      "D,Discount,Discount - D,20,0",
+      "S_DAY_ROOMS,S_DAY_PERSONS",
+      "20,25",
+    ].join("\n");
+
+    // The TXTParser stores content as JSON({ text, lines, ... }) — mirror that here
+    // so tests exercise the same extractRawText unwrapping that happens at runtime.
+    const TRIAL_BALANCE_CONTENT = JSON.stringify({ text: TRIAL_BALANCE_RAW });
+    const STAT_CONTENT = JSON.stringify({ text: STAT_RAW });
+
+    it("produces JE and StatJE records from a complete Opera file pair", async () => {
+      const processor = new FileProcessor();
+
+      // Create mock S3 file metadata
+      const trialBalanceS3File = {
+        key: "daily-files/holiday-inn-express-clover-lane/2026-04-07/trial_balance123.txt",
+        lastModified: new Date(),
+        size: TRIAL_BALANCE_CONTENT.length,
+        propertyId: "holiday-inn-express-clover-lane",
+        date: "2026-04-07",
+        filename: "trial_balance123.txt",
+      };
+      const statS3File = {
+        key: "daily-files/holiday-inn-express-clover-lane/2026-04-07/stat_dmy_seg456.txt",
+        lastModified: new Date(),
+        size: STAT_CONTENT.length,
+        propertyId: "holiday-inn-express-clover-lane",
+        date: "2026-04-07",
+        filename: "stat_dmy_seg456.txt",
+      };
+
+      // Processed file data (the TXTParser returns raw content for txt files)
+      const processedFiles = [
+        {
+          fileKey: trialBalanceS3File.key,
+          originalContent: TRIAL_BALANCE_CONTENT,
+          transformedData: [],
+          errors: [],
+          propertyId: "holiday-inn-express-clover-lane",
+          processingTime: 0,
+        },
+        {
+          fileKey: statS3File.key,
+          originalContent: STAT_CONTENT,
+          transformedData: [],
+          errors: [],
+          propertyId: "holiday-inn-express-clover-lane",
+          processingTime: 0,
+        },
+      ];
+
+      // Organised files map mirrors the S3 structure
+      const organizedFiles = {
+        "holiday-inn-express-clover-lane": {
+          "2026-04-07": [trialBalanceS3File, statS3File],
+        },
+      };
+
+      // A minimal Opera mapping that covers TRX_CODE 1000
+      const operaMapping = new Map([
+        [
+          "1000",
+          {
+            tRXCode: "1000",
+            description: "Accommodation",
+            tRXType: "REVENUE",
+            glAcctCode: "40110-634",
+            glAcctName: "Room Revenue",
+            multiplier: 1,
+            xRefKey: "",
+          },
+        ],
+      ]);
+
+      // Dummy VisualMatrix data (required by applyAccountCodeMappings but unused for Opera)
+      const dummyVisualMatrixData = {
+        mappings: [
+          {
+            recId: 1,
+            srcAcctCode: "RC",
+            srcAcctDesc: "Room Charge",
+            xrefKey: "RC",
+            acctId: 1,
+            propertyId: 0,
+            propertyName: "",
+            acctCode: "40110",
+            acctSuffix: "",
+            acctName: "Revenue - Direct Booking",
+            multiplier: 1,
+            created: new Date(),
+            updated: new Date(),
+          },
+        ],
+        metadata: {
+          totalMappings: 1,
+          uniqueSourceCodes: 1,
+          uniqueTargetCodes: 1,
+          lastUpdated: new Date(),
+          hasPropertySpecificMappings: false,
+        },
+        sourceCodeMap: new Map(),
+        targetCodeMap: new Map(),
+      };
+
+      mockRetryS3Operation.mockImplementation((_fn: () => Promise<unknown>) =>
+        Promise.resolve({ Contents: [] }),
+      );
+
+      const { reports, missingOperaFiles } = await (
+        processor as any
+      ).applyAccountCodeMappings(
+        processedFiles,
+        organizedFiles,
+        "test-correlation-id",
+        dummyVisualMatrixData,
+        operaMapping,
+      );
+
+      // Should have one report for the Opera property
+      expect(reports.length).toBe(1);
+      expect(reports[0].propertyId).toBe("holiday-inn-express-clover-lane");
+      expect(reports[0].reportDate).toBe("2026-04-07");
+      // No missing files — both were provided
+      expect(missingOperaFiles).toEqual([]);
+      // Should have JE records (from trial balance) + StatJE records (from stat)
+      expect(reports[0].totalRecords).toBeGreaterThan(0);
+    });
+
+    it("processes stat-only Opera file when trial balance is absent", async () => {
+      const processor = new FileProcessor();
+
+      const statS3File = {
+        key: "daily-files/holiday-inn-express-clover-lane/2026-04-09/stat_dmy_seg789.txt",
+        lastModified: new Date(),
+        size: STAT_CONTENT.length,
+        propertyId: "holiday-inn-express-clover-lane",
+        date: "2026-04-09",
+        filename: "stat_dmy_seg789.txt",
+      };
+
+      const processedFiles = [
+        {
+          fileKey: statS3File.key,
+          originalContent: STAT_CONTENT,
+          transformedData: [],
+          errors: [],
+          propertyId: "holiday-inn-express-clover-lane",
+          processingTime: 0,
+        },
+      ];
+
+      const organizedFiles = {
+        "holiday-inn-express-clover-lane": {
+          "2026-04-09": [statS3File], // no trial balance file
+        },
+      };
+
+      const operaMapping = new Map([
+        [
+          "1000",
+          {
+            tRXCode: "1000",
+            description: "Accommodation",
+            tRXType: "REVENUE",
+            glAcctCode: "40110-634",
+            glAcctName: "Room Revenue",
+            multiplier: 1,
+            xRefKey: "",
+          },
+        ],
+      ]);
+
+      const dummyVisualMatrixData = {
+        mappings: [],
+        metadata: {
+          totalMappings: 0,
+          uniqueSourceCodes: 0,
+          uniqueTargetCodes: 0,
+          lastUpdated: new Date(),
+          hasPropertySpecificMappings: false,
+        },
+        sourceCodeMap: new Map(),
+        targetCodeMap: new Map(),
+      };
+
+      mockRetryS3Operation.mockImplementation(() =>
+        Promise.resolve({ Contents: [] }),
+      );
+
+      const { reports, missingOperaFiles } = await (
+        processor as any
+      ).applyAccountCodeMappings(
+        processedFiles,
+        organizedFiles,
+        "test-correlation-id",
+        dummyVisualMatrixData,
+        operaMapping,
+      );
+
+      // StatJE report should still be produced from the stat file alone
+      expect(reports.length).toBe(1);
+      expect(reports[0].totalRecords).toBeGreaterThan(0);
+      // Should record the missing trial balance
+      expect(missingOperaFiles.length).toBe(1);
+      expect(missingOperaFiles[0].missingFileType).toBe("trial_balance");
+    });
+
+    it("skips an Opera property that was already processed (duplicate detection)", async () => {
+      const processor = new FileProcessor();
+      // Override the duplicate detector mock to say this day is already processed
+      (
+        processor as any
+      ).duplicateDetector.checkIfProcessed.mockResolvedValueOnce({
+        isAlreadyProcessed: true,
+        markerKey: "processed/holiday-inn-express-clover-lane|2026-04-07.json",
+      });
+      // No override email — s3 HeadObject returns no senderEmail
+      mockS3Client.send.mockResolvedValueOnce({ Metadata: {} });
+
+      const trialBalanceS3File = {
+        key: "daily-files/holiday-inn-express-clover-lane/2026-04-07/trial_balance123.txt",
+        lastModified: new Date(),
+        size: TRIAL_BALANCE_CONTENT.length,
+        propertyId: "holiday-inn-express-clover-lane",
+        date: "2026-04-07",
+        filename: "trial_balance123.txt",
+      };
+
+      const processedFiles = [
+        {
+          fileKey: trialBalanceS3File.key,
+          originalContent: TRIAL_BALANCE_CONTENT,
+          transformedData: [],
+          errors: [],
+          propertyId: "holiday-inn-express-clover-lane",
+          processingTime: 0,
+        },
+      ];
+
+      const organizedFiles = {
+        "holiday-inn-express-clover-lane": {
+          "2026-04-07": [trialBalanceS3File],
+        },
+      };
+
+      const operaMapping = new Map([
+        [
+          "1000",
+          {
+            tRXCode: "1000",
+            description: "Accommodation",
+            tRXType: "REVENUE",
+            glAcctCode: "40110-634",
+            glAcctName: "Room Revenue",
+            multiplier: 1,
+            xRefKey: "",
+          },
+        ],
+      ]);
+
+      const dummyVisualMatrixData = {
+        mappings: [],
+        metadata: {
+          totalMappings: 0,
+          uniqueSourceCodes: 0,
+          uniqueTargetCodes: 0,
+          lastUpdated: new Date(),
+          hasPropertySpecificMappings: false,
+        },
+        sourceCodeMap: new Map(),
+        targetCodeMap: new Map(),
+      };
+
+      mockRetryS3Operation.mockImplementation(() =>
+        Promise.resolve({ Contents: [] }),
+      );
+
+      const { reports, skippedDuplicates, missingOperaFiles } = await (
+        processor as any
+      ).applyAccountCodeMappings(
+        processedFiles,
+        organizedFiles,
+        "test-correlation-id",
+        dummyVisualMatrixData,
+        operaMapping,
+      );
+
+      // Report should be skipped
+      expect(reports.length).toBe(0);
+      expect(skippedDuplicates.length).toBe(1);
+      expect(skippedDuplicates[0].propertyName).toBe(
+        "holiday-inn-express-clover-lane",
+      );
+      expect(skippedDuplicates[0].businessDate).toBe("2026-04-07");
+      expect(missingOperaFiles.length).toBe(1); // stat file still missing
+    });
+
+    it("reprocesses an already-processed Opera property when override email matches", async () => {
+      const processor = new FileProcessor();
+      // Already processed
+      (
+        processor as any
+      ).duplicateDetector.checkIfProcessed.mockResolvedValueOnce({
+        isAlreadyProcessed: true,
+        markerKey: "processed/holiday-inn-express-clover-lane|2026-04-07.json",
+      });
+      // S3 HeadObject returns the override email
+      mockS3Client.send.mockResolvedValueOnce({
+        Metadata: { senderEmail: "override@example.com" },
+      });
+      // Override emails list contains that address
+      mockParameterStore.getOverrideEmails.mockResolvedValueOnce([
+        "override@example.com",
+      ]);
+
+      const trialBalanceS3File = {
+        key: "daily-files/holiday-inn-express-clover-lane/2026-04-07/trial_balance123.txt",
+        lastModified: new Date(),
+        size: TRIAL_BALANCE_CONTENT.length,
+        propertyId: "holiday-inn-express-clover-lane",
+        date: "2026-04-07",
+        filename: "trial_balance123.txt",
+      };
+
+      const processedFiles = [
+        {
+          fileKey: trialBalanceS3File.key,
+          originalContent: TRIAL_BALANCE_CONTENT,
+          transformedData: [],
+          errors: [],
+          propertyId: "holiday-inn-express-clover-lane",
+          processingTime: 0,
+        },
+      ];
+
+      const organizedFiles = {
+        "holiday-inn-express-clover-lane": {
+          "2026-04-07": [trialBalanceS3File],
+        },
+      };
+
+      const operaMapping = new Map([
+        [
+          "1000",
+          {
+            tRXCode: "1000",
+            description: "Accommodation",
+            tRXType: "REVENUE",
+            glAcctCode: "40110-634",
+            glAcctName: "Room Revenue",
+            multiplier: 1,
+            xRefKey: "",
+          },
+        ],
+      ]);
+
+      const dummyVisualMatrixData = {
+        mappings: [],
+        metadata: {
+          totalMappings: 0,
+          uniqueSourceCodes: 0,
+          uniqueTargetCodes: 0,
+          lastUpdated: new Date(),
+          hasPropertySpecificMappings: false,
+        },
+        sourceCodeMap: new Map(),
+        targetCodeMap: new Map(),
+      };
+
+      mockRetryS3Operation.mockImplementation(() =>
+        Promise.resolve({ Contents: [] }),
+      );
+
+      const { reports, skippedDuplicates } = await (
+        processor as any
+      ).applyAccountCodeMappings(
+        processedFiles,
+        organizedFiles,
+        "test-correlation-id",
+        dummyVisualMatrixData,
+        operaMapping,
+      );
+
+      // Override sender → should NOT be skipped, report should be produced
+      expect(skippedDuplicates.length).toBe(0);
+      expect(reports.length).toBe(1);
+    });
+
+    it("records a missing stat file notice when only trial balance is present", async () => {
+      const processor = new FileProcessor();
+
+      const trialBalanceS3File = {
+        key: "daily-files/holiday-inn-express-clover-lane/2026-04-08/trial_balance999.txt",
+        lastModified: new Date(),
+        size: 100,
+        propertyId: "holiday-inn-express-clover-lane",
+        date: "2026-04-08",
+        filename: "trial_balance999.txt",
+      };
+
+      const processedFiles = [
+        {
+          fileKey: trialBalanceS3File.key,
+          originalContent: TRIAL_BALANCE_CONTENT,
+          transformedData: [],
+          errors: [],
+          propertyId: "holiday-inn-express-clover-lane",
+          processingTime: 0,
+        },
+      ];
+
+      const organizedFiles = {
+        "holiday-inn-express-clover-lane": {
+          "2026-04-08": [trialBalanceS3File], // no stat file
+        },
+      };
+
+      const operaMapping = new Map([
+        [
+          "1000",
+          {
+            tRXCode: "1000",
+            description: "Accommodation",
+            tRXType: "REVENUE",
+            glAcctCode: "40110-634",
+            glAcctName: "Room Revenue",
+            multiplier: 1,
+            xRefKey: "",
+          },
+        ],
+      ]);
+
+      const dummyVisualMatrixData = {
+        mappings: [],
+        metadata: {
+          totalMappings: 0,
+          uniqueSourceCodes: 0,
+          uniqueTargetCodes: 0,
+          lastUpdated: new Date(),
+          hasPropertySpecificMappings: false,
+        },
+        sourceCodeMap: new Map(),
+        targetCodeMap: new Map(),
+      };
+
+      mockRetryS3Operation.mockImplementation(() =>
+        Promise.resolve({ Contents: [] }),
+      );
+
+      const { reports, missingOperaFiles } = await (
+        processor as any
+      ).applyAccountCodeMappings(
+        processedFiles,
+        organizedFiles,
+        "test-correlation-id",
+        dummyVisualMatrixData,
+        operaMapping,
+      );
+
+      // Should still generate JE report despite missing stat file
+      expect(reports.length).toBe(1);
+      // Should record that stat_dmy_seg was missing
+      expect(missingOperaFiles.length).toBe(1);
+      expect(missingOperaFiles[0].missingFileType).toBe("stat_dmy_seg");
+      expect(missingOperaFiles[0].propertyName).toBe(
+        "holiday-inn-express-clover-lane",
+      );
     });
   });
 });
