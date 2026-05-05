@@ -10,7 +10,7 @@
  *              Multiplier (col 10), Xref Key (col 7), TRX_TYPE (col 4)
  */
 
-import * as ExcelJS from "exceljs";
+import ExcelJS from "exceljs";
 import { Readable } from "stream";
 import {
   S3Client,
