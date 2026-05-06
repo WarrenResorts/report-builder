@@ -1590,7 +1590,8 @@ export class FileProcessor {
         }),
       );
 
-      const senderEmail = response.Metadata?.senderEmail || null;
+      // AWS S3 lowercases all custom metadata keys on storage, so "senderEmail" → "senderemail"
+      const senderEmail = response.Metadata?.senderemail || null;
 
       logger.debug("Retrieved sender email from S3 metadata", {
         fileKey,

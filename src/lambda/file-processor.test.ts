@@ -2716,7 +2716,7 @@ Room Revenue: 500.00`;
         isAlreadyProcessed: true,
         markerKey: "processed/holiday-inn-express-clover-lane|2026-04-07.json",
       });
-      // No override email — s3 HeadObject returns no senderEmail
+      // No override email — s3 HeadObject returns no senderemail
       mockS3Client.send.mockResolvedValueOnce({ Metadata: {} });
 
       const trialBalanceS3File = {
@@ -2806,9 +2806,9 @@ Room Revenue: 500.00`;
         isAlreadyProcessed: true,
         markerKey: "processed/holiday-inn-express-clover-lane|2026-04-07.json",
       });
-      // S3 HeadObject returns the override email
+      // S3 HeadObject returns the override email (AWS lowercases all metadata keys)
       mockS3Client.send.mockResolvedValueOnce({
-        Metadata: { senderEmail: "override@example.com" },
+        Metadata: { senderemail: "override@example.com" },
       });
       // Override emails list contains that address
       mockParameterStore.getOverrideEmails.mockResolvedValueOnce([
