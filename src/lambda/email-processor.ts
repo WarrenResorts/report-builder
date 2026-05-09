@@ -545,8 +545,8 @@ export class EmailProcessor {
         "get_property_mapping",
       );
 
-      // Look up property ID based on sender email
-      const propertyId = mapping[senderEmail];
+      // Look up property ID based on sender email (case-insensitive — normalize to lowercase)
+      const propertyId = mapping[senderEmail.toLowerCase()];
 
       if (!propertyId) {
         logger.warn("No property mapping found for sender", {
