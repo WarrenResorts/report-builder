@@ -2385,7 +2385,11 @@ export class FileProcessor {
           if (!reportsByProperty[reportKey]) {
             reportsByProperty[reportKey] = {
               propertyId,
-              propertyName: propertyConfig.locationName,
+              // Use propertyConfig.propertyName (the slug) so JournalEntryGenerator
+              // can look it up by the same normalized key used in the config map.
+              // locationName has spaces ("Holiday Inn Express - Clover Lane") which
+              // does not match the hyphenated config key after normalization.
+              propertyName: propertyConfig.propertyName,
               reportDate: businessDate,
               totalFiles: 0,
               totalRecords: 0,
@@ -2449,7 +2453,7 @@ export class FileProcessor {
       if (!reportsByProperty[reportKey]) {
         reportsByProperty[reportKey] = {
           propertyId,
-          propertyName: propertyConfig.locationName,
+          propertyName: propertyConfig.propertyName,
           reportDate: folderDate,
           totalFiles: 0,
           totalRecords: 0,

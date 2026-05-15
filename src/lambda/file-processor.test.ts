@@ -2626,6 +2626,58 @@ Room Revenue: 500.00`;
       expect(missingOperaFiles).toEqual([]);
       // Should have JE records (from trial balance) + StatJE records (from stat)
       expect(reports[0].totalRecords).toBeGreaterThan(0);
+
+      // Verify the report's propertyName is the slug (not locationName) so
+      // JournalEntryGenerator can resolve the correct NetSuite config by key.
+      expect(reports[0].propertyName).toBe("holiday-inn-express-clover-lane");
+    });
+
+    it("generates CSV with correct NetSuite IDs for Opera property", async () => {
+      // This test guards against the JournalEntryGenerator config lookup failing
+      // because locationName ("Holiday Inn Express - Clover Lane") does not match
+      // the hyphenated config map key ("HOLIDAY-INN-EXPRESS-CLOVER-LANE").
+      const processor = new FileProcessor();
+
+      const testReports: ConsolidatedReport[] = [
+        {
+          propertyId: "holiday-inn-express-clover-lane",
+          propertyName: "holiday-inn-express-clover-lane",
+          reportDate: "2026-04-07",
+          totalFiles: 1,
+          totalRecords: 1,
+          data: [
+            {
+              sourceCode: "40110",
+              sourceDescription: "Accommodation",
+              sourceAmount: 5000.0,
+              targetCode: "40110-634",
+              targetDescription: "Revenue - Direct Booking",
+              mappedAmount: 5000.0,
+              propertyId: "holiday-inn-express-clover-lane",
+            },
+          ],
+          summary: {
+            processingTime: 100,
+            errors: [],
+            successfulFiles: 1,
+            failedFiles: 0,
+          },
+        },
+      ];
+
+      const { jeContent } = await (processor as any).generateSeparateCSVReports(
+        testReports,
+        "test-correlation-id",
+      );
+
+      // Subsidiary must be 10 (not 5, which is the default fallback)
+      expect(jeContent).toContain('"10"');
+      // Location must be 5 (not 1, which is the default fallback)
+      expect(jeContent).toContain(',"5",');
+      // Entry ID must start with WR5 (location 5), not WR1 (default location 1)
+      expect(jeContent).toContain("WR520260407");
+      // Sub Name must be the Clover Lane subsidiary, not the generic fallback
+      expect(jeContent).toContain("Warren Resort Hotels of Clover Lane");
     });
 
     it("processes stat-only Opera file when trial balance is absent", async () => {
