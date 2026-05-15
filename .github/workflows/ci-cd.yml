@@ -78,10 +78,45 @@ jobs:
         name: kics-results
         path: kics-results/
 
-  deploy-development:
-    needs: [test, security-scan]
+  check-dev-deployment:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    outputs:
+      should-deploy: ${{ steps.check.outputs.should-deploy }}
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Determine if dev deployment should proceed
+        id: check
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Non-Dependabot PRs always deploy to dev
+            if (context.actor !== 'dependabot[bot]') {
+              core.setOutput('should-deploy', 'true');
+              return;
+            }
+            // Dependabot PRs: skip deployment if any human-authored PR is currently open,
+            // so they don't overwrite the active feature branch in the shared dev environment.
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+            });
+            const humanPRs = pulls.filter(pr => pr.user.login !== 'dependabot[bot]' && pr.user.type !== 'Bot');
+            if (humanPRs.length > 0) {
+              console.log(`Skipping dev deployment: ${humanPRs.length} human PR(s) open (${humanPRs.map(p => '#' + p.number).join(', ')})`);
+              core.setOutput('should-deploy', 'false');
+            } else {
+              console.log('No human PRs open — Dependabot PR will deploy to dev.');
+              core.setOutput('should-deploy', 'true');
+            }
+
+  deploy-development:
+    needs: [test, security-scan, check-dev-deployment]
+    runs-on: ubuntu-latest
+    if: needs.check-dev-deployment.outputs.should-deploy == 'true'
     permissions:
       id-token: write   # This is required for requesting the JWT
       contents: read    # This is required for actions/checkout
