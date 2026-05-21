@@ -1108,47 +1108,10 @@ export class FileProcessor {
             }
 
             // Parse the file content
-            /* c8 ignore next */
-            console.log(
-              `DEBUG: About to parse file ${file.key} as ${supportedType}`,
-            );
             const parseResult = await parser.parseFromBuffer(
               fileContent,
               file.filename,
             );
-            /* c8 ignore next 4 */
-            console.log(`DEBUG: Parse result for ${file.key}:`, {
-              success: parseResult.success,
-              hasData: !!parseResult.data,
-              dataType: typeof parseResult.data,
-            });
-
-            // For PDF files, log more details about the parsed data
-            if (
-              supportedType === "pdf" &&
-              parseResult.success &&
-              parseResult.data
-            ) {
-              /* c8 ignore next 3 */
-              console.log(
-                `DEBUG: PDF data keys:`,
-                Object.keys(parseResult.data),
-              );
-              if (
-                typeof parseResult.data === "object" &&
-                parseResult.data !== null &&
-                "propertyName" in parseResult.data
-              ) {
-                /* c8 ignore next 3 */
-                console.log(
-                  `DEBUG: Property name found in PDF:`,
-                  parseResult.data.propertyName,
-                );
-              } else {
-                /* c8 ignore next */
-                console.log(`DEBUG: No propertyName field in PDF data`);
-              }
-            }
 
             if (parseResult.success && parseResult.data) {
               logger.info(
@@ -2302,9 +2265,18 @@ export class FileProcessor {
         // Parse trial balance content (unwrap txt-parser JSON envelope first)
         let trialBalanceData;
         try {
-          trialBalanceData = parseTrialBalance(
-            this.extractRawText(trialBalanceFile.originalContent),
-          );
+          const rawText = this.extractRawText(trialBalanceFile.originalContent);
+          logger.debug("Parsing Opera trial balance", {
+            fileKey: trialBalanceFile.fileKey,
+            contentLength: rawText.length,
+          });
+          trialBalanceData = parseTrialBalance(rawText);
+          logger.debug("Opera trial balance parsed", {
+            fileKey: trialBalanceFile.fileKey,
+            businessDate: trialBalanceData.businessDate,
+            transactionCount: trialBalanceData.transactions.length,
+            guestLedgerBalance: trialBalanceData.guestLedgerBalance,
+          });
         } catch (err) {
           logger.error("Failed to parse trial balance", err as Error, {
             fileKey: trialBalanceFile.fileKey,
@@ -2362,9 +2334,17 @@ export class FileProcessor {
         > = [];
         if (statFile && statFile.errors.length === 0) {
           try {
-            const statData = parseStatDmySeg(
-              this.extractRawText(statFile.originalContent),
-            );
+            const rawStatText = this.extractRawText(statFile.originalContent);
+            logger.debug("Parsing Opera stat file", {
+              fileKey: statFile.fileKey,
+              contentLength: rawStatText.length,
+            });
+            const statData = parseStatDmySeg(rawStatText);
+            logger.debug("Opera stat file parsed", {
+              fileKey: statFile.fileKey,
+              segmentCount: statData.segments.length,
+              totalRoomsOccupied: statData.totalRoomsOccupied,
+            });
             statJERecords.push(
               ...transformStatDmySegToStatJERecords(statData, propertyConfig),
             );
@@ -2435,9 +2415,17 @@ export class FileProcessor {
     });
 
     try {
-      const statData = parseStatDmySeg(
-        this.extractRawText(statFile.originalContent),
-      );
+      const rawStatText = this.extractRawText(statFile.originalContent);
+      logger.debug("Parsing Opera stat-only file", {
+        fileKey: statFile.fileKey,
+        contentLength: rawStatText.length,
+      });
+      const statData = parseStatDmySeg(rawStatText);
+      logger.debug("Opera stat-only file parsed", {
+        fileKey: statFile.fileKey,
+        segmentCount: statData.segments.length,
+        totalRoomsOccupied: statData.totalRoomsOccupied,
+      });
       const propertyConfigService = getPropertyConfigService();
       const propertyConfig =
         propertyConfigService.getPropertyConfigOrDefault(propertyId);

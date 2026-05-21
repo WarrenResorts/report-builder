@@ -12,8 +12,7 @@ const PROPERTY_CONFIG: PropertyConfig = {
   propertyName: "holiday-inn-express-clover-lane",
   locationInternalId: "5",
   subsidiaryInternalId: "10",
-  subsidiaryFullName:
-    "Parent Company : Warren Family Hotels : Warren Resort Hotels of Clover Lane, Inc.",
+  subsidiaryFullName: "Holiday Inn Express - Clover Lane",
   locationName: "Holiday Inn Express - Clover Lane",
   creditCardDepositAccount: "10030-531",
   roomsAvailable: 65,
@@ -207,6 +206,102 @@ describe("transformTrialBalanceToJERecords", () => {
       PROPERTY_CONFIG,
     );
     expect(records.find((r) => r.targetCode === "10006-654")).toBeUndefined();
+  });
+
+  it("emits a JE line for a DeferredRevenue transaction and adds its amount to the Guest Ledger", () => {
+    const trialBalanceWithDeferred: TrialBalanceData = {
+      ...trialBalance,
+      transactions: [
+        ...trialBalance.transactions,
+        {
+          tRXCode: "9999",
+          description: "Deferred Revenue",
+          tRXType: "NON REVENUE",
+          tBAmount: 133.98,
+          tRXDate: "2026-04-07",
+          arLedDebit: 0,
+        },
+      ],
+      guestLedgerBalance: 3101.83,
+    };
+    const mappingWithDeferred = makeMapping([
+      ...Array.from(mapping.entries()).map(([k, v]) => ({
+        tRXCode: k,
+        glAcctCode: v.glAcctCode,
+        multiplier: v.multiplier,
+        xRefKey: v.xRefKey,
+        tRXType: v.tRXType,
+      })),
+      {
+        tRXCode: "9999",
+        glAcctCode: "24000-263",
+        multiplier: 1,
+        xRefKey: "DeferredRevenue",
+        tRXType: "NON REVENUE",
+      },
+    ]);
+
+    const records = transformTrialBalanceToJERecords(
+      trialBalanceWithDeferred,
+      mappingWithDeferred,
+      PROPERTY_CONFIG,
+    );
+
+    // Should generate a separate Deferred Revenue JE line
+    const deferredLine = records.find((r) => r.targetCode === "24000-263");
+    expect(deferredLine).toBeDefined();
+    expect(deferredLine?.mappedAmount).toBeCloseTo(133.98);
+
+    // Guest Ledger should be 3101.83 + 133.98 = 3235.81
+    const gl = records.find((r) => r.targetCode === "10006-654");
+    expect(gl?.mappedAmount).toBeCloseTo(3235.81);
+  });
+
+  it("subtracts a DeferredRevenue debit from the Guest Ledger balance", () => {
+    const trialBalanceWithDebit: TrialBalanceData = {
+      businessDate: "2026-04-07",
+      transactions: [
+        {
+          tRXCode: "9999",
+          description: "Deposit Applied",
+          tRXType: "NON REVENUE",
+          tBAmount: -133.98,
+          tRXDate: "2026-04-07",
+          arLedDebit: 0,
+        },
+      ],
+      guestLedgerBalance: 3101.83,
+    };
+    const mappingWithDebit = makeMapping([
+      {
+        tRXCode: "9999",
+        glAcctCode: "24000-263",
+        multiplier: -1,
+        xRefKey: "DeferredRevenue",
+        tRXType: "NON REVENUE",
+      },
+    ]);
+
+    const records = transformTrialBalanceToJERecords(
+      trialBalanceWithDebit,
+      mappingWithDebit,
+      PROPERTY_CONFIG,
+    );
+
+    // Guest Ledger should be 3101.83 + (-133.98) = 2967.85
+    const gl = records.find((r) => r.targetCode === "10006-654");
+    expect(gl?.mappedAmount).toBeCloseTo(2967.85);
+  });
+
+  it("does not adjust Guest Ledger when no DeferredRevenue transactions are present", () => {
+    const records = transformTrialBalanceToJERecords(
+      trialBalance,
+      mapping,
+      PROPERTY_CONFIG,
+    );
+    const gl = records.find((r) => r.targetCode === "10006-654");
+    // guestLedgerBalance is 537.47 with no deferred revenue — should be unchanged
+    expect(gl?.mappedAmount).toBeCloseTo(537.47);
   });
 
   it("omits AR City Ledger line when 9002 is not mapped and arLedDebit is zero", () => {

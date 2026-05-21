@@ -11,10 +11,15 @@
  *   - Direct Billing (TRX_CODE 9002) creates a separate AR City Ledger debit
  *     from the AR_LED_DEBIT column rather than from TB_AMOUNT
  *   - Visa (9004) + MasterCard (9005) share XRefKey "GstPMSMCV" → combined JE line
+ *   - Transactions with XRefKey "DeferredRevenue" → JE line to their mapped account
+ *     (e.g. 24000-263) AND their TB_AMOUNT is added to the Guest Ledger balance so
+ *     the offsetting debit entry stays in balance. A credit (positive TB_AMOUNT) adds
+ *     to the Guest Ledger; a debit (negative TB_AMOUNT) subtracts from it.
+ *     To enable: add the TRX_CODE to the mapping spreadsheet with XRef Key = "DeferredRevenue".
  *   - INTERNAL transactions → skipped
  *   - TRX_CODEs with Glacct Code = "Not Mapped" → skipped
- *   - Guest Ledger balance (guestLedgerBalance from trial balance summary) →
- *     debit to account 10006-654 as offsetting entry
+ *   - Guest Ledger balance (guestLedgerBalance from trial balance summary, adjusted
+ *     for any DeferredRevenue transactions) → debit to account 10006-654 as offsetting entry
  *
  * StatJE rules (from sample output):
  *   - Rooms Available  → 90009-789 (from property config roomsAvailable)
@@ -42,6 +47,15 @@ const AR_CITY_LEDGER_ACCOUNT = "10502-2051";
 /** XRefKey shared by Visa and MasterCard — combine into one "Visa/Master" line */
 const VISA_MASTER_XREF = "GstPMSMCV";
 
+/**
+ * XRefKey for Deferred Revenue transactions (e.g. advance deposits received/applied).
+ * These transactions generate their own JE line AND adjust the Guest Ledger balance
+ * so the offsetting debit entry stays in balance.
+ * Add this value to the XRef Key column in the Opera mapping spreadsheet for any
+ * TRX_CODE that should trigger this behaviour.
+ */
+const DEFERRED_REVENUE_XREF = "DeferredRevenue";
+
 // ------- Fixed statistical account codes -------
 
 const STAT_ACCOUNTS = {
@@ -68,6 +82,11 @@ export function transformTrialBalanceToJERecords(
   let visaMasterAmount = 0;
   let visaMasterMappingEntry =
     operaMapping.get("9004") ?? operaMapping.get("9005");
+
+  // Accumulate Guest Ledger adjustment from DeferredRevenue transactions.
+  // Each such transaction's TB_AMOUNT is added to the base Guest Ledger balance
+  // (positive = credit adds to the debit; negative = debit subtracts from it).
+  let deferredRevenueAdjustment = 0;
 
   for (const tx of trialBalance.transactions) {
     // Skip INTERNAL transactions entirely
@@ -97,6 +116,22 @@ export function transformTrialBalanceToJERecords(
     if (mappingEntry.xRefKey === VISA_MASTER_XREF) {
       visaMasterAmount += tx.tBAmount * mappingEntry.multiplier;
       visaMasterMappingEntry = mappingEntry;
+      continue;
+    }
+
+    // Deferred Revenue: emit a normal JE line AND accumulate Guest Ledger adjustment
+    if (mappingEntry.xRefKey === DEFERRED_REVENUE_XREF) {
+      deferredRevenueAdjustment += tx.tBAmount;
+      records.push({
+        sourceCode: tx.tRXCode,
+        sourceDescription: tx.description,
+        sourceAmount: tx.tBAmount,
+        targetCode: mappingEntry.glAcctCode,
+        targetDescription: mappingEntry.glAcctName,
+        mappedAmount: tx.tBAmount * mappingEntry.multiplier,
+        paymentMethod: undefined,
+        originalLine: undefined,
+      });
       continue;
     }
 
@@ -132,15 +167,18 @@ export function transformTrialBalanceToJERecords(
     });
   }
 
-  // Guest Ledger balance line — debit offsetting entry
-  if (trialBalance.guestLedgerBalance !== 0) {
+  // Guest Ledger balance line — debit offsetting entry.
+  // Adjusted by any DeferredRevenue transaction amounts so the JE stays in balance.
+  const adjustedGuestLedgerBalance =
+    trialBalance.guestLedgerBalance + deferredRevenueAdjustment;
+  if (adjustedGuestLedgerBalance !== 0) {
     records.push({
       sourceCode: "GUEST_LEDGER",
       sourceDescription: "Guest Ledger",
-      sourceAmount: trialBalance.guestLedgerBalance,
+      sourceAmount: adjustedGuestLedgerBalance,
       targetCode: GUEST_LEDGER_ACCOUNT,
       targetDescription: "Guest Ledger",
-      mappedAmount: trialBalance.guestLedgerBalance,
+      mappedAmount: adjustedGuestLedgerBalance,
       paymentMethod: undefined,
       originalLine: undefined,
     });

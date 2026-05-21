@@ -2677,7 +2677,7 @@ Room Revenue: 500.00`;
       // Entry ID must start with WR5 (location 5), not WR1 (default location 1)
       expect(jeContent).toContain("WR520260407");
       // Sub Name must be the Clover Lane subsidiary, not the generic fallback
-      expect(jeContent).toContain("Warren Resort Hotels of Clover Lane");
+      expect(jeContent).toContain("Holiday Inn Express - Clover Lane");
     });
 
     it("processes stat-only Opera file when trial balance is absent", async () => {

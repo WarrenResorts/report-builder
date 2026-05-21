@@ -140,8 +140,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     propertyName: "holiday-inn-express-clover-lane",
     locationInternalId: "5",
     subsidiaryInternalId: "10",
-    subsidiaryFullName:
-      "Parent Company : Warren Family Hotels : Warren Resort Hotels of Clover Lane, Inc.",
+    subsidiaryFullName: "Holiday Inn Express - Clover Lane",
     locationName: "Holiday Inn Express - Clover Lane",
     creditCardDepositAccount: "10030-531",
     roomsAvailable: 65,
