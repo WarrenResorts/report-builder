@@ -2275,7 +2275,7 @@ export class FileProcessor {
             fileKey: trialBalanceFile.fileKey,
             businessDate: trialBalanceData.businessDate,
             transactionCount: trialBalanceData.transactions.length,
-            guestLedgerBalance: trialBalanceData.guestLedgerBalance,
+            summaryEntryCount: trialBalanceData.summaryEntries.size,
           });
         } catch (err) {
           logger.error("Failed to parse trial balance", err as Error, {
@@ -2346,7 +2346,11 @@ export class FileProcessor {
               totalRoomsOccupied: statData.totalRoomsOccupied,
             });
             statJERecords.push(
-              ...transformStatDmySegToStatJERecords(statData, propertyConfig),
+              ...transformStatDmySegToStatJERecords(
+                statData,
+                propertyConfig,
+                trialBalanceData,
+              ),
             );
           } catch (err) {
             logger.error("Failed to parse stat file", err as Error, {

@@ -44,6 +44,10 @@ function makeMapping(
 }
 
 describe("transformTrialBalanceToJERecords", () => {
+  const makeSummaryEntries = (
+    entries: Record<string, number>,
+  ): Map<string, number> => new Map(Object.entries(entries));
+
   const trialBalance: TrialBalanceData = {
     businessDate: "2026-04-07",
     transactions: [
@@ -53,7 +57,6 @@ describe("transformTrialBalanceToJERecords", () => {
         tRXType: "REVENUE",
         tBAmount: 4824.19,
         tRXDate: "2026-04-07",
-        arLedDebit: 0,
       },
       {
         tRXCode: "7100",
@@ -61,7 +64,6 @@ describe("transformTrialBalanceToJERecords", () => {
         tRXType: "NON REVENUE",
         tBAmount: 433.92,
         tRXDate: "2026-04-07",
-        arLedDebit: 0,
       },
       {
         tRXCode: "9003",
@@ -69,7 +71,6 @@ describe("transformTrialBalanceToJERecords", () => {
         tRXType: "PAYMENT",
         tBAmount: -321.12,
         tRXDate: "2026-04-07",
-        arLedDebit: 0,
       },
       {
         tRXCode: "9004",
@@ -77,7 +78,6 @@ describe("transformTrialBalanceToJERecords", () => {
         tRXType: "PAYMENT",
         tBAmount: -3831.75,
         tRXDate: "2026-04-07",
-        arLedDebit: 0,
       },
       {
         tRXCode: "9005",
@@ -85,15 +85,6 @@ describe("transformTrialBalanceToJERecords", () => {
         tRXType: "PAYMENT",
         tBAmount: -815.48,
         tRXDate: "2026-04-07",
-        arLedDebit: 0,
-      },
-      {
-        tRXCode: "9002",
-        description: "Direct Billing",
-        tRXType: "PAYMENT",
-        tBAmount: -27.88,
-        tRXDate: "2026-04-07",
-        arLedDebit: 27.88,
       },
       {
         tRXCode: "8997",
@@ -101,10 +92,15 @@ describe("transformTrialBalanceToJERecords", () => {
         tRXType: "INTERNAL",
         tBAmount: 0,
         tRXDate: "2026-04-07",
-        arLedDebit: 0,
       },
     ],
-    guestLedgerBalance: 537.47,
+    summaryEntries: makeSummaryEntries({
+      CS_GUEST_LED_DEBIT_REP: 5705.41,
+      CS_GUEST_LED_CREDIT_REP: -4633.96, // net = 1071.45 → but we use mapping to produce this
+      CS_AR_LED_DEBIT_REP: 27.88,
+      CS_DEPOSIT_LED_DEBIT_REP: 533.98,
+      CS_DEPOSIT_LED_CREDIT_REP: -533.98, // net deposit = 0
+    }),
   };
 
   const mapping = makeMapping([
@@ -130,8 +126,44 @@ describe("transformTrialBalanceToJERecords", () => {
       xRefKey: "GstPMSMCV",
       tRXType: "PAYMENT",
     },
-    // 9002 intentionally NOT in mapping (Not Mapped)
     { tRXCode: "8997", glAcctCode: "Not Mapped", tRXType: "INTERNAL" },
+    // Summary block mappings
+    {
+      tRXCode: "CS_GUEST_LED_DEBIT_REP",
+      glAcctCode: "10006-654",
+      description: "Guest Ledger",
+    },
+    {
+      tRXCode: "CS_GUEST_LED_CREDIT_REP",
+      glAcctCode: "10006-654",
+      description: "Guest Ledger",
+    },
+    {
+      tRXCode: "CS_AR_LED_DEBIT_REP",
+      glAcctCode: "10502-2051",
+      description: "AR - City Ledger",
+      xRefKey: "GstXfer",
+    },
+    {
+      tRXCode: "CS_AR_LED_CREDIT_REP",
+      glAcctCode: "10502-2051",
+      description: "AR - City Ledger",
+      xRefKey: "GstXfer",
+    },
+    {
+      tRXCode: "CS_DEPOSIT_LED_DEBIT_REP",
+      glAcctCode: "24000-263",
+      description: "Deferred Revenue",
+      multiplier: -1,
+      xRefKey: "AdvDepToGstLedger",
+    },
+    {
+      tRXCode: "CS_DEPOSIT_LED_CREDIT_REP",
+      glAcctCode: "24000-263",
+      description: "Deferred Revenue",
+      multiplier: -1,
+      xRefKey: "AdvDepToGstLedger",
+    },
   ]);
 
   it("maps revenue transactions to their GL accounts", () => {
@@ -176,18 +208,7 @@ describe("transformTrialBalanceToJERecords", () => {
     expect(amex?.mappedAmount).toBeCloseTo(321.12);
   });
 
-  it("creates AR City Ledger debit from arLedDebit when 9002 is not mapped", () => {
-    const records = transformTrialBalanceToJERecords(
-      trialBalance,
-      mapping,
-      PROPERTY_CONFIG,
-    );
-    const ar = records.find((r) => r.targetCode === "10502-2051");
-    expect(ar).toBeDefined();
-    expect(ar?.mappedAmount).toBeCloseTo(27.88);
-  });
-
-  it("adds Guest Ledger balance line", () => {
+  it("generates Guest Ledger line from summary block (net of debit and credit)", () => {
     const records = transformTrialBalanceToJERecords(
       trialBalance,
       mapping,
@@ -195,136 +216,82 @@ describe("transformTrialBalanceToJERecords", () => {
     );
     const gl = records.find((r) => r.targetCode === "10006-654");
     expect(gl).toBeDefined();
-    expect(gl?.mappedAmount).toBeCloseTo(537.47);
+    // Net: 5705.41 * 1 + (-4633.96) * 1 = 1071.45
+    expect(gl?.mappedAmount).toBeCloseTo(1071.45);
   });
 
-  it("omits Guest Ledger line when guestLedgerBalance is zero", () => {
-    const zeroBalance = { ...trialBalance, guestLedgerBalance: 0 };
-    const records = transformTrialBalanceToJERecords(
-      zeroBalance,
-      mapping,
-      PROPERTY_CONFIG,
-    );
-    expect(records.find((r) => r.targetCode === "10006-654")).toBeUndefined();
-  });
-
-  it("emits a JE line for a DeferredRevenue transaction and adds its amount to the Guest Ledger", () => {
-    const trialBalanceWithDeferred: TrialBalanceData = {
-      ...trialBalance,
-      transactions: [
-        ...trialBalance.transactions,
-        {
-          tRXCode: "9999",
-          description: "Deferred Revenue",
-          tRXType: "NON REVENUE",
-          tBAmount: 133.98,
-          tRXDate: "2026-04-07",
-          arLedDebit: 0,
-        },
-      ],
-      guestLedgerBalance: 3101.83,
-    };
-    const mappingWithDeferred = makeMapping([
-      ...Array.from(mapping.entries()).map(([k, v]) => ({
-        tRXCode: k,
-        glAcctCode: v.glAcctCode,
-        multiplier: v.multiplier,
-        xRefKey: v.xRefKey,
-        tRXType: v.tRXType,
-      })),
-      {
-        tRXCode: "9999",
-        glAcctCode: "24000-263",
-        multiplier: 1,
-        xRefKey: "DeferredRevenue",
-        tRXType: "NON REVENUE",
-      },
-    ]);
-
-    const records = transformTrialBalanceToJERecords(
-      trialBalanceWithDeferred,
-      mappingWithDeferred,
-      PROPERTY_CONFIG,
-    );
-
-    // Should generate a separate Deferred Revenue JE line
-    const deferredLine = records.find((r) => r.targetCode === "24000-263");
-    expect(deferredLine).toBeDefined();
-    expect(deferredLine?.mappedAmount).toBeCloseTo(133.98);
-
-    // Guest Ledger should be 3101.83 + 133.98 = 3235.81
-    const gl = records.find((r) => r.targetCode === "10006-654");
-    expect(gl?.mappedAmount).toBeCloseTo(3235.81);
-  });
-
-  it("subtracts a DeferredRevenue debit from the Guest Ledger balance", () => {
-    const trialBalanceWithDebit: TrialBalanceData = {
-      businessDate: "2026-04-07",
-      transactions: [
-        {
-          tRXCode: "9999",
-          description: "Deposit Applied",
-          tRXType: "NON REVENUE",
-          tBAmount: -133.98,
-          tRXDate: "2026-04-07",
-          arLedDebit: 0,
-        },
-      ],
-      guestLedgerBalance: 3101.83,
-    };
-    const mappingWithDebit = makeMapping([
-      {
-        tRXCode: "9999",
-        glAcctCode: "24000-263",
-        multiplier: -1,
-        xRefKey: "DeferredRevenue",
-        tRXType: "NON REVENUE",
-      },
-    ]);
-
-    const records = transformTrialBalanceToJERecords(
-      trialBalanceWithDebit,
-      mappingWithDebit,
-      PROPERTY_CONFIG,
-    );
-
-    // Guest Ledger should be 3101.83 + (-133.98) = 2967.85
-    const gl = records.find((r) => r.targetCode === "10006-654");
-    expect(gl?.mappedAmount).toBeCloseTo(2967.85);
-  });
-
-  it("does not adjust Guest Ledger when no DeferredRevenue transactions are present", () => {
+  it("generates AR City Ledger line from summary block (grouped by GstXfer XRef)", () => {
     const records = transformTrialBalanceToJERecords(
       trialBalance,
       mapping,
       PROPERTY_CONFIG,
     );
-    const gl = records.find((r) => r.targetCode === "10006-654");
-    // guestLedgerBalance is 537.47 with no deferred revenue — should be unchanged
-    expect(gl?.mappedAmount).toBeCloseTo(537.47);
+    const ar = records.find((r) => r.targetCode === "10502-2051");
+    expect(ar).toBeDefined();
+    // Net: 27.88 * 1 + 0 (CS_AR_LED_CREDIT_REP not in summaryEntries) = 27.88
+    expect(ar?.mappedAmount).toBeCloseTo(27.88);
   });
 
-  it("omits AR City Ledger line when 9002 is not mapped and arLedDebit is zero", () => {
-    const txNoAR = {
-      ...trialBalance,
-      transactions: [
-        {
-          tRXCode: "9002",
-          description: "Direct Billing",
-          tRXType: "PAYMENT",
-          tBAmount: 0,
-          tRXDate: "2026-04-07",
-          arLedDebit: 0,
-        },
-      ],
-      guestLedgerBalance: 0,
-    };
+  it("nets Deferred Revenue deposit ledger to zero when debit equals credit", () => {
     const records = transformTrialBalanceToJERecords(
-      txNoAR,
+      trialBalance,
       mapping,
       PROPERTY_CONFIG,
     );
+    // CS_DEPOSIT_LED_DEBIT_REP=533.98 * -1 + CS_DEPOSIT_LED_CREDIT_REP=-533.98 * -1 = 0
+    expect(records.find((r) => r.targetCode === "24000-263")).toBeUndefined();
+  });
+
+  it("generates a Deferred Revenue credit line when deposit ledger has a net credit", () => {
+    const withDeferredCredit: TrialBalanceData = {
+      ...trialBalance,
+      summaryEntries: makeSummaryEntries({
+        CS_GUEST_LED_DEBIT_REP: 3235.81,
+        CS_DEPOSIT_LED_CREDIT_REP: -133.98, // new deposit received → credit to 24000
+      }),
+    };
+    const records = transformTrialBalanceToJERecords(
+      withDeferredCredit,
+      mapping,
+      PROPERTY_CONFIG,
+    );
+    const deferred = records.find((r) => r.targetCode === "24000-263");
+    expect(deferred).toBeDefined();
+    // -133.98 * -1 = 133.98 → liability positive → credit in JE
+    expect(deferred?.mappedAmount).toBeCloseTo(133.98);
+  });
+
+  it("generates a Deferred Revenue debit line when deposit ledger has a net debit", () => {
+    const withDeferredDebit: TrialBalanceData = {
+      ...trialBalance,
+      summaryEntries: makeSummaryEntries({
+        CS_DEPOSIT_LED_DEBIT_REP: 133.98, // deposit applied → debit to 24000
+      }),
+    };
+    const records = transformTrialBalanceToJERecords(
+      withDeferredDebit,
+      mapping,
+      PROPERTY_CONFIG,
+    );
+    const deferred = records.find((r) => r.targetCode === "24000-263");
+    expect(deferred).toBeDefined();
+    // 133.98 * -1 = -133.98 → liability negative → debit in JE
+    expect(deferred?.mappedAmount).toBeCloseTo(-133.98);
+  });
+
+  it("omits summary group lines when summaryEntries contains no mapped codes", () => {
+    const noSummary: TrialBalanceData = {
+      ...trialBalance,
+      summaryEntries: new Map(),
+    };
+    const records = transformTrialBalanceToJERecords(
+      noSummary,
+      mapping,
+      PROPERTY_CONFIG,
+    );
+    expect(records.find((r) => r.targetCode === "10006-654")).toBeUndefined();
     expect(records.find((r) => r.targetCode === "10502-2051")).toBeUndefined();
+    expect(records.find((r) => r.targetCode === "24000-263")).toBeUndefined();
   });
 });
 
@@ -358,17 +325,88 @@ describe("transformStatDmySegToStatJERecords", () => {
     expect(roomsSold.map((r) => r.mappedAmount)).toEqual([10, 5, 30]);
   });
 
-  it("produces Occy, ADR, RevPAR lines all zeroed", () => {
+  it("produces zeroed Occy, ADR, RevPAR when no trial balance is supplied", () => {
     const records = transformStatDmySegToStatJERecords(
       statData,
       PROPERTY_CONFIG,
     );
-    const occy = records.find((r) => r.targetCode === "90002-419");
+    expect(
+      records.find((r) => r.targetCode === "90002-419")?.mappedAmount,
+    ).toBe(0);
+    expect(
+      records.find((r) => r.targetCode === "90001-418")?.mappedAmount,
+    ).toBe(0);
+    expect(
+      records.find((r) => r.targetCode === "90003-420")?.mappedAmount,
+    ).toBe(0);
+  });
+
+  it("calculates ADR, Occy, RevPAR from trial balance when supplied", () => {
+    // Room revenue TRX_CODEs: 1000 = 4824.19, 1309 = 154 → total = 4978.19
+    // roomsSold = 45, roomsAvailable = 65
+    const trialBalance: TrialBalanceData = {
+      businessDate: "2026-04-07",
+      transactions: [
+        {
+          tRXCode: "1000",
+          description: "Accommodation",
+          tRXType: "REVENUE",
+          tBAmount: 4824.19,
+          tRXDate: "2026-04-07",
+        },
+        {
+          tRXCode: "1309",
+          description: "No Show",
+          tRXType: "REVENUE",
+          tBAmount: 154,
+          tRXDate: "2026-04-07",
+        },
+        {
+          // Not a room revenue code — should not be included
+          tRXCode: "7100",
+          description: "Tourist Tax",
+          tRXType: "NON REVENUE",
+          tBAmount: 433.92,
+          tRXDate: "2026-04-07",
+        },
+      ],
+      summaryEntries: new Map(),
+    };
+
+    const records = transformStatDmySegToStatJERecords(
+      statData,
+      PROPERTY_CONFIG,
+      trialBalance,
+    );
+
+    const roomRevenue = 4824.19 + 154; // 4978.19
     const adr = records.find((r) => r.targetCode === "90001-418");
+    const occy = records.find((r) => r.targetCode === "90002-419");
     const revpar = records.find((r) => r.targetCode === "90003-420");
-    expect(occy?.mappedAmount).toBe(0);
-    expect(adr?.mappedAmount).toBe(0);
-    expect(revpar?.mappedAmount).toBe(0);
+
+    // ADR = 4978.19 / 45
+    expect(adr?.mappedAmount).toBeCloseTo(roomRevenue / 45);
+    // Occy = 45 / 65
+    expect(occy?.mappedAmount).toBeCloseTo(45 / 65);
+    // RevPAR = 4978.19 / 65
+    expect(revpar?.mappedAmount).toBeCloseTo(roomRevenue / 65);
+  });
+
+  it("sets ADR to zero when roomsSold is zero (avoids division by zero)", () => {
+    const zeroRoomsStatData = { ...statData, totalRoomsOccupied: 0 };
+    const trialBalance: TrialBalanceData = {
+      businessDate: "2026-04-07",
+      transactions: [],
+      summaryEntries: new Map(),
+    };
+    const records = transformStatDmySegToStatJERecords(
+      zeroRoomsStatData,
+      PROPERTY_CONFIG,
+      trialBalance,
+    );
+    expect(
+      records.find((r) => r.targetCode === "90001-418")?.mappedAmount,
+    ).toBe(0);
   });
 
   it("uses 0 for roomsAvailable when not set in property config", () => {

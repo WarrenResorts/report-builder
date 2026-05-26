@@ -43,11 +43,6 @@ export interface TrialBalanceTransaction {
   tBAmount: number;
   /** Business date string in YYYY-MM-DD format */
   tRXDate: string;
-  /**
-   * A/R ledger debit amount — non-zero for Direct Billing/City Ledger payments.
-   * Used to create the AR City Ledger JE debit entry.
-   */
-  arLedDebit: number;
 }
 
 /** Parsed trial balance file */
@@ -57,10 +52,13 @@ export interface TrialBalanceData {
   /** Individual transaction rows */
   transactions: TrialBalanceTransaction[];
   /**
-   * Net Guest Ledger balance for the day (CS_TB_AMOUNT_REP from summary block).
-   * This becomes the offsetting Debit to account 10006 in the JE.
+   * All non-zero key-value pairs from the summary block (Block 3).
+   * Keys are the column names (e.g. "CS_GUEST_LED_DEBIT_REP", "CS_TB_AMOUNT_REP").
+   * Values are parsed as floats; credits appear as negative numbers.
+   * These are looked up in the Opera mapping to generate JE lines for accounts
+   * such as Guest Ledger (10006), AR City Ledger (10502), and Deferred Revenue (24000).
    */
-  guestLedgerBalance: number;
+  summaryEntries: Map<string, number>;
 }
 
 /**
@@ -90,7 +88,6 @@ export function parseTrialBalance(rawContent: string): TrialBalanceData {
   const idxTRXType = headers.indexOf("TRX_TYPE");
   const idxTBAmount = headers.indexOf("TB_AMOUNT");
   const idxTRXDate = headers.indexOf("TRX_DATE");
-  const idxARLedDebit = headers.indexOf("AR_LED_DEBIT");
 
   if (idxTRXCode === -1 || idxTBAmount === -1 || idxTRXDate === -1) {
     throw new Error(
@@ -100,25 +97,30 @@ export function parseTrialBalance(rawContent: string): TrialBalanceData {
 
   const transactions: TrialBalanceTransaction[] = [];
   let businessDate = "";
-  let guestLedgerBalance = 0;
+  const summaryEntries = new Map<string, number>();
 
   // Three logical blocks in the file:
   //   1. Transaction rows (parsed columns matching the header)
   //   2. CHK_BAL_* balance-check rows (key,value pairs — skipped)
   //   3. Summary block: a second header row starting with "CS_TB_AMOUNT_REP",
-  //      followed by a single data row
+  //      followed by a single data row containing all summary totals
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
 
-    // Block 3: summary header detected
+    // Block 3: summary header detected — extract all key-value pairs
     if (line.startsWith("CS_TB_AMOUNT_REP,") || line === "CS_TB_AMOUNT_REP") {
       const summaryHeaders = splitCsvRow(line);
       const summaryDataLine = lines[i + 1];
       if (summaryDataLine) {
         const summaryValues = splitCsvRow(summaryDataLine);
-        const idxBalance = summaryHeaders.indexOf("CS_TB_AMOUNT_REP");
-        if (idxBalance !== -1 && summaryValues[idxBalance] !== undefined) {
-          guestLedgerBalance = parseFloat(summaryValues[idxBalance]) || 0;
+        for (let j = 0; j < summaryHeaders.length; j++) {
+          const key = summaryHeaders[j].trim();
+          const rawVal = (summaryValues[j] ?? "").trim();
+          if (!key || !rawVal) continue;
+          const value = parseFloat(rawVal.replace(/,/g, ""));
+          if (!isNaN(value) && value !== 0) {
+            summaryEntries.set(key, value);
+          }
         }
       }
       break;
@@ -155,10 +157,6 @@ export function parseTrialBalance(rawContent: string): TrialBalanceData {
 
     const tBAmount =
       parseFloat((cols[idxTBAmount] ?? "0").replace(/,/g, "")) || 0;
-    const arLedDebit =
-      idxARLedDebit !== -1
-        ? parseFloat((cols[idxARLedDebit] ?? "0").replace(/,/g, "")) || 0
-        : 0;
 
     transactions.push({
       tRXCode,
@@ -166,7 +164,6 @@ export function parseTrialBalance(rawContent: string): TrialBalanceData {
       tRXType,
       tBAmount,
       tRXDate: parsedDate,
-      arLedDebit,
     });
   }
 
@@ -178,7 +175,7 @@ export function parseTrialBalance(rawContent: string): TrialBalanceData {
     throw new Error("Could not extract business date from trial balance");
   }
 
-  return { businessDate, transactions, guestLedgerBalance };
+  return { businessDate, transactions, summaryEntries };
 }
 
 /**

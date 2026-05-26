@@ -39,15 +39,32 @@ describe("parseTrialBalance", () => {
     expect(amex?.tBAmount).toBeCloseTo(-321.12);
   });
 
-  it("extracts AR_LED_DEBIT for direct billing row", () => {
+  it("populates summaryEntries with all non-zero values from the summary block", () => {
     const result = parseTrialBalance(SAMPLE_TRIAL_BALANCE);
-    const directBilling = result.transactions.find((t) => t.tRXCode === "9002");
-    expect(directBilling?.arLedDebit).toBeCloseTo(27.88);
+    // CS_TB_AMOUNT_REP = 537.47
+    expect(result.summaryEntries.get("CS_TB_AMOUNT_REP")).toBeCloseTo(537.47);
+    // Guest Ledger debit/credit
+    expect(result.summaryEntries.get("CS_GUEST_LED_DEBIT_REP")).toBeCloseTo(
+      5705.41,
+    );
+    expect(result.summaryEntries.get("CS_GUEST_LED_CREDIT_REP")).toBeCloseTo(
+      -4633.96,
+    );
+    // AR Ledger
+    expect(result.summaryEntries.get("CS_AR_LED_DEBIT_REP")).toBeCloseTo(27.88);
+    // Deposit Ledger
+    expect(result.summaryEntries.get("CS_DEPOSIT_LED_DEBIT_REP")).toBeCloseTo(
+      533.98,
+    );
+    expect(result.summaryEntries.get("CS_DEPOSIT_LED_CREDIT_REP")).toBeCloseTo(
+      -533.98,
+    );
   });
 
-  it("parses the guest ledger balance from the summary block", () => {
+  it("does not include zero-value entries in summaryEntries", () => {
     const result = parseTrialBalance(SAMPLE_TRIAL_BALANCE);
-    expect(result.guestLedgerBalance).toBeCloseTo(537.47);
+    // CS_AR_LED_CREDIT_REP = 0 in the sample — should not be present
+    expect(result.summaryEntries.has("CS_AR_LED_CREDIT_REP")).toBe(false);
   });
 
   it("sets tRXType correctly", () => {
