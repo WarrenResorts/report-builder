@@ -2567,15 +2567,17 @@ Room Revenue: 500.00`;
       const operaMapping = new Map([
         [
           "1000",
-          {
-            tRXCode: "1000",
-            description: "Accommodation",
-            tRXType: "REVENUE",
-            glAcctCode: "40110-634",
-            glAcctName: "Room Revenue",
-            multiplier: 1,
-            xRefKey: "",
-          },
+          [
+            {
+              tRXCode: "1000",
+              description: "Accommodation",
+              tRXType: "REVENUE",
+              glAcctCode: "40110-634",
+              glAcctName: "Room Revenue",
+              multiplier: 1,
+              xRefKey: "",
+            },
+          ],
         ],
       ]);
 
@@ -2717,15 +2719,17 @@ Room Revenue: 500.00`;
       const operaMapping = new Map([
         [
           "1000",
-          {
-            tRXCode: "1000",
-            description: "Accommodation",
-            tRXType: "REVENUE",
-            glAcctCode: "40110-634",
-            glAcctName: "Room Revenue",
-            multiplier: 1,
-            xRefKey: "",
-          },
+          [
+            {
+              tRXCode: "1000",
+              description: "Accommodation",
+              tRXType: "REVENUE",
+              glAcctCode: "40110-634",
+              glAcctName: "Room Revenue",
+              multiplier: 1,
+              xRefKey: "",
+            },
+          ],
         ],
       ]);
 
@@ -2805,15 +2809,17 @@ Room Revenue: 500.00`;
       const operaMapping = new Map([
         [
           "1000",
-          {
-            tRXCode: "1000",
-            description: "Accommodation",
-            tRXType: "REVENUE",
-            glAcctCode: "40110-634",
-            glAcctName: "Room Revenue",
-            multiplier: 1,
-            xRefKey: "",
-          },
+          [
+            {
+              tRXCode: "1000",
+              description: "Accommodation",
+              tRXType: "REVENUE",
+              glAcctCode: "40110-634",
+              glAcctName: "Room Revenue",
+              multiplier: 1,
+              xRefKey: "",
+            },
+          ],
         ],
       ]);
 
@@ -2901,15 +2907,17 @@ Room Revenue: 500.00`;
       const operaMapping = new Map([
         [
           "1000",
-          {
-            tRXCode: "1000",
-            description: "Accommodation",
-            tRXType: "REVENUE",
-            glAcctCode: "40110-634",
-            glAcctName: "Room Revenue",
-            multiplier: 1,
-            xRefKey: "",
-          },
+          [
+            {
+              tRXCode: "1000",
+              description: "Accommodation",
+              tRXType: "REVENUE",
+              glAcctCode: "40110-634",
+              glAcctName: "Room Revenue",
+              multiplier: 1,
+              xRefKey: "",
+            },
+          ],
         ],
       ]);
 
@@ -2977,15 +2985,17 @@ Room Revenue: 500.00`;
       const operaMapping = new Map([
         [
           "1000",
-          {
-            tRXCode: "1000",
-            description: "Accommodation",
-            tRXType: "REVENUE",
-            glAcctCode: "40110-634",
-            glAcctName: "Room Revenue",
-            multiplier: 1,
-            xRefKey: "",
-          },
+          [
+            {
+              tRXCode: "1000",
+              description: "Accommodation",
+              tRXType: "REVENUE",
+              glAcctCode: "40110-634",
+              glAcctName: "Room Revenue",
+              multiplier: 1,
+              xRefKey: "",
+            },
+          ],
         ],
       ]);
 

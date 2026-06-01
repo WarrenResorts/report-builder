@@ -145,7 +145,7 @@ describe("loadOperaMapping", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.get("1000")?.glAcctCode).toBe("40110-634");
+    expect(result!.get("1000")?.[0].glAcctCode).toBe("40110-634");
   });
 
   it("skips non-XLSX files and only downloads the XLSX", async () => {
@@ -278,12 +278,12 @@ describe("parseOperaMappingWorkbook", () => {
     const mapping = await parseOperaMappingWorkbook(buf);
     expect(mapping.size).toBe(2);
 
-    const room = mapping.get("1000")!;
+    const room = mapping.get("1000")![0];
     expect(room.glAcctCode).toBe("40110-634");
     expect(room.tRXType).toBe("REVENUE");
     expect(room.multiplier).toBe(1);
 
-    const visa = mapping.get("9004")!;
+    const visa = mapping.get("9004")![0];
     expect(visa.multiplier).toBe(-1);
     expect(visa.xRefKey).toBe("GstPMSMCV");
   });
@@ -291,17 +291,20 @@ describe("parseOperaMappingWorkbook", () => {
   it("marks empty Glacct Code as Not Mapped", async () => {
     const buf = await buildTestWorkbook([{ tRXCode: "9002", glAcctCode: "" }]);
     const mapping = await parseOperaMappingWorkbook(buf);
-    expect(mapping.get("9002")?.glAcctCode).toBe(NOT_MAPPED);
+    expect(mapping.get("9002")?.[0].glAcctCode).toBe(NOT_MAPPED);
   });
 
-  it("deduplicates TRX_CODEs, keeping first occurrence", async () => {
+  it("collects multiple entries for the same TRX_CODE (dual-mapped accounts)", async () => {
     const buf = await buildTestWorkbook([
-      { tRXCode: "1000", glAcctCode: "40110-634" },
-      { tRXCode: "1000", glAcctCode: "99999-001" },
+      { tRXCode: "CS_DEP", glAcctCode: "24000-263" },
+      { tRXCode: "CS_DEP", glAcctCode: "10006-654" },
     ]);
     const mapping = await parseOperaMappingWorkbook(buf);
     expect(mapping.size).toBe(1);
-    expect(mapping.get("1000")?.glAcctCode).toBe("40110-634");
+    const entries = mapping.get("CS_DEP")!;
+    expect(entries.length).toBe(2);
+    expect(entries[0].glAcctCode).toBe("24000-263");
+    expect(entries[1].glAcctCode).toBe("10006-654");
   });
 
   it("handles null/undefined cell values gracefully", async () => {
@@ -346,7 +349,7 @@ describe("parseOperaMappingWorkbook", () => {
     void row;
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const mapping = await parseOperaMappingWorkbook(buffer);
-    const entry = mapping.get("5000")!;
+    const entry = mapping.get("5000")![0];
     expect(entry).toBeDefined();
     expect(entry.description).toBe("");
     expect(entry.xRefKey).toBe("");

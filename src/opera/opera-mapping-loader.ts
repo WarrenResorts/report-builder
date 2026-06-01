@@ -55,8 +55,13 @@ export interface OperaMappingEntry {
   xRefKey: string;
 }
 
-/** Keyed by TRX_CODE for O(1) lookup */
-export type OperaMapping = Map<string, OperaMappingEntry>;
+/**
+ * Keyed by TRX_CODE for O(1) lookup.
+ * Each key maps to an array because a single TRX_CODE may legitimately appear
+ * in multiple rows of the workbook (e.g. a CS_ summary code that posts to both
+ * Deferred Revenue and Guest Ledger). The array preserves insertion order.
+ */
+export type OperaMapping = Map<string, OperaMappingEntry[]>;
 
 /**
  * Download and parse the most-recent Opera mapping XLSX from S3.
@@ -129,9 +134,14 @@ export async function loadOperaMapping(
 
     const mapping = await parseOperaMappingWorkbook(buffer);
 
+    const totalEntries = Array.from(mapping.values()).reduce(
+      (sum, arr) => sum + arr.length,
+      0,
+    );
     logger.info("Opera mapping loaded successfully", {
       key: mappingKey,
-      totalEntries: mapping.size,
+      uniqueKeys: mapping.size,
+      totalEntries,
     });
 
     return mapping;
@@ -184,9 +194,11 @@ export async function parseOperaMappingWorkbook(
       xRefKey: String(row.getCell(7).value ?? "").trim(),
     };
 
-    // Only keep the first occurrence of each TRX_CODE (property-global rows)
-    if (!mapping.has(tRXCode)) {
-      mapping.set(tRXCode, entry);
+    const existing = mapping.get(tRXCode);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      mapping.set(tRXCode, [entry]);
     }
   });
 

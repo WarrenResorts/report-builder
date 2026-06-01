@@ -85,15 +85,18 @@ export function transformTrialBalanceToJERecords(
 
   // Accumulate combined Visa/Master amount before adding as single line
   let visaMasterAmount = 0;
-  let visaMasterMappingEntry =
-    operaMapping.get("9004") ?? operaMapping.get("9005");
+  let visaMasterMappingEntry = (operaMapping.get("9004") ??
+    operaMapping.get("9005"))?.[0];
 
   // --- Block 1: regular transaction rows ---
+  // Regular TRX_CODEs (numbered codes like 1000, 9003) always have a single
+  // mapping entry; we use entries[0] for O(1) access.
   for (const tx of trialBalance.transactions) {
     // Skip INTERNAL transactions entirely
     if (tx.tRXType === "INTERNAL") continue;
 
-    const mappingEntry = operaMapping.get(tx.tRXCode);
+    const entries = operaMapping.get(tx.tRXCode);
+    const mappingEntry = entries?.[0];
 
     // Skip if no mapping or explicitly not mapped
     if (!mappingEntry || mappingEntry.glAcctCode === NOT_MAPPED) continue;
@@ -146,17 +149,25 @@ export function transformTrialBalanceToJERecords(
     { netAmount: number; mappingEntry: OperaMappingEntry }
   >();
 
+  // CS_ codes may have multiple mapping entries (dual-posted accounts).
+  // Each entry is processed independently so that one CS_ code can contribute
+  // to more than one JE group (e.g. CS_DEPOSIT_LED_CREDIT_REP posts to both
+  // Deferred Revenue and Guest Ledger).
   for (const [csCode, csValue] of trialBalance.summaryEntries) {
-    const mappingEntry = operaMapping.get(csCode);
-    if (!mappingEntry || mappingEntry.glAcctCode === NOT_MAPPED) continue;
+    const entries = operaMapping.get(csCode);
+    if (!entries) continue;
 
-    const groupKey = mappingEntry.xRefKey || mappingEntry.glAcctCode;
-    const contribution = csValue * mappingEntry.multiplier;
-    const existing = summaryGroups.get(groupKey);
-    if (existing) {
-      existing.netAmount += contribution;
-    } else {
-      summaryGroups.set(groupKey, { netAmount: contribution, mappingEntry });
+    for (const mappingEntry of entries) {
+      if (mappingEntry.glAcctCode === NOT_MAPPED) continue;
+
+      const groupKey = mappingEntry.xRefKey || mappingEntry.glAcctCode;
+      const contribution = csValue * mappingEntry.multiplier;
+      const existing = summaryGroups.get(groupKey);
+      if (existing) {
+        existing.netAmount += contribution;
+      } else {
+        summaryGroups.set(groupKey, { netAmount: contribution, mappingEntry });
+      }
     }
   }
 

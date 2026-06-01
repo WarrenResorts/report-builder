@@ -30,7 +30,7 @@ function makeMapping(
 ): OperaMapping {
   const map: OperaMapping = new Map();
   for (const e of entries) {
-    map.set(e.tRXCode, {
+    const entry = {
       tRXCode: e.tRXCode,
       description: e.description ?? e.tRXCode,
       tRXType: e.tRXType ?? "REVENUE",
@@ -38,7 +38,13 @@ function makeMapping(
       glAcctName: `Account ${e.glAcctCode}`,
       multiplier: e.multiplier ?? 1,
       xRefKey: e.xRefKey ?? "",
-    });
+    };
+    const existing = map.get(e.tRXCode);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      map.set(e.tRXCode, [entry]);
+    }
   }
   return map;
 }
@@ -292,6 +298,63 @@ describe("transformTrialBalanceToJERecords", () => {
     expect(records.find((r) => r.targetCode === "10006-654")).toBeUndefined();
     expect(records.find((r) => r.targetCode === "10502-2051")).toBeUndefined();
     expect(records.find((r) => r.targetCode === "24000-263")).toBeUndefined();
+  });
+
+  it("dual-maps a CS_ code to two GL accounts when the mapping has two entries", () => {
+    // CS_DEPOSIT_LED_CREDIT_REP posts to Deferred Revenue (24000-263) AND
+    // Guest Ledger (10006-654) with a -1 multiplier for Guest Ledger.
+    const dualMapping = makeMapping([
+      // CS_TB_AMOUNT_REP → Guest Ledger, multiplier 1
+      {
+        tRXCode: "CS_TB_AMOUNT_REP",
+        glAcctCode: "10006-654",
+        description: "Guest Ledger",
+        multiplier: 1,
+      },
+      // CS_DEPOSIT_LED_CREDIT_REP entry 1 → Deferred Revenue, multiplier -1
+      {
+        tRXCode: "CS_DEPOSIT_LED_CREDIT_REP",
+        glAcctCode: "24000-263",
+        description: "Deferred Revenue",
+        multiplier: -1,
+        xRefKey: "AdvDepToGstLedger",
+      },
+      // CS_DEPOSIT_LED_CREDIT_REP entry 2 → Guest Ledger, multiplier -1 (dual)
+      {
+        tRXCode: "CS_DEPOSIT_LED_CREDIT_REP",
+        glAcctCode: "10006-654",
+        description: "Guest Ledger adj",
+        multiplier: -1,
+      },
+    ]);
+
+    // summaryEntries: TB amount drives the base GL line; deposit credit
+    // adjusts both Deferred Revenue and Guest Ledger.
+    const data: TrialBalanceData = {
+      businessDate: "2026-05-19",
+      transactions: [],
+      summaryEntries: makeSummaryEntries({
+        CS_TB_AMOUNT_REP: 3101.83, // base guest ledger
+        CS_DEPOSIT_LED_CREDIT_REP: -133.98, // deposit credit
+      }),
+    };
+
+    const records = transformTrialBalanceToJERecords(
+      data,
+      dualMapping,
+      PROPERTY_CONFIG,
+    );
+
+    // Deferred Revenue: -133.98 * -1 = 133.98
+    const deferred = records.find((r) => r.targetCode === "24000-263");
+    expect(deferred).toBeDefined();
+    expect(deferred?.mappedAmount).toBeCloseTo(133.98);
+
+    // Guest Ledger: CS_TB_AMOUNT_REP (3101.83 * 1) + CS_DEPOSIT_LED_CREDIT_REP (-133.98 * -1)
+    // = 3101.83 + 133.98 = 3235.81
+    const gl = records.find((r) => r.targetCode === "10006-654");
+    expect(gl).toBeDefined();
+    expect(gl?.mappedAmount).toBeCloseTo(3235.81);
   });
 });
 
