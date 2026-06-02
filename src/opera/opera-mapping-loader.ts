@@ -60,6 +60,7 @@ export interface OperaMappingEntry {
  * Each key maps to an array because a single TRX_CODE may legitimately appear
  * in multiple rows of the workbook (e.g. a CS_ summary code that posts to both
  * Deferred Revenue and Guest Ledger). The array preserves insertion order.
+ * See: dual-mapping support for CS_DEPOSIT_LED_CREDIT_REP / CS_DEPOSIT_LED_DEBIT_REP.
  */
 export type OperaMapping = Map<string, OperaMappingEntry[]>;
 
