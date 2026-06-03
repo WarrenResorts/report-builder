@@ -92,24 +92,29 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Non-Dependabot PRs always deploy to dev
-            if (context.actor !== 'dependabot[bot]') {
+            // Feature-branch PRs (head starts with "feature/") are the primary owners
+            // of the shared dev environment and always deploy.
+            const headBranch = context.payload.pull_request.head.ref;
+            if (headBranch.startsWith('feature/')) {
+              console.log(`Feature branch PR (${headBranch}) — deploying to dev.`);
               core.setOutput('should-deploy', 'true');
               return;
             }
-            // Dependabot PRs: skip deployment if any human-authored PR is currently open,
-            // so they don't overwrite the active feature branch in the shared dev environment.
+            // All other PRs (Dependabot bumps, hotfixes, chores, etc.) must defer to
+            // any open feature-branch PR so they never overwrite the active feature work.
             const { data: pulls } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
             });
-            const humanPRs = pulls.filter(pr => pr.user.login !== 'dependabot[bot]' && pr.user.type !== 'Bot');
-            if (humanPRs.length > 0) {
-              console.log(`Skipping dev deployment: ${humanPRs.length} human PR(s) open (${humanPRs.map(p => '#' + p.number).join(', ')})`);
+            const featurePRs = pulls.filter(pr =>
+              pr.head.ref.startsWith('feature/') && pr.user.type !== 'Bot'
+            );
+            if (featurePRs.length > 0) {
+              console.log(`Skipping dev deployment: feature PR(s) open (${featurePRs.map(p => '#' + p.number + ' ' + p.head.ref).join(', ')})`);
               core.setOutput('should-deploy', 'false');
             } else {
-              console.log('No human PRs open — Dependabot PR will deploy to dev.');
+              console.log('No feature PRs open — non-feature PR will deploy to dev.');
               core.setOutput('should-deploy', 'true');
             }
 
@@ -138,6 +143,9 @@ jobs:
     - name: Install CDK
       run: npm install -g aws-cdk
     
+    - name: Install root dependencies
+      run: npm ci
+
     - name: Install infrastructure dependencies
       run: |
         cd infrastructure
@@ -199,6 +207,9 @@ jobs:
     
     - name: Install CDK
       run: npm install -g aws-cdk
+
+    - name: Install root dependencies
+      run: npm ci
     
     - name: Install infrastructure dependencies
       run: |
