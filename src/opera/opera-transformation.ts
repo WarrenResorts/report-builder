@@ -8,7 +8,8 @@
  * JE rules (from Opera mapping workbook + sample output):
  *   - Each REVENUE / NON REVENUE transaction → credit line via Opera mapping
  *   - PAYMENT transactions → debit line via Opera mapping (Multiplier = -1)
- *   - Visa (9004) + MasterCard (9005) share XRefKey "GstPMSMCV" → combined JE line
+ *   - Visa (9004) + MasterCard (9005) + Discover (9007) share combined XRefKeys
+ *     ("GstPMSMCV", "GstPMSDV") → single combined JE line labeled "Visa/MC/Discover"
  *   - INTERNAL transactions → skipped
  *   - TRX_CODEs with Glacct Code = "Not Mapped" → skipped
  *   - Summary block entries (CS_ / CF_ / CP_ codes from TrialBalanceData.summaryEntries)
@@ -40,8 +41,13 @@ import type { OperaMapping, OperaMappingEntry } from "./opera-mapping-loader";
 import type { PropertyConfig } from "../config/property-config";
 import { NOT_MAPPED } from "./opera-mapping-loader";
 
-/** XRefKey shared by Visa and MasterCard — combine into one "Visa/Master" line */
-const VISA_MASTER_XREF = "GstPMSMCV";
+/**
+ * XRefKeys whose transactions are accumulated into a single combined
+ * "Visa/MC/Discover" JE line. Visa (9004) and MasterCard (9005) share
+ * "GstPMSMCV"; Discover (9007) uses "GstPMSDV". All three map to the same
+ * cash-in-bank GL account so the hotel's accounting system can auto-match them.
+ */
+const COMBINED_CARD_XREFS = new Set(["GstPMSMCV", "GstPMSDV"]);
 
 // ------- Fixed statistical account codes -------
 
@@ -84,9 +90,10 @@ export function transformTrialBalanceToJERecords(
   const records: TransformedJERecord[] = [];
 
   // Accumulate combined Visa/Master amount before adding as single line
-  let visaMasterAmount = 0;
-  let visaMasterMappingEntry = (operaMapping.get("9004") ??
-    operaMapping.get("9005"))?.[0];
+  let combinedCardAmount = 0;
+  let combinedCardMappingEntry = (operaMapping.get("9004") ??
+    operaMapping.get("9005") ??
+    operaMapping.get("9007"))?.[0];
 
   // --- Block 1: regular transaction rows ---
   // Regular TRX_CODEs (numbered codes like 1000, 9003) always have a single
@@ -101,10 +108,10 @@ export function transformTrialBalanceToJERecords(
     // Skip if no mapping or explicitly not mapped
     if (!mappingEntry || mappingEntry.glAcctCode === NOT_MAPPED) continue;
 
-    // Combine Visa + MasterCard (same XRefKey) into a single line
-    if (mappingEntry.xRefKey === VISA_MASTER_XREF) {
-      visaMasterAmount += tx.tBAmount * mappingEntry.multiplier;
-      visaMasterMappingEntry = mappingEntry;
+    // Combine Visa, MasterCard, and Discover into a single line
+    if (COMBINED_CARD_XREFS.has(mappingEntry.xRefKey)) {
+      combinedCardAmount += tx.tBAmount * mappingEntry.multiplier;
+      combinedCardMappingEntry = mappingEntry;
       continue;
     }
 
@@ -126,16 +133,16 @@ export function transformTrialBalanceToJERecords(
     });
   }
 
-  // Emit combined Visa/Master line if any amount accumulated
-  if (visaMasterAmount !== 0 && visaMasterMappingEntry) {
+  // Emit combined Visa/MasterCard/Discover line if any amount accumulated
+  if (combinedCardAmount !== 0 && combinedCardMappingEntry) {
     records.push({
       sourceCode: "9004",
-      sourceDescription: "Visa/Master",
-      sourceAmount: visaMasterAmount,
-      targetCode: visaMasterMappingEntry.glAcctCode,
-      targetDescription: visaMasterMappingEntry.glAcctName,
-      mappedAmount: visaMasterAmount,
-      paymentMethod: "Visa/Master",
+      sourceDescription: "Visa/MC/Discover",
+      sourceAmount: combinedCardAmount,
+      targetCode: combinedCardMappingEntry.glAcctCode,
+      targetDescription: combinedCardMappingEntry.glAcctName,
+      mappedAmount: combinedCardAmount,
+      paymentMethod: "Visa/MC/Discover",
       originalLine: undefined,
     });
   }

@@ -93,6 +93,13 @@ describe("transformTrialBalanceToJERecords", () => {
         tRXDate: "2026-04-07",
       },
       {
+        tRXCode: "9007",
+        description: "Discover",
+        tRXType: "PAYMENT",
+        tBAmount: -214.33,
+        tRXDate: "2026-04-07",
+      },
+      {
         tRXCode: "8997",
         description: "INTERNAL",
         tRXType: "INTERNAL",
@@ -130,6 +137,13 @@ describe("transformTrialBalanceToJERecords", () => {
       glAcctCode: "10030-531",
       multiplier: -1,
       xRefKey: "GstPMSMCV",
+      tRXType: "PAYMENT",
+    },
+    {
+      tRXCode: "9007",
+      glAcctCode: "10030-531",
+      multiplier: -1,
+      xRefKey: "GstPMSDV",
       tRXType: "PAYMENT",
     },
     { tRXCode: "8997", glAcctCode: "Not Mapped", tRXType: "INTERNAL" },
@@ -192,15 +206,17 @@ describe("transformTrialBalanceToJERecords", () => {
     expect(records.find((r) => r.sourceCode === "8997")).toBeUndefined();
   });
 
-  it("combines Visa and MasterCard into a single Visa/Master line", () => {
+  it("combines Visa, MasterCard, and Discover into a single Visa/MC/Discover line", () => {
     const records = transformTrialBalanceToJERecords(
       trialBalance,
       mapping,
       PROPERTY_CONFIG,
     );
-    const visaMaster = records.filter((r) => r.paymentMethod === "Visa/Master");
-    expect(visaMaster.length).toBe(1);
-    expect(visaMaster[0].mappedAmount).toBeCloseTo(3831.75 + 815.48);
+    const combined = records.filter(
+      (r) => r.paymentMethod === "Visa/MC/Discover",
+    );
+    expect(combined.length).toBe(1);
+    expect(combined[0].mappedAmount).toBeCloseTo(3831.75 + 815.48 + 214.33);
   });
 
   it("keeps American Express as a separate line", () => {
