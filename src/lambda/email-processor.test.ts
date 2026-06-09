@@ -353,6 +353,66 @@ describe("EmailProcessor", () => {
       );
     });
 
+    it("should match property mapping case-insensitively", async () => {
+      const sesEvent: SESEvent = {
+        Records: [
+          {
+            eventSource: "aws:ses",
+            eventVersion: "1.0",
+            ses: {
+              mail: {
+                messageId: "test-message-id-case",
+                timestamp: "2024-01-01T12:00:00.000Z",
+                source: "SENDER@EXAMPLE.COM",
+                destination: ["test@example.com"],
+              } as SESMail,
+              receipt: {
+                recipients: ["test@example.com"],
+                timestamp: "2024-01-01T12:00:00.000Z",
+                processingTimeMillis: 100,
+                ...defaultReceiptVerdicts,
+                action: {
+                  type: "S3",
+                  bucketName: "test-bucket",
+                  objectKey: "raw-emails/test-message-id-case",
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () =>
+            Promise.resolve(Buffer.from("Email content")),
+        },
+      });
+
+      (simpleParser as Mock).mockResolvedValue({
+        from: { value: [{ address: "SENDER@EXAMPLE.COM" }] },
+        attachments: [
+          {
+            filename: "report.pdf",
+            content: Buffer.from("PDF content"),
+          },
+        ],
+      });
+
+      // Mapping stored with lowercase key, sender arrives with uppercase
+      mockParameterStore.getPropertyMapping.mockResolvedValue({
+        "sender@example.com": "property-1",
+      });
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(sesEvent);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedAttachments[0]).toMatch(
+        /daily-files\/property-1\/\d{4}-\d{2}-\d{2}\/report_[a-f0-9]{8}\.pdf/,
+      );
+    });
+
     it("should handle S3 errors gracefully", async () => {
       const sesEvent: SESEvent = {
         Records: [
