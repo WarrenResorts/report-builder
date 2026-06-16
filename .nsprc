@@ -1,4 +1,3 @@
 {
-  "1118965": "fast-xml-builder attribute quote bypass (GHSA-5wm8-gmm8-39j9) via @aws-sdk/xml-builder->fast-xml-parser->fast-xml-builder@1.1.5. Attack vector requires controlling XML attribute values passed to the builder; the AWS SDK controls these inputs internally. Remove once AWS SDK updates its fast-xml-parser dependency.",
-  "1119610": "tmp path traversal (GHSA-ph9p-34f9-6g65) via exceljs->tmp@0.2.5. Only exploitable when a user-controlled string is passed as tmp file prefix/postfix; we pass only S3 XLSX buffers to ExcelJS which controls any tmp usage internally. Remove once exceljs updates its tmp dependency."
+  "1120654": "tmp path traversal (GHSA-ph9p-34f9-6g65) via exceljs->tmp@0.2.5. Only exploitable when a user-controlled string is passed as tmp file prefix/postfix; we pass only S3 XLSX buffers to ExcelJS which controls any tmp usage internally. Remove once exceljs updates its tmp dependency."
 }

@@ -1,0 +1,332 @@
+{
+  "project": "report-builder",
+  "description": "Automated hotel report processing system. Receives daily report emails, parses and transforms the data using GL account mappings, and delivers JE and StatJE CSV reports to accounting.",
+  "version": "0.9.2",
+  "lastUpdated": "2026-06-16",
+  "environments": {
+    "development": {
+      "awsAccountId": "237124340260",
+      "awsProfile": "dev-account",
+      "region": "us-east-1"
+    },
+    "production": {
+      "awsAccountId": "400534944857",
+      "awsProfile": "prod-account",
+      "region": "us-east-1"
+    }
+  },
+  "components": {
+    "external": [
+      {
+        "id": "hotel_email_vm",
+        "name": "Visual Matrix Hotels",
+        "type": "external",
+        "description": "11 properties sending daily PDF reports via email",
+        "details": "Sends one email per property per day with a PDF attachment (Daily Report)"
+      },
+      {
+        "id": "hotel_email_opera",
+        "name": "IHG / Opera Hotels",
+        "type": "external",
+        "description": "1 property (holiday-inn-express-clover-lane) sending Opera text exports",
+        "details": "Sends two .txt files per day: trial_balance_*.txt and stat_dmy_seg_*.txt from hsaor-donotreply@hotels.ihg.com"
+      },
+      {
+        "id": "hotel_email_choice",
+        "name": "Choice Hotels (Upcoming)",
+        "type": "external_future",
+        "description": "3 properties — Phase 14, awaiting sample reports",
+        "details": "Format unknown, pending sample report analysis"
+      },
+      {
+        "id": "netsuite",
+        "name": "NetSuite",
+        "type": "external",
+        "description": "Accounting system — final destination for JE and StatJE reports",
+        "details": "Reports are imported manually or via automation from the emailed CSV files"
+      },
+      {
+        "id": "recipients",
+        "name": "Accounting Recipients",
+        "type": "external",
+        "description": "Per-property email addresses that receive the daily reports",
+        "details": "Configured per property in property-config.ts. In production, override-email SSM parameter is NOT set so emails go to real recipients."
+      }
+    ],
+    "aws_services": [
+      {
+        "id": "ses_inbound",
+        "name": "SES Receipt Rules",
+        "type": "aws_ses",
+        "description": "Receives inbound emails on aws.warrenresorthotels.com",
+        "details": "Receipt rule stores raw email to incoming-files S3 bucket and triggers email-processor Lambda",
+        "configurationSet": "report-builder-{env}"
+      },
+      {
+        "id": "ses_outbound",
+        "name": "SES Send",
+        "type": "aws_ses",
+        "description": "Sends processed report emails to accounting recipients",
+        "details": "Called by file-processor Lambda after generating JE/StatJE reports"
+      },
+      {
+        "id": "s3_incoming",
+        "name": "S3: incoming-files",
+        "type": "aws_s3",
+        "bucketName": "report-builder-incoming-files-{env}-v2",
+        "description": "Stores raw email attachments received from hotels",
+        "structure": "daily-files/{property-slug}/{YYYY-MM-DD}/{uuid}_{filename}"
+      },
+      {
+        "id": "s3_processed",
+        "name": "S3: processed-files",
+        "type": "aws_s3",
+        "bucketName": "report-builder-processed-files-{env}-v2",
+        "description": "Stores generated JE and StatJE CSV reports and processed markers",
+        "structure": "reports/{YYYY-MM-DD}/{property-slug}/{JE|StatJE}.csv and processed-markers/{YYYY-MM-DD}/{property-slug}.json"
+      },
+      {
+        "id": "s3_mapping",
+        "name": "S3: mapping-files",
+        "type": "aws_s3",
+        "bucketName": "report-builder-mapping-files-{env}-v2",
+        "description": "Stores Excel mapping workbooks for GL account transformation",
+        "structure": "VisualMatrix XLSX at root level; Opera XLSX under opera/ prefix"
+      },
+      {
+        "id": "lambda_email",
+        "name": "Lambda: email-processor",
+        "type": "aws_lambda",
+        "functionName": "report-builder-email-processor-{env}",
+        "runtime": "Node.js 22",
+        "description": "Triggered by SES. Parses incoming email, extracts attachments, stores in S3.",
+        "responsibilities": [
+          "Parse raw email via mailparser",
+          "Identify property from sender email via SSM email-mapping parameter",
+          "Store attachments to S3 incoming-files bucket with unique UUID filename",
+          "Handles duplicate file prevention via UUID in filename"
+        ]
+      },
+      {
+        "id": "lambda_file",
+        "name": "Lambda: file-processor",
+        "type": "aws_lambda",
+        "functionName": "report-builder-file-processor-{env}",
+        "runtime": "Node.js 22",
+        "description": "Triggered by EventBridge daily at 1 PM MST. Processes all files from the last 24 hours.",
+        "responsibilities": [
+          "Discover all files in S3 incoming-files from last 24 hours",
+          "Group files by property slug",
+          "Check for duplicates via S3 processed-markers",
+          "Route to Visual Matrix or Opera pipeline based on filename pattern",
+          "Load appropriate mapping file from S3",
+          "Parse, transform, and generate JE and StatJE CSV reports",
+          "Store reports in S3 processed-files",
+          "Send reports via SES to property recipients"
+        ]
+      },
+      {
+        "id": "eventbridge",
+        "name": "EventBridge Schedule",
+        "type": "aws_eventbridge",
+        "description": "Triggers file-processor Lambda daily at 1 PM MST (20:00 UTC)",
+        "schedule": "cron(0 20 * * ? *)"
+      },
+      {
+        "id": "ssm",
+        "name": "SSM Parameter Store",
+        "type": "aws_ssm",
+        "description": "Stores runtime configuration",
+        "parameters": [
+          {
+            "path": "/report-builder/{env}/properties/email-mapping",
+            "description": "JSON object mapping sender email address to property slug"
+          },
+          {
+            "path": "/report-builder/{env}/properties/override-email",
+            "description": "If set, all outbound reports are redirected to this address. NOT set in production."
+          },
+          {
+            "path": "/report-builder/{env}/email/incoming-address",
+            "description": "The email address SES receives mail on"
+          },
+          {
+            "path": "/report-builder/{env}/email/from-address",
+            "description": "The from address used when sending reports"
+          }
+        ]
+      },
+      {
+        "id": "sqs_dlq",
+        "name": "SQS Dead Letter Queue",
+        "type": "aws_sqs",
+        "description": "Captures failed Lambda invocations for investigation",
+        "details": "Both email-processor and file-processor have DLQs. DLQ messages trigger SNS alert."
+      },
+      {
+        "id": "sns_alerts",
+        "name": "SNS: Alerts",
+        "type": "aws_sns",
+        "description": "Sends alert emails when Lambda failures land in DLQ",
+        "details": "Subscribed to CloudWatch alarms on DLQ depth"
+      },
+      {
+        "id": "cloudwatch",
+        "name": "CloudWatch",
+        "type": "aws_cloudwatch",
+        "description": "Logs, alarms, and monitoring for Lambda functions",
+        "details": "Lambda logs streamed to CloudWatch log groups. Alarms on DLQ depth, Lambda errors, and duration."
+      }
+    ],
+    "code_modules": [
+      {
+        "id": "mod_email_processor",
+        "name": "EmailProcessor",
+        "file": "src/lambda/email-processor.ts",
+        "description": "Entry point for email-processor Lambda"
+      },
+      {
+        "id": "mod_file_processor",
+        "name": "FileProcessor",
+        "file": "src/lambda/file-processor.ts",
+        "description": "Entry point and orchestrator for file-processor Lambda. Routes to VM or Opera pipeline."
+      },
+      {
+        "id": "mod_property_config",
+        "name": "PropertyConfigService",
+        "file": "src/config/property-config.ts",
+        "description": "All 12 property configurations including NetSuite IDs, recipient emails, and roomsAvailable for Opera properties"
+      },
+      {
+        "id": "mod_pdf_parser",
+        "name": "PDFParser",
+        "file": "src/parsers/pdf-parser.ts",
+        "description": "Parses Visual Matrix PDF reports using pdf-parse v1 with custom pagerender callback for pipe-delimited column detection"
+      },
+      {
+        "id": "mod_vm_parser",
+        "name": "VisualMatrixParser",
+        "file": "src/parsers/visual-matrix-parser.ts",
+        "description": "Parses pipe-delimited text extracted from Visual Matrix PDFs into structured account line data"
+      },
+      {
+        "id": "mod_vm_mapping",
+        "name": "VisualMatrixMappingLoader",
+        "file": "src/lambda/file-processor.ts",
+        "description": "Loads Excel mapping workbook from root of S3 mapping bucket (non-opera/ prefix only)"
+      },
+      {
+        "id": "mod_opera_tb_parser",
+        "name": "OperaTrialBalanceParser",
+        "file": "src/opera/opera-trial-balance-parser.ts",
+        "description": "Parses trial_balance_*.txt Opera export. Extracts transaction rows and CS_ summary block entries."
+      },
+      {
+        "id": "mod_opera_stat_parser",
+        "name": "OperaStatParser",
+        "file": "src/opera/opera-stat-parser.ts",
+        "description": "Parses stat_dmy_seg_*.txt Opera export. Extracts room occupancy and segment data."
+      },
+      {
+        "id": "mod_opera_mapping",
+        "name": "OperaMappingLoader",
+        "file": "src/opera/opera-mapping-loader.ts",
+        "description": "Loads Opera XLSX mapping from opera/ S3 prefix. Supports dual mapping: Map<TRX_CODE, OperaMappingEntry[]>."
+      },
+      {
+        "id": "mod_opera_transform",
+        "name": "OperaTransformation",
+        "file": "src/opera/opera-transformation.ts",
+        "description": "Transforms Opera parsed data into JE and StatJE records. Handles ADR/Occupancy/RevPAR, dual mapping, and Visa/MC/Discover combining."
+      },
+      {
+        "id": "mod_je_generator",
+        "name": "JournalEntryGenerator",
+        "file": "src/lambda/file-processor.ts",
+        "description": "Generates JE CSV output with debit/credit logic, subsidiary, and location from property config"
+      },
+      {
+        "id": "mod_duplicate_detector",
+        "name": "DuplicateDetector",
+        "file": "src/processors/duplicate-detector.ts",
+        "description": "Checks S3 processed-markers to skip already-processed property+date combinations"
+      }
+    ]
+  },
+  "pipelines": [
+    {
+      "id": "visual_matrix",
+      "name": "Visual Matrix (PDF) Pipeline",
+      "status": "production",
+      "propertyCount": 11,
+      "triggerPattern": "Any email attachment that is NOT named trial_balance_* or stat_dmy_seg_*",
+      "steps": [
+        "Hotel sends email with PDF attachment",
+        "SES receipts email → stores raw to S3 incoming-files → triggers email-processor Lambda",
+        "email-processor extracts PDF, looks up property slug from SSM email-mapping, stores to S3 daily-files/{slug}/",
+        "EventBridge triggers file-processor at 1 PM MST",
+        "file-processor discovers all files from last 24h, groups by property",
+        "DuplicateDetector checks S3 processed-markers — skips if already processed",
+        "PDFParser extracts text using pdf-parse with custom pagerender (pipe-delimited columns)",
+        "VisualMatrixParser parses pipe-delimited lines into account line data",
+        "Excel mapping loaded from S3 mapping-files root (excludes opera/ prefix)",
+        "Transformation engine applies GL account mappings to produce JE lines",
+        "JE and StatJE CSV files written to S3 processed-files",
+        "Processed marker written to S3 processed-markers",
+        "SES sends JE+StatJE as email attachments to property recipients"
+      ]
+    },
+    {
+      "id": "opera_ihg",
+      "name": "Opera / IHG Pipeline",
+      "status": "production",
+      "propertyCount": 1,
+      "properties": ["holiday-inn-express-clover-lane"],
+      "triggerPattern": "Files named trial_balance_*.txt AND stat_dmy_seg_*.txt for same property+date",
+      "steps": [
+        "IHG sends email with two .txt attachments from hsaor-donotreply@hotels.ihg.com",
+        "SES receipts → email-processor stores both files to S3 daily-files/holiday-inn-express-clover-lane/",
+        "EventBridge triggers file-processor at 1 PM MST",
+        "file-processor detects Opera files by filename pattern, pairs trial_balance + stat files",
+        "DuplicateDetector checks processed-markers",
+        "OperaTrialBalanceParser parses transaction rows and CS_ summary block",
+        "OperaStatParser parses segment rows and totalRoomsOccupied",
+        "OperaMappingLoader loads latest XLSX from S3 mapping-files/opera/ prefix",
+        "OperaTransformation builds JE lines (including dual-mapping, Visa/MC/Discover combining, summary-block accounts)",
+        "OperaTransformation builds StatJE lines (including ADR, Occupancy, RevPAR calculations)",
+        "JE and StatJE CSV files written to S3 processed-files",
+        "Processed marker written",
+        "SES sends reports to property recipients"
+      ]
+    },
+    {
+      "id": "choice_hotels",
+      "name": "Choice Hotels Pipeline",
+      "status": "upcoming",
+      "propertyCount": 3,
+      "phase": 14,
+      "notes": "Awaiting sample reports. Format unknown. Will follow same pattern as Opera pipeline."
+    }
+  ],
+  "dataFlows": [
+    { "from": "hotel_email_vm", "to": "ses_inbound", "label": "Daily PDF email" },
+    { "from": "hotel_email_opera", "to": "ses_inbound", "label": "Daily TXT email (2 files)" },
+    { "from": "ses_inbound", "to": "s3_incoming", "label": "Raw email stored" },
+    { "from": "ses_inbound", "to": "lambda_email", "label": "Lambda trigger" },
+    { "from": "lambda_email", "to": "ssm", "label": "Read email-mapping" },
+    { "from": "lambda_email", "to": "s3_incoming", "label": "Store attachment" },
+    { "from": "eventbridge", "to": "lambda_file", "label": "Daily trigger 1PM MST" },
+    { "from": "lambda_file", "to": "s3_incoming", "label": "Read daily files" },
+    { "from": "lambda_file", "to": "s3_mapping", "label": "Load mapping XLSX" },
+    { "from": "lambda_file", "to": "ssm", "label": "Read config params" },
+    { "from": "lambda_file", "to": "s3_processed", "label": "Write JE/StatJE reports" },
+    { "from": "lambda_file", "to": "ses_outbound", "label": "Send report emails" },
+    { "from": "ses_outbound", "to": "recipients", "label": "JE + StatJE CSVs" },
+    { "from": "recipients", "to": "netsuite", "label": "Manual import" },
+    { "from": "lambda_email", "to": "sqs_dlq", "label": "On failure" },
+    { "from": "lambda_file", "to": "sqs_dlq", "label": "On failure" },
+    { "from": "sqs_dlq", "to": "sns_alerts", "label": "DLQ alarm" },
+    { "from": "lambda_email", "to": "cloudwatch", "label": "Logs" },
+    { "from": "lambda_file", "to": "cloudwatch", "label": "Logs" }
+  ]
+}
