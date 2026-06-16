@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Report Builder — System Architecture</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 32px 24px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 0.875rem;
+      color: #64748b;
+      margin-bottom: 32px;
+    }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    /* Section headers */
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #475569;
+      margin-bottom: 12px;
+      margin-top: 32px;
+    }
+
+    /* Grid layouts */
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+
+    @media (max-width: 900px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-3 { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 600px) {
+      .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* Component cards */
+    .card {
+      border-radius: 10px;
+      padding: 14px 16px;
+      border: 1px solid transparent;
+      transition: transform 0.15s, box-shadow 0.15s;
+      cursor: default;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .card-desc {
+      font-size: 0.72rem;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+
+    .card-badge {
+      display: inline-block;
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+    }
+
+    /* Color themes per type */
+    .ext     { background: #1e293b; border-color: #334155; }
+    .ext .card-title { color: #94a3b8; }
+    .ext .card-badge { background: #334155; color: #94a3b8; }
+
+    .ses     { background: #1a1f35; border-color: #3b4fd1; }
+    .ses .card-title { color: #818cf8; }
+    .ses .card-badge { background: #1e254a; color: #818cf8; }
+
+    .s3      { background: #1c2b1a; border-color: #2d7a37; }
+    .s3 .card-title { color: #4ade80; }
+    .s3 .card-badge { background: #1a3320; color: #4ade80; }
+
+    .lambda  { background: #2a1c1a; border-color: #c2410c; }
+    .lambda .card-title { color: #fb923c; }
+    .lambda .card-badge { background: #3b1f16; color: #fb923c; }
+
+    .ssm     { background: #1a2535; border-color: #1e5fa8; }
+    .ssm .card-title { color: #60a5fa; }
+    .ssm .card-badge { background: #1a2e4a; color: #60a5fa; }
+
+    .evb     { background: #261a35; border-color: #7c3aed; }
+    .evb .card-title { color: #a78bfa; }
+    .evb .card-badge { background: #2e1f47; color: #a78bfa; }
+
+    .sqs     { background: #261f1a; border-color: #92400e; }
+    .sqs .card-title { color: #fbbf24; }
+    .sqs .card-badge { background: #301e10; color: #fbbf24; }
+
+    .cw      { background: #1a2626; border-color: #0f766e; }
+    .cw .card-title { color: #2dd4bf; }
+    .cw .card-badge { background: #163030; color: #2dd4bf; }
+
+    .code    { background: #1e1e2e; border-color: #4c1d95; }
+    .code .card-title { color: #c084fc; }
+    .code .card-badge { background: #2e1a45; color: #c084fc; }
+
+    .future  { background: #1a1f1a; border-color: #365314; opacity: 0.6; }
+    .future .card-title { color: #86efac; }
+    .future .card-badge { background: #1a2e1a; color: #86efac; }
+
+    /* Pipeline flow diagram */
+    .pipeline-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 800px) {
+      .pipeline-container { grid-template-columns: 1fr; }
+    }
+
+    .pipeline {
+      background: #141820;
+      border-radius: 12px;
+      border: 1px solid #1e293b;
+      padding: 20px;
+    }
+
+    .pipeline-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .pipeline-status {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .status-prod { background: #14532d; color: #4ade80; }
+    .status-upcoming { background: #1c1917; color: #78716c; border: 1px solid #292524; }
+
+    .pipeline-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #f1f5f9;
+    }
+
+    .pipeline-props {
+      font-size: 0.72rem;
+      color: #64748b;
+      margin-bottom: 16px;
+    }
+
+    .pipeline-step {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 8px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #1e293b;
+      color: #64748b;
+      font-size: 0.65rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .step-text {
+      font-size: 0.73rem;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+
+    .step-arrow {
+      text-align: center;
+      color: #334155;
+      font-size: 0.75rem;
+      margin: 2px 0 2px 30px;
+    }
+
+    /* SSM parameters table */
+    .param-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+      margin-top: 8px;
+    }
+
+    .param-table th {
+      text-align: left;
+      color: #475569;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .param-table td {
+      padding: 7px 10px;
+      color: #94a3b8;
+      border-bottom: 1px solid #0f172a;
+      vertical-align: top;
+    }
+
+    .param-table td:first-child {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: #60a5fa;
+      font-size: 0.68rem;
+    }
+
+    /* Environments */
+    .env-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .env-card {
+      background: #141820;
+      border-radius: 10px;
+      padding: 16px;
+      border: 1px solid #1e293b;
+    }
+
+    .env-name {
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .env-dev { color: #60a5fa; }
+    .env-prod { color: #4ade80; }
+
+    .env-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: #64748b;
+      padding: 3px 0;
+    }
+
+    .env-row span:last-child {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: #94a3b8;
+    }
+
+    /* Divider */
+    hr {
+      border: none;
+      border-top: 1px solid #1e293b;
+      margin: 32px 0;
+    }
+
+    .tag {
+      font-size: 0.65rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #1e293b;
+      color: #64748b;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Report Builder — System Architecture</h1>
+  <p class="subtitle">v0.9.2 &nbsp;·&nbsp; Last updated June 2026 &nbsp;·&nbsp; AWS us-east-1</p>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#3b4fd1"></div> SES</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#2d7a37"></div> S3</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#c2410c"></div> Lambda</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div> EventBridge</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1e5fa8"></div> SSM</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#92400e"></div> SQS / SNS</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#0f766e"></div> CloudWatch</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4c1d95"></div> Code Modules</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#334155"></div> External</div>
+  </div>
+
+  <!-- ENVIRONMENTS -->
+  <div class="section-label">Environments</div>
+  <div class="env-grid">
+    <div class="env-card">
+      <div class="env-name env-dev">Development</div>
+      <div class="env-row"><span>AWS Account</span><span>237124340260</span></div>
+      <div class="env-row"><span>AWS Profile</span><span>dev-account</span></div>
+      <div class="env-row"><span>Region</span><span>us-east-1</span></div>
+      <div class="env-row"><span>Override Email</span><span>Set (routes to test address)</span></div>
+    </div>
+    <div class="env-card">
+      <div class="env-name env-prod">Production</div>
+      <div class="env-row"><span>AWS Account</span><span>400534944857</span></div>
+      <div class="env-row"><span>AWS Profile</span><span>prod-account</span></div>
+      <div class="env-row"><span>Region</span><span>us-east-1</span></div>
+      <div class="env-row"><span>Override Email</span><span>NOT set (real recipients)</span></div>
+    </div>
+  </div>
+
+  <!-- EXTERNAL SYSTEMS -->
+  <div class="section-label">External Systems</div>
+  <div class="grid grid-4">
+    <div class="card ext">
+      <div class="card-badge">External</div>
+      <div class="card-title">Visual Matrix Hotels</div>
+      <div class="card-desc">11 properties · Daily PDF report emails · One email per property per day</div>
+    </div>
+    <div class="card ext">
+      <div class="card-badge">External</div>
+      <div class="card-title">IHG / Opera Hotels</div>
+      <div class="card-desc">1 property (holiday-inn-express-clover-lane) · Two .txt files/day from hsaor-donotreply@hotels.ihg.com</div>
+    </div>
+    <div class="card future">
+      <div class="card-badge">Upcoming · Phase 14</div>
+      <div class="card-title">Choice Hotels</div>
+      <div class="card-desc">3 properties · Format pending · Awaiting sample reports</div>
+    </div>
+    <div class="card ext">
+      <div class="card-badge">Destination</div>
+      <div class="card-title">NetSuite + Recipients</div>
+      <div class="card-desc">Accounting team receives JE + StatJE CSV attachments · Imported into NetSuite</div>
+    </div>
+  </div>
+
+  <!-- EMAIL / SES -->
+  <div class="section-label">Email — Amazon SES</div>
+  <div class="grid grid-2">
+    <div class="card ses">
+      <div class="card-badge">SES · Inbound</div>
+      <div class="card-title">Receipt Rules</div>
+      <div class="card-desc">Receives mail on aws.warrenresorthotels.com · Stores raw email to S3 incoming-files · Triggers email-processor Lambda · Configuration set: report-builder-{env}</div>
+    </div>
+    <div class="card ses">
+      <div class="card-badge">SES · Outbound</div>
+      <div class="card-title">Send Reports</div>
+      <div class="card-desc">Called by file-processor after generating reports · Sends JE + StatJE CSV as attachments · Routes to override-email if set, otherwise real recipients</div>
+    </div>
+  </div>
+
+  <!-- S3 BUCKETS -->
+  <div class="section-label">Storage — Amazon S3</div>
+  <div class="grid grid-3">
+    <div class="card s3">
+      <div class="card-badge">S3</div>
+      <div class="card-title">incoming-files</div>
+      <div class="card-desc"><strong>report-builder-incoming-files-{env}-v2</strong><br/><br/>Raw email attachments from hotels<br/><br/>Path: <code>daily-files/{slug}/{YYYY-MM-DD}/{uuid}_{filename}</code></div>
+    </div>
+    <div class="card s3">
+      <div class="card-badge">S3</div>
+      <div class="card-title">processed-files</div>
+      <div class="card-desc"><strong>report-builder-processed-files-{env}-v2</strong><br/><br/>Generated JE + StatJE CSV reports and processed markers<br/><br/>Paths: <code>reports/{date}/{slug}/{JE|StatJE}.csv</code><br/><code>processed-markers/{date}/{slug}.json</code></div>
+    </div>
+    <div class="card s3">
+      <div class="card-badge">S3</div>
+      <div class="card-title">mapping-files</div>
+      <div class="card-desc"><strong>report-builder-mapping-files-{env}-v2</strong><br/><br/>Excel GL account mapping workbooks<br/><br/>Visual Matrix XLSX: root level<br/>Opera XLSX: <code>opera/</code> prefix only</div>
+    </div>
+  </div>
+
+  <!-- LAMBDA -->
+  <div class="section-label">Compute — AWS Lambda (Node.js 22)</div>
+  <div class="grid grid-2">
+    <div class="card lambda">
+      <div class="card-badge">Lambda · Triggered by SES</div>
+      <div class="card-title">email-processor</div>
+      <div class="card-desc">
+        <strong>report-builder-email-processor-{env}</strong><br/><br/>
+        1. Parse raw email via mailparser<br/>
+        2. Look up property slug from SSM email-mapping<br/>
+        3. Store attachment to S3 incoming-files with UUID filename<br/>
+        4. Handles deduplication via unique filename
+      </div>
+    </div>
+    <div class="card lambda">
+      <div class="card-badge">Lambda · Triggered by EventBridge</div>
+      <div class="card-title">file-processor</div>
+      <div class="card-desc">
+        <strong>report-builder-file-processor-{env}</strong><br/><br/>
+        1. Discover last-24h files in S3 incoming-files<br/>
+        2. Group by property slug<br/>
+        3. Check processed-markers for duplicates<br/>
+        4. Route to Visual Matrix or Opera pipeline<br/>
+        5. Load mapping XLSX from S3<br/>
+        6. Parse → transform → generate JE + StatJE<br/>
+        7. Write to S3 processed-files<br/>
+        8. Send reports via SES
+      </div>
+    </div>
+  </div>
+
+  <!-- SCHEDULING + CONFIG -->
+  <div class="section-label">Scheduling &amp; Configuration</div>
+  <div class="grid grid-3">
+    <div class="card evb">
+      <div class="card-badge">EventBridge</div>
+      <div class="card-title">Daily Schedule</div>
+      <div class="card-desc">Triggers file-processor Lambda daily at 1 PM MST (20:00 UTC)<br/><br/>Schedule: <code>cron(0 20 * * ? *)</code></div>
+    </div>
+    <div class="card ssm" style="grid-column: span 2;">
+      <div class="card-badge">SSM Parameter Store</div>
+      <div class="card-title">Runtime Configuration</div>
+      <table class="param-table">
+        <thead>
+          <tr><th>Parameter Path</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>/report-builder/{env}/properties/email-mapping</td><td>JSON: sender email → property slug</td></tr>
+          <tr><td>/report-builder/{env}/properties/override-email</td><td>If set, all reports redirect here. NOT set in prod.</td></tr>
+          <tr><td>/report-builder/{env}/email/incoming-address</td><td>SES receiving address</td></tr>
+          <tr><td>/report-builder/{env}/email/from-address</td><td>From address for outbound reports</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- MONITORING -->
+  <div class="section-label">Reliability &amp; Monitoring</div>
+  <div class="grid grid-3">
+    <div class="card sqs">
+      <div class="card-badge">SQS</div>
+      <div class="card-title">Dead Letter Queues</div>
+      <div class="card-desc">Both Lambdas have DLQs · Failed invocations captured here · DLQ depth alarm triggers SNS alert</div>
+    </div>
+    <div class="card sqs">
+      <div class="card-badge">SNS</div>
+      <div class="card-title">Alert Notifications</div>
+      <div class="card-desc">Subscribed to CloudWatch DLQ alarms · Sends email alerts on Lambda failures</div>
+    </div>
+    <div class="card cw">
+      <div class="card-badge">CloudWatch</div>
+      <div class="card-title">Logs &amp; Alarms</div>
+      <div class="card-desc">Lambda logs streamed to log groups · Alarms on DLQ depth, Lambda errors, and execution duration</div>
+    </div>
+  </div>
+
+  <hr />
+
+  <!-- PIPELINES -->
+  <div class="section-label">Processing Pipelines</div>
+  <div class="pipeline-container">
+
+    <div class="pipeline">
+      <div class="pipeline-header">
+        <span class="pipeline-title">Visual Matrix (PDF)</span>
+        <span class="pipeline-status status-prod">Production</span>
+      </div>
+      <div class="pipeline-props">11 properties · PDF email attachment</div>
+
+      <div class="pipeline-step"><div class="step-num">1</div><div class="step-text">Hotel sends email with PDF attachment</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">2</div><div class="step-text">SES receipts → email-processor stores PDF to <code>daily-files/{slug}/</code></div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">3</div><div class="step-text">EventBridge triggers file-processor at 1 PM MST</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">4</div><div class="step-text">DuplicateDetector checks S3 processed-markers</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">5</div><div class="step-text">PDFParser → pdf-parse with custom <code>pagerender</code> (pipe-delimited columns)</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">6</div><div class="step-text">VisualMatrixParser parses pipe-delimited account lines</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">7</div><div class="step-text">Load Excel mapping XLSX from S3 root (excludes opera/ prefix)</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">8</div><div class="step-text">Transformation engine → JE + StatJE records</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">9</div><div class="step-text">Write CSVs to S3 · Write processed marker · Send via SES</div></div>
+    </div>
+
+    <div class="pipeline">
+      <div class="pipeline-header">
+        <span class="pipeline-title">Opera / IHG</span>
+        <span class="pipeline-status status-prod">Production</span>
+      </div>
+      <div class="pipeline-props">1 property · holiday-inn-express-clover-lane · Two .txt files/day</div>
+
+      <div class="pipeline-step"><div class="step-num">1</div><div class="step-text">IHG sends email with <code>trial_balance_*.txt</code> + <code>stat_dmy_seg_*.txt</code></div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">2</div><div class="step-text">SES → email-processor stores both files to S3</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">3</div><div class="step-text">file-processor detects Opera files by filename pattern, pairs both files</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">4</div><div class="step-text">DuplicateDetector checks processed-markers</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">5</div><div class="step-text">OperaTrialBalanceParser → transaction rows + CS_ summary block</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">6</div><div class="step-text">OperaStatParser → segment rows + totalRoomsOccupied</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">7</div><div class="step-text">OperaMappingLoader → latest XLSX from S3 <code>opera/</code> prefix (dual mapping)</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">8</div><div class="step-text">OperaTransformation → JE (incl. Visa/MC/Discover combined) + StatJE (incl. ADR, Occy, RevPAR)</div></div>
+      <div class="step-arrow">↓</div>
+      <div class="pipeline-step"><div class="step-num">9</div><div class="step-text">Write CSVs to S3 · Write processed marker · Send via SES</div></div>
+    </div>
+
+  </div>
+
+  <!-- Future pipeline -->
+  <div style="margin-top: 12px;">
+    <div class="pipeline" style="opacity: 0.5;">
+      <div class="pipeline-header">
+        <span class="pipeline-title">Choice Hotels</span>
+        <span class="pipeline-status status-upcoming">Phase 14 — Upcoming</span>
+      </div>
+      <div class="pipeline-props">3 properties · Format unknown · Awaiting sample reports before implementation begins</div>
+    </div>
+  </div>
+
+  <hr />
+
+  <!-- CODE MODULES -->
+  <div class="section-label">Key Code Modules</div>
+  <div class="grid grid-4">
+    <div class="card code">
+      <div class="card-badge">Lambda Entry</div>
+      <div class="card-title">email-processor.ts</div>
+      <div class="card-desc">Parses inbound email, extracts attachments, stores to S3</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">Lambda Entry</div>
+      <div class="card-title">file-processor.ts</div>
+      <div class="card-desc">Main orchestrator. Routes to VM or Opera pipeline. Generates and delivers reports.</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">Config</div>
+      <div class="card-title">property-config.ts</div>
+      <div class="card-desc">All 12 property configs: NetSuite IDs, recipients, roomsAvailable</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">VM Pipeline</div>
+      <div class="card-title">pdf-parser.ts</div>
+      <div class="card-desc">pdf-parse v1 with custom pagerender callback for pipe-delimited column detection. Do NOT upgrade to v2.</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">VM Pipeline</div>
+      <div class="card-title">visual-matrix-parser.ts</div>
+      <div class="card-desc">Parses pipe-delimited text from PDFs into structured account lines</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">Opera Pipeline</div>
+      <div class="card-title">opera-trial-balance-parser.ts</div>
+      <div class="card-desc">Parses trial_balance_*.txt: transaction rows + CS_ summary block → summaryEntries map</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">Opera Pipeline</div>
+      <div class="card-title">opera-stat-parser.ts</div>
+      <div class="card-desc">Parses stat_dmy_seg_*.txt: segment rows + totalRoomsOccupied</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">Opera Pipeline</div>
+      <div class="card-title">opera-mapping-loader.ts</div>
+      <div class="card-desc">Loads XLSX from S3 opera/ prefix. Map&lt;TRX_CODE, OperaMappingEntry[]&gt; for dual mapping.</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">Opera Pipeline</div>
+      <div class="card-title">opera-transformation.ts</div>
+      <div class="card-desc">JE + StatJE from Opera data. ADR/Occy/RevPAR. Visa/MC/Discover combined. Summary-block GL accounts.</div>
+    </div>
+    <div class="card code">
+      <div class="card-badge">Shared</div>
+      <div class="card-title">duplicate-detector.ts</div>
+      <div class="card-desc">O(1) S3 HeadObject lookup on processed-markers. Skips already-processed property+date pairs.</div>
+    </div>
+  </div>
+
+  <hr />
+  <p style="font-size: 0.7rem; color: #334155; text-align: center;">
+    Generated from <code>docs/architecture.json</code> · Report Builder v0.9.2 · Warren Resorts
+  </p>
+
+</body>
+</html>
