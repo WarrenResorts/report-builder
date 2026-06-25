@@ -48,13 +48,15 @@
     "@aws-sdk/client-ssm": "^3.1070.0",
     "@types/aws-lambda": "^8.10.161",
     "@types/pdf-parse": "^1.1.5",
+    "adm-zip": "^0.5.17",
     "exceljs": "^4.4.0",
-    "mailparser": "^3.9.10",
+    "mailparser": "^3.9.11",
     "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@commitlint/config-conventional": "^20.4.4",
     "@eslint/js": "^10.0.1",
+    "@types/adm-zip": "^0.5.8",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^25.9.2",
     "@typescript-eslint/eslint-plugin": "^8.61.1",

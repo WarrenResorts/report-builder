@@ -4,6 +4,7 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
+import AdmZip from "adm-zip";
 import { SESEvent, SESMail, Context } from "aws-lambda";
 import { simpleParser, ParsedMail, Attachment } from "mailparser";
 import { ParameterStoreConfig } from "../config/parameter-store";
@@ -19,6 +20,19 @@ import {
 } from "../types/errors";
 import { createCorrelatedLogger } from "../utils/logger";
 import { retryS3Operation, retryParameterStoreOperation } from "../utils/retry";
+
+/**
+ * SSM email-mapping sentinel value for the shared Choice Hotels sender address.
+ * When this value is returned from the property mapping, the property slug is
+ * derived from the property code embedded in the ZIP attachment filename instead.
+ */
+const CHOICE_SENTINEL = "__choice__";
+
+/**
+ * Pattern to extract the Choice Hotels property code from a ZIP filename.
+ * Example: "All_Night_Audit_Reports_WA244_HOTEL STATS_2026-06-23.zip" → "WA244"
+ */
+const CHOICE_ZIP_CODE_PATTERN = /All_Night_Audit_Reports_([A-Z]{2}\d{3})_/i;
 
 /**
  * EmailProcessor handles incoming emails from Amazon SES, extracts attachments,
@@ -370,18 +384,37 @@ export class EmailProcessor {
           continue;
         }
 
-        const storedPath = await this.storeAttachment(
-          attachment,
-          parsedEmail,
-          sesMessage,
-          correlationId,
-        );
-        storedAttachments.push(storedPath);
+        const filename = attachment.filename?.toLowerCase() ?? "";
+        if (filename.endsWith(".zip")) {
+          // Extract ZIP contents and store each valid file individually.
+          // The property slug is derived from the ZIP filename for Choice Hotels.
+          const extractedPaths = await this.processZipAttachment(
+            attachment,
+            parsedEmail,
+            sesMessage,
+            correlationId,
+          );
+          storedAttachments.push(...extractedPaths);
 
-        attachmentLogger.info("Attachment processed successfully", {
-          storedPath,
-          size: attachment.size,
-        });
+          attachmentLogger.info("ZIP attachment extracted and stored", {
+            zipFilename: attachment.filename,
+            extractedCount: extractedPaths.length,
+            storedPaths: extractedPaths,
+          });
+        } else {
+          const storedPath = await this.storeAttachment(
+            attachment,
+            parsedEmail,
+            sesMessage,
+            correlationId,
+          );
+          storedAttachments.push(storedPath);
+
+          attachmentLogger.info("Attachment processed successfully", {
+            storedPath,
+            size: attachment.size,
+          });
+        }
       } catch (error) {
         attachmentLogger.error("Failed to process attachment", error as Error, {
           filename: attachment.filename,
@@ -389,8 +422,8 @@ export class EmailProcessor {
           size: attachment.size,
         });
 
-        // For attachment processing, we log the error but continue with other attachments
-        // This prevents one bad attachment from failing the entire email processing
+        // Log the error but continue with other attachments —
+        // one bad attachment must not fail the entire email processing.
         continue;
       }
     }
@@ -415,7 +448,7 @@ export class EmailProcessor {
   private isValidAttachment(attachment: Attachment): boolean {
     if (!attachment.filename) return false;
 
-    const validExtensions = [".pdf", ".csv", ".txt", ".xlsx", ".xls"];
+    const validExtensions = [".pdf", ".csv", ".txt", ".xlsx", ".xls", ".zip"];
     const filename = attachment.filename.toLowerCase();
 
     return validExtensions.some((ext) => filename.endsWith(ext));
@@ -621,6 +654,193 @@ export class EmailProcessor {
     const name = filename.substring(0, lastDotIndex);
     const extension = filename.substring(lastDotIndex);
     return `${name}_${uniqueId}${extension}`;
+  }
+
+  /**
+   * Extracts files from a ZIP attachment and stores each valid file in S3.
+   *
+   * For Choice Hotels ZIPs, the property slug is resolved from the ZIP filename
+   * using the embedded property code (e.g. "WA244" → comfort-inn-suites-spokane-valley).
+   * Each extracted CSV is stored under the resolved slug, just like a regular attachment.
+   *
+   * @param attachment - The ZIP attachment
+   * @param parsedEmail - Parsed email containing sender metadata
+   * @param sesMessage - SES message metadata
+   * @param correlationId - Correlation ID for tracking
+   * @returns Array of S3 keys for all stored files
+   *
+   * @private
+   */
+  private async processZipAttachment(
+    attachment: Attachment,
+    parsedEmail: ParsedMail,
+    sesMessage: SESMail,
+    correlationId: string,
+  ): Promise<string[]> {
+    const logger = createCorrelatedLogger(correlationId, {
+      messageId: sesMessage.messageId,
+      zipFilename: attachment.filename,
+      operation: "process_zip_attachment",
+    });
+
+    const storedPaths: string[] = [];
+
+    let zip: AdmZip;
+    try {
+      zip = new AdmZip(attachment.content);
+    } catch (error) {
+      logger.error("Failed to open ZIP attachment", error as Error, {
+        zipFilename: attachment.filename,
+      });
+      return storedPaths;
+    }
+
+    const entries = zip.getEntries();
+    logger.info("Extracted ZIP entries", {
+      zipFilename: attachment.filename,
+      entryCount: entries.length,
+    });
+
+    // Determine the property slug for this ZIP using the Choice property-code
+    // pattern.  Falls back to the sender email lookup so non-Choice ZIPs (if any
+    // ever arrive) are routed normally.
+    const senderEmail =
+      parsedEmail.from?.value?.[0]?.address ||
+      parsedEmail.from?.text ||
+      "unknown-sender";
+
+    const zipFilename = attachment.filename ?? "";
+    const propertySlug = await this.resolvePropertySlugForZip(
+      zipFilename,
+      senderEmail,
+      correlationId,
+    );
+
+    const validExtensions = [".pdf", ".csv", ".txt", ".xlsx", ".xls"];
+
+    for (const entry of entries) {
+      if (entry.isDirectory) continue;
+
+      const entryName = entry.entryName.split("/").pop() ?? entry.entryName;
+      const entryLower = entryName.toLowerCase();
+
+      if (!validExtensions.some((ext) => entryLower.endsWith(ext))) {
+        logger.debug("Skipping non-document ZIP entry", { entryName });
+        continue;
+      }
+
+      try {
+        const content = entry.getData();
+        const sanitized = this.sanitizeFilename(entryName);
+        const uniqueFilename = this.addUniqueIdentifier(sanitized);
+        const s3Key = `daily-files/${propertySlug}/${new Date().toISOString().split("T")[0]}/${uniqueFilename}`;
+
+        const putCommand = new PutObjectCommand({
+          Bucket: this.incomingBucket,
+          Key: s3Key,
+          Body: content,
+          ContentType: "text/csv",
+          Metadata: {
+            originalFilename: entryName,
+            senderEmail,
+            messageId: sesMessage.messageId,
+            receivedDate: new Date().toISOString(),
+            propertyId: propertySlug,
+            sourceZip: zipFilename,
+          },
+        });
+
+        await retryS3Operation(
+          () => this.s3Client.send(putCommand),
+          correlationId,
+          "put_zip_entry_to_s3",
+        );
+
+        storedPaths.push(s3Key);
+        logger.debug("ZIP entry stored", { entryName, s3Key, propertySlug });
+      } catch (error) {
+        logger.error("Failed to store ZIP entry", error as Error, {
+          entryName,
+          propertySlug,
+        });
+      }
+    }
+
+    return storedPaths;
+  }
+
+  /**
+   * Resolve the property slug for a ZIP attachment.
+   *
+   * For Choice Hotels ZIPs:
+   *   1. Extract the property code from the ZIP filename (e.g. "WA244")
+   *   2. Look it up in SSM using the key "choice:{code}" (lowercase)
+   *
+   * For other ZIPs, fall back to the sender-email lookup.
+   *
+   * @param zipFilename - Original attachment filename
+   * @param senderEmail - Normalised sender email address
+   * @param correlationId - Correlation ID for logging
+   * @returns Resolved property slug, or "unknown-property" on failure
+   *
+   * @private
+   */
+  private async resolvePropertySlugForZip(
+    zipFilename: string,
+    senderEmail: string,
+    correlationId: string,
+  ): Promise<string> {
+    const logger = createCorrelatedLogger(correlationId, {
+      zipFilename,
+      operation: "resolve_property_slug_for_zip",
+    });
+
+    // First, look up the sender email to check if it maps to the Choice sentinel
+    const slugFromSender = await this.getPropertyIdFromSender(
+      senderEmail,
+      correlationId,
+    );
+
+    if (slugFromSender !== CHOICE_SENTINEL) {
+      // Non-Choice ZIP: use the sender-resolved slug as-is
+      return slugFromSender;
+    }
+
+    // Choice Hotels ZIP: extract property code from filename and do a second lookup
+    const codeMatch = zipFilename.match(CHOICE_ZIP_CODE_PATTERN);
+    if (!codeMatch) {
+      logger.warn(
+        "Choice Hotels ZIP filename does not match expected pattern — using unknown-property",
+        { zipFilename },
+      );
+      return "unknown-property";
+    }
+
+    const propertyCode = codeMatch[1].toUpperCase();
+    const lookupKey = `choice:${propertyCode.toLowerCase()}`;
+    logger.debug("Resolving Choice property code via SSM", {
+      propertyCode,
+      lookupKey,
+    });
+
+    const resolvedSlug = await this.getPropertyIdFromSender(
+      lookupKey,
+      correlationId,
+    );
+
+    if (!resolvedSlug || resolvedSlug === "unknown-property") {
+      logger.warn("No SSM mapping found for Choice property code", {
+        propertyCode,
+        lookupKey,
+      });
+      return "unknown-property";
+    }
+
+    logger.debug("Choice property code resolved", {
+      propertyCode,
+      resolvedSlug,
+    });
+    return resolvedSlug;
   }
 
   /**

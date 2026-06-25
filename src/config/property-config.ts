@@ -29,6 +29,12 @@ export interface PropertyConfig {
    * Not needed for Visual Matrix properties (extracted from PDF).
    */
   roomsAvailable?: number;
+  /**
+   * Property display name as it appears in the Choice Hotels mapping workbook
+   * (e.g. "Comfort Inn - Missoula").  Used to resolve property-specific GL
+   * accounts (cash-in-bank) from the mapping.  Only set for Choice properties.
+   */
+  choiceMappingName?: string;
 }
 
 /**
@@ -144,6 +150,44 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     locationName: "Holiday Inn Express - Clover Lane",
     creditCardDepositAccount: "10030-531",
     roomsAvailable: 65,
+  },
+  // ── Choice Hotels properties ─────────────────────────────────────────────
+  // Sender: AUTO_MAIL_DELIVERY_SYSTEM@choicehotels.com (shared) → SSM sentinel __choice__
+  // Property code extracted from ZIP filename: All_Night_Audit_Reports_{CODE}_*.zip
+  // Cash-in-bank accounts are per-property and come from the Choice mapping workbook,
+  // so creditCardDepositAccount is unused for these properties.
+  {
+    // Choice Hotels — Comfort Inn Missoula, MT (property code MT118)
+    propertyName: "comfort-inn-missoula",
+    locationInternalId: "21",
+    subsidiaryInternalId: "37",
+    subsidiaryFullName:
+      "Parent Company : Warren Family Hotels : Warren Resort Hotels of Missoula, Inc.",
+    locationName: "Comfort Inn - Missoula",
+    creditCardDepositAccount: "", // Handled per-transaction by Choice mapping
+    choiceMappingName: "Comfort Inn - Missoula",
+  },
+  {
+    // Choice Hotels — Comfort Inn & Suites Ashland, OR (property code OR258)
+    propertyName: "comfort-inn-suites-ashland",
+    locationInternalId: "22",
+    subsidiaryInternalId: "28",
+    subsidiaryFullName:
+      "Parent Company : Warren Family Hotels : Warren Resort Hotels of Medford, Inc.",
+    locationName: "Comfort Inn & Suites - Ashland",
+    creditCardDepositAccount: "", // Handled per-transaction by Choice mapping
+    choiceMappingName: "Comfort Inn & Suites - Ashland",
+  },
+  {
+    // Choice Hotels — Comfort Inn & Suites Spokane Valley, WA (property code WA244)
+    propertyName: "comfort-inn-suites-spokane-valley",
+    locationInternalId: "23",
+    subsidiaryInternalId: "30",
+    subsidiaryFullName:
+      "Parent Company : Warren Family Hotels : Warren Resort Hotels of Spokane Valley, Inc.",
+    locationName: "Comfort Inn & Suites - Spokane Valley",
+    creditCardDepositAccount: "", // Handled per-transaction by Choice mapping
+    choiceMappingName: "Comfort Inn & Suites - Spokane Valley",
   },
 ];
 
