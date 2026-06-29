@@ -25,6 +25,7 @@ const mockS3Client = {
 
 const mockParameterStore = {
   getPropertyMapping: vi.fn(),
+  getOverrideEmails: vi.fn(),
 };
 
 // Mock constructors
@@ -1088,6 +1089,117 @@ describe("EmailProcessor", () => {
         buildSesEvent("zip-nocode-test"),
       );
 
+      expect(result.processedAttachments[0]).toContain("unknown-property");
+    });
+
+    it("routes Choice ZIP to correct property when sender is on override list", async () => {
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () => Promise.resolve(Buffer.from("raw email")),
+        },
+      });
+
+      (simpleParser as Mock).mockResolvedValue({
+        from: {
+          value: [{ address: "johnhayesnielsen@gmail.com" }],
+          text: "johnhayesnielsen@gmail.com",
+        },
+        to: { text: "inbound@aws.example.com" },
+        subject: "Fwd: Night audit report WA244",
+        date: new Date("2026-06-26T12:00:00.000Z"),
+        attachments: [
+          {
+            filename: "All_Night_Audit_Reports_WA244_ACCOUNTING_2026-06-26.zip",
+            contentType: "application/zip",
+            content: Buffer.from("fake-zip-data"),
+            size: 100,
+          },
+        ],
+      });
+
+      (AdmZip as Mock).mockImplementation(function () {
+        return {
+          getEntries: vi.fn().mockReturnValue([
+            {
+              isDirectory: false,
+              entryName: "Hotel Statistics_2026-06-26.csv",
+              getData: vi.fn().mockReturnValue(Buffer.from("csv,data")),
+            },
+          ]),
+        };
+      });
+
+      // Sender not in property mapping → unknown-property
+      mockParameterStore.getPropertyMapping.mockResolvedValueOnce({});
+      // Override list includes the sender
+      mockParameterStore.getOverrideEmails.mockResolvedValueOnce([
+        "johnhayesnielsen@gmail.com",
+      ]);
+      // Second property-mapping lookup: choice:wa244 → correct slug
+      mockParameterStore.getPropertyMapping.mockResolvedValueOnce({
+        "choice:wa244": "comfort-inn-suites-spokane-valley",
+      });
+
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(
+        buildSesEvent("zip-override-choice-test"),
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedAttachments).toHaveLength(1);
+      expect(result.processedAttachments[0]).toContain(
+        "comfort-inn-suites-spokane-valley",
+      );
+    });
+
+    it("returns unknown-property for override sender when ZIP has no Choice pattern", async () => {
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () => Promise.resolve(Buffer.from("raw email")),
+        },
+      });
+
+      (simpleParser as Mock).mockResolvedValue({
+        from: {
+          value: [{ address: "johnhayesnielsen@gmail.com" }],
+        },
+        attachments: [
+          {
+            filename: "some_random_report.zip",
+            contentType: "application/zip",
+            content: Buffer.from("fake-zip-data"),
+            size: 100,
+          },
+        ],
+      });
+
+      (AdmZip as Mock).mockImplementation(function () {
+        return {
+          getEntries: vi.fn().mockReturnValue([
+            {
+              isDirectory: false,
+              entryName: "report.csv",
+              getData: vi.fn().mockReturnValue(Buffer.from("csv,data")),
+            },
+          ]),
+        };
+      });
+
+      // Sender not in property mapping
+      mockParameterStore.getPropertyMapping.mockResolvedValueOnce({});
+      // Override list includes the sender but ZIP doesn't match Choice pattern
+      mockParameterStore.getOverrideEmails.mockResolvedValueOnce([
+        "johnhayesnielsen@gmail.com",
+      ]);
+
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(
+        buildSesEvent("zip-override-nonChoice-test"),
+      );
+
+      expect(result.statusCode).toBe(200);
       expect(result.processedAttachments[0]).toContain("unknown-property");
     });
   });

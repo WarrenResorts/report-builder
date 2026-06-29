@@ -802,8 +802,29 @@ export class EmailProcessor {
     );
 
     if (slugFromSender !== CHOICE_SENTINEL) {
-      // Non-Choice ZIP: use the sender-resolved slug as-is
-      return slugFromSender;
+      // If this is an override sender forwarding a Choice Hotels ZIP, bypass the
+      // sentinel requirement and route by filename instead so that trusted senders
+      // can forward Choice emails without needing __choice__ in their own mapping.
+      const overrideEmails = await retryParameterStoreOperation(
+        () => this.parameterStore.getOverrideEmails(),
+        correlationId,
+        "get_override_emails_for_zip",
+      );
+      const isOverrideSender = overrideEmails.includes(
+        senderEmail.toLowerCase(),
+      );
+      const choiceMatch = zipFilename.match(CHOICE_ZIP_CODE_PATTERN);
+
+      if (!(isOverrideSender && choiceMatch)) {
+        // Non-Choice ZIP or non-override sender: use the sender-resolved slug as-is
+        return slugFromSender;
+      }
+
+      logger.debug(
+        "Override sender forwarding Choice ZIP — using filename routing",
+        { senderEmail, zipFilename },
+      );
+      // Fall through to Choice filename routing below
     }
 
     // Choice Hotels ZIP: extract property code from filename and do a second lookup
