@@ -256,7 +256,7 @@ export class LambdaConstruct extends Construct {
       projectRoot: path.join(__dirname, '..', '..', '..'),
       depsLockFilePath: path.join(__dirname, '..', '..', '..', 'package-lock.json'),
       bundling: {
-        nodeModules: ['mailparser'],
+        nodeModules: ['mailparser', 'adm-zip'],
         externalModules: ['@aws-sdk/*'],
         format: lambdaNodejs.OutputFormat.ESM,
         target: 'es2022',

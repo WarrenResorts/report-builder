@@ -60,6 +60,14 @@ import {
   transformStatDmySegToStatJERecords,
   type OperaMapping,
 } from "../opera";
+import {
+  loadChoiceMapping,
+  parseJournalSummary,
+  parseHotelStats,
+  transformJournalSummaryToJERecords,
+  transformHotelStatsToStatJERecords,
+  type ChoiceMapping,
+} from "../choice";
 
 /**
  * Interface for the file processing event
@@ -144,6 +152,18 @@ export interface MissingOperaFile {
 }
 
 /**
+ * A Choice Hotels property that is missing one of its required paired files.
+ * Surfaced as a notice in the outbound email.
+ */
+export interface MissingChoiceFile {
+  propertyName: string;
+  /** S3 folder date (YYYY-MM-DD) used as proxy when business date is unavailable */
+  folderDate: string;
+  /** Which file type was not received */
+  missingFileType: "hotel-statistics" | "journal-summary";
+}
+
+/**
  * Interface for the file processing result
  */
 interface FileProcessingResult {
@@ -158,6 +178,7 @@ interface FileProcessingResult {
     reportsGenerated: number;
     skippedDuplicates: SkippedDuplicate[];
     missingOperaFiles: MissingOperaFile[];
+    missingChoiceFiles: MissingChoiceFile[];
   };
 }
 
@@ -324,6 +345,12 @@ export class FileProcessor {
         correlationId,
       );
 
+      // Load Choice mapping if any Choice Hotels files are present in the batch
+      const choiceMapping = await this.loadChoiceMappingIfNeeded(
+        organizedFiles,
+        correlationId,
+      );
+
       // Step 3: Process each property's files (Phase 3B)
       const processedFiles = await this.processPropertyFiles(
         organizedFiles,
@@ -337,17 +364,20 @@ export class FileProcessor {
       });
 
       // Step 4: Apply account code mappings (Phase 3C) with duplicate detection (Phase 6)
-      // Routes Opera files to the Opera path; all others use the VisualMatrix path.
+      // Routes Opera files to the Opera path, Choice files to the Choice path,
+      // all others to the VisualMatrix path.
       const {
         reports: transformedData,
         skippedDuplicates,
         missingOperaFiles,
+        missingChoiceFiles,
       } = await this.applyAccountCodeMappings(
         processedFiles,
         organizedFiles,
         correlationId,
         visualMatrixData,
         operaMapping,
+        choiceMapping,
       );
 
       logger.info("Data transformations applied", {
@@ -461,6 +491,7 @@ export class FileProcessor {
             propertyDetails,
             skippedDuplicates,
             missingOperaFiles,
+            missingChoiceFiles,
           };
 
           const emailResult = await this.emailSender.sendReportEmail(
@@ -497,6 +528,7 @@ export class FileProcessor {
           reportsGenerated: reportKeys.length,
           skippedDuplicates,
           missingOperaFiles,
+          missingChoiceFiles,
         },
       };
     } catch (error) {
@@ -517,6 +549,7 @@ export class FileProcessor {
           reportsGenerated: 0,
           skippedDuplicates: [],
           missingOperaFiles: [],
+          missingChoiceFiles: [],
         },
       };
     }
@@ -951,8 +984,8 @@ export class FileProcessor {
         businessDate = yesterday.toISOString().split("T")[0];
       }
 
-      // For Opera files, include the file type in the key so trial_balance and
-      // stat_dmy_seg files for the same property/date are not treated as duplicates
+      // For Opera and Choice files, include the file type in the key so the two
+      // paired files for the same property/date are not treated as duplicates
       // of each other — they are a required pair, not copies of the same report.
       const fileName = file.fileKey.split("/").pop() ?? "";
       const operaFileType = fileName.startsWith("trial_balance")
@@ -960,9 +993,12 @@ export class FileProcessor {
         : fileName.startsWith("stat_dmy_seg")
           ? "stat_dmy_seg"
           : null;
+      const choiceType = getChoiceFileType(fileName);
       const deduplicationKey = operaFileType
         ? `${propertyName}|${businessDate}|${operaFileType}`
-        : `${propertyName}|${businessDate}`;
+        : choiceType
+          ? `${propertyName}|${businessDate}|${choiceType}`
+          : `${propertyName}|${businessDate}`;
 
       identities.push({
         file,
@@ -1091,6 +1127,21 @@ export class FileProcessor {
               file.key,
               correlationId,
             );
+
+            // Choice Hotels CSV files must be stored as raw text so the Choice
+            // parsers receive the original CSV content.  Bypass the CSV parser
+            // to avoid having the content JSON-stringified into CSVParsedData.
+            if (getChoiceFileType(file.filename) !== null) {
+              processedFiles.push({
+                fileKey: file.key,
+                originalContent: fileContent.toString("utf-8"),
+                transformedData: [],
+                errors: [],
+                propertyId,
+                processingTime: Date.now() - startTime,
+              });
+              continue;
+            }
 
             // Determine file type and get appropriate parser
             const fileExtension = this.getFileExtension(file.filename);
@@ -1245,10 +1296,12 @@ export class FileProcessor {
     correlationId: string,
     visualMatrixData?: VisualMatrixData | null,
     operaMapping?: OperaMapping | null,
+    choiceMapping?: ChoiceMapping | null,
   ): Promise<{
     reports: ConsolidatedReport[];
     skippedDuplicates: SkippedDuplicate[];
     missingOperaFiles: MissingOperaFile[];
+    missingChoiceFiles: MissingChoiceFile[];
   }> {
     const logger = createCorrelatedLogger(correlationId, {
       operation: "apply_account_code_mappings",
@@ -1263,7 +1316,12 @@ export class FileProcessor {
       logger.error(
         "No VisualMatrix mapping data available - cannot process files",
       );
-      return { reports: [], skippedDuplicates: [], missingOperaFiles: [] };
+      return {
+        reports: [],
+        skippedDuplicates: [],
+        missingOperaFiles: [],
+        missingChoiceFiles: [],
+      };
     }
 
     // Load override emails once for the entire batch (cached by Parameter Store)
@@ -1287,6 +1345,7 @@ export class FileProcessor {
     const reportsByProperty: { [propertyId: string]: ConsolidatedReport } = {};
     const skippedDuplicates: SkippedDuplicate[] = [];
     const missingOperaFiles: MissingOperaFile[] = [];
+    const missingChoiceFiles: MissingChoiceFile[] = [];
 
     // --- Opera file processing ---
     // Group Opera files by property+date and process pairs before the VM loop.
@@ -1301,9 +1360,23 @@ export class FileProcessor {
       correlationId,
     );
 
-    // Exclude Opera files from the VM loop below
+    // --- Choice Hotels file processing ---
+    await this.processChoiceFilePairs(
+      deduplicatedFiles,
+      organizedFiles,
+      choiceMapping ?? null,
+      overrideEmails,
+      reportsByProperty,
+      skippedDuplicates,
+      missingChoiceFiles,
+      correlationId,
+    );
+
+    // Exclude Opera and Choice files from the VM loop below
     const vmFiles = deduplicatedFiles.filter(
-      (f) => getOperaFileType(f.fileKey) === null,
+      (f) =>
+        getOperaFileType(f.fileKey) === null &&
+        getChoiceFileType(f.fileKey) === null,
     );
 
     for (const file of vmFiles) {
@@ -1501,6 +1574,7 @@ export class FileProcessor {
       reports: Object.values(reportsByProperty),
       skippedDuplicates,
       missingOperaFiles,
+      missingChoiceFiles,
     };
   }
 
@@ -2478,6 +2552,227 @@ export class FileProcessor {
   }
 
   /**
+   * Load the Choice mapping from S3 only when at least one Choice Hotels file is
+   * present in the current batch (avoids an unnecessary S3 call on non-Choice batches).
+   */
+  private async loadChoiceMappingIfNeeded(
+    organizedFiles: OrganizedFiles,
+    correlationId: string,
+  ): Promise<ChoiceMapping | null> {
+    const hasChoiceFiles = Object.values(organizedFiles).some((dateMap) =>
+      Object.values(dateMap).some((files) =>
+        files.some((f) => getChoiceFileType(f.filename) !== null),
+      ),
+    );
+
+    if (!hasChoiceFiles) return null;
+
+    return loadChoiceMapping(this.s3Client, this.mappingBucket, correlationId);
+  }
+
+  /**
+   * Process Choice Hotels journal-summary / hotel-statistics file pairs.
+   *
+   * For each property+date with Choice files:
+   *   - Both present → full JE + StatJE output
+   *   - Only hotel-statistics → StatJE only, missing-file notice for journal-summary
+   *   - Only journal-summary → JE only, missing-file notice for hotel-statistics
+   *
+   * Results are merged directly into `reportsByProperty`.
+   */
+  private async processChoiceFilePairs(
+    processedFiles: ProcessedFileData[],
+    organizedFiles: OrganizedFiles,
+    choiceMapping: ChoiceMapping | null,
+    overrideEmails: string[],
+    reportsByProperty: { [key: string]: ConsolidatedReport },
+    skippedDuplicates: SkippedDuplicate[],
+    missingChoiceFiles: MissingChoiceFile[],
+    correlationId: string,
+  ): Promise<void> {
+    const logger = createCorrelatedLogger(correlationId, {
+      operation: "process_choice_file_pairs",
+    });
+
+    const fileByKey = new Map<string, ProcessedFileData>(
+      processedFiles.map((f) => [f.fileKey, f]),
+    );
+
+    for (const [propertyId, dateMap] of Object.entries(organizedFiles)) {
+      for (const [folderDate, s3Files] of Object.entries(dateMap)) {
+        const statsS3 = s3Files.find(
+          (f) => getChoiceFileType(f.filename) === "hotel-statistics",
+        );
+        const journalS3 = s3Files.find(
+          (f) => getChoiceFileType(f.filename) === "journal-summary",
+        );
+
+        if (!statsS3 && !journalS3) continue; // no Choice files this day
+
+        const statsFile = statsS3 ? fileByKey.get(statsS3.key) : undefined;
+        const journalFile = journalS3
+          ? fileByKey.get(journalS3.key)
+          : undefined;
+
+        // Track missing files
+        if (!statsS3) {
+          missingChoiceFiles.push({
+            propertyName: propertyId,
+            folderDate,
+            missingFileType: "hotel-statistics",
+          });
+        }
+        if (!journalS3) {
+          missingChoiceFiles.push({
+            propertyName: propertyId,
+            folderDate,
+            missingFileType: "journal-summary",
+          });
+        }
+
+        // Need the Hotel Statistics file to determine the business date
+        if (!statsFile || statsFile.errors.length > 0) {
+          logger.warn(
+            "Choice Hotel Statistics file missing or failed — skipping StatJE generation",
+            { propertyId, folderDate },
+          );
+          continue;
+        }
+
+        // Parse Hotel Statistics to get business date
+        let statsData;
+        try {
+          const rawStats = this.extractRawText(statsFile.originalContent);
+          statsData = parseHotelStats(rawStats);
+          logger.debug("Choice Hotel Statistics parsed", {
+            fileKey: statsFile.fileKey,
+            businessDate: statsData.businessDate,
+          });
+        } catch (err) {
+          logger.error(
+            "Failed to parse Choice Hotel Statistics",
+            err as Error,
+            {
+              fileKey: statsFile.fileKey,
+            },
+          );
+          continue;
+        }
+
+        const businessDate = statsData.businessDate;
+        const reportKey = `${propertyId}|${businessDate}`;
+
+        // Duplicate detection
+        const duplicateCheck = await this.duplicateDetector.checkIfProcessed(
+          propertyId,
+          businessDate,
+          correlationId,
+        );
+
+        if (duplicateCheck.isAlreadyProcessed) {
+          const senderEmail = await this.getSenderEmailFromMetadata(
+            statsFile.fileKey,
+            correlationId,
+          );
+          const isOverride =
+            overrideEmails.length > 0 &&
+            senderEmail !== null &&
+            overrideEmails.includes(senderEmail.toLowerCase());
+
+          if (!isOverride) {
+            skippedDuplicates.push({
+              propertyName: propertyId,
+              businessDate,
+              fileKey: statsFile.fileKey,
+              reason: "already_processed",
+            });
+            continue;
+          }
+        }
+
+        const propertyConfigService = getPropertyConfigService();
+        const propertyConfig =
+          propertyConfigService.getPropertyConfigOrDefault(propertyId);
+        const mappingPropertyName = propertyConfig.choiceMappingName ?? "";
+
+        // Build StatJE records from Hotel Statistics
+        const statJERecords = choiceMapping
+          ? transformHotelStatsToStatJERecords(statsData, choiceMapping)
+          : [];
+
+        // Build JE records from Journal Summary (if available)
+        const jeRecords: ReturnType<typeof transformJournalSummaryToJERecords> =
+          [];
+        if (journalFile && journalFile.errors.length === 0) {
+          try {
+            const rawJournal = this.extractRawText(journalFile.originalContent);
+            const journalData = parseJournalSummary(rawJournal);
+            logger.debug("Choice Journal Summary parsed", {
+              fileKey: journalFile.fileKey,
+              transactionCount: journalData.transactions.length,
+            });
+            if (choiceMapping) {
+              jeRecords.push(
+                ...transformJournalSummaryToJERecords(
+                  journalData,
+                  choiceMapping,
+                  mappingPropertyName,
+                ),
+              );
+            }
+          } catch (err) {
+            logger.error(
+              "Failed to parse Choice Journal Summary",
+              err as Error,
+              {
+                fileKey: journalFile.fileKey,
+              },
+            );
+          }
+        }
+
+        const allRecords = [
+          ...jeRecords.map((r) => ({ ...r, propertyId })),
+          ...statJERecords.map((r) => ({ ...r, propertyId })),
+        ];
+
+        if (allRecords.length > 0) {
+          if (!reportsByProperty[reportKey]) {
+            reportsByProperty[reportKey] = {
+              propertyId,
+              propertyName: propertyConfig.propertyName,
+              reportDate: businessDate,
+              totalFiles: 0,
+              totalRecords: 0,
+              data: [],
+              summary: {
+                processingTime: 0,
+                errors: [],
+                successfulFiles: 0,
+                failedFiles: 0,
+              },
+            };
+          }
+
+          const report = reportsByProperty[reportKey];
+          report.totalFiles += (statsFile ? 1 : 0) + (journalFile ? 1 : 0);
+          report.totalRecords += allRecords.length;
+          report.data.push(...allRecords);
+          report.summary.successfulFiles +=
+            (statsFile ? 1 : 0) + (journalFile ? 1 : 0);
+
+          logger.info("Choice Hotels file pair processed", {
+            propertyId,
+            businessDate,
+            jeRecords: jeRecords.length,
+            statJERecords: statJERecords.length,
+          });
+        }
+      }
+    }
+  }
+
+  /**
    * Helper method to load VisualMatrix mapping configuration
    */
   private async loadVisualMatrixMapping(
@@ -2504,8 +2799,9 @@ export class FileProcessor {
       const mappingFiles = (listResult.Contents || [])
         .filter(
           (obj) =>
-            // Exclude Opera mapping files (under opera/ prefix)
+            // Exclude Opera and Choice mapping files (under their respective prefixes)
             !obj.Key?.startsWith("opera/") &&
+            !obj.Key?.startsWith("choice/") &&
             (obj.Key?.toLowerCase().endsWith(".xlsx") ||
               obj.Key?.toLowerCase().endsWith(".xls") ||
               obj.Key?.toLowerCase().endsWith(".csv")), // Also support CSV files that are actually Excel
@@ -2776,6 +3072,7 @@ export class FileProcessor {
             skippedDuplicates: [],
 
             missingOperaFiles: [],
+            missingChoiceFiles: [],
           },
         };
       }
@@ -2821,6 +3118,7 @@ export class FileProcessor {
           skippedDuplicates: [],
 
           missingOperaFiles: [],
+          missingChoiceFiles: [],
         },
       };
     } catch (error) {
@@ -2842,6 +3140,7 @@ export class FileProcessor {
           skippedDuplicates: [],
 
           missingOperaFiles: [],
+          missingChoiceFiles: [],
         },
       };
     }
@@ -2910,6 +3209,7 @@ export class FileProcessor {
             skippedDuplicates: [],
 
             missingOperaFiles: [],
+            missingChoiceFiles: [],
           },
         };
       }
@@ -2972,6 +3272,7 @@ export class FileProcessor {
             skippedDuplicates: [],
 
             missingOperaFiles: [],
+            missingChoiceFiles: [],
           },
         };
       }
@@ -3109,6 +3410,7 @@ export class FileProcessor {
           skippedDuplicates: [],
 
           missingOperaFiles: [],
+          missingChoiceFiles: [],
         },
       };
       /* c8 ignore stop */
@@ -3131,6 +3433,7 @@ export class FileProcessor {
           skippedDuplicates: [],
 
           missingOperaFiles: [],
+          missingChoiceFiles: [],
         },
       };
     }
@@ -3263,6 +3566,7 @@ export const handler = async (
         reportsGenerated: 0,
         skippedDuplicates: [],
         missingOperaFiles: [],
+        missingChoiceFiles: [],
       },
     };
   }
@@ -3280,5 +3584,22 @@ export function getOperaFileType(
   const name = filenameOrKey.split("/").pop() ?? filenameOrKey;
   if (/^trial_balance.*\.txt$/i.test(name)) return "trial_balance";
   if (/^stat_dmy_seg.*\.txt$/i.test(name)) return "stat_dmy_seg";
+  return null;
+}
+
+/**
+ * Determine whether a filename is a Choice Hotels file and what type it is.
+ * Returns "hotel-statistics", "journal-summary", or null.
+ *
+ * Expected filenames (after ZIP extraction):
+ *   Hotel Statistics_YYYY-MM-DD.csv  → "hotel-statistics"
+ *   Hotel Journal Summary_YYYY-MM-DD.csv → "journal-summary"
+ */
+export function getChoiceFileType(
+  filenameOrKey: string,
+): "hotel-statistics" | "journal-summary" | null {
+  const name = filenameOrKey.split("/").pop() ?? filenameOrKey;
+  if (/^hotel statistics_.*\.csv$/i.test(name)) return "hotel-statistics";
+  if (/^hotel journal summary_.*\.csv$/i.test(name)) return "journal-summary";
   return null;
 }

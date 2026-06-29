@@ -87,7 +87,7 @@ Receives daily hotel report emails with file attachments, parses them, transform
 - **S3 buckets** (both environments):
   - `report-builder-incoming-files-{env}-v2` — raw email attachments
   - `report-builder-processed-files-{env}-v2` — generated JE/StatJE reports
-  - `report-builder-mapping-files-{env}-v2` — Excel mapping files; Opera files go in `opera/` prefix
+  - `report-builder-mapping-files-{env}-v2` — Excel mapping files; Opera files go in `opera/` prefix; Choice files go in `choice/` prefix
 - **SSM Parameters** (production account `400534944857`):
   - `/report-builder/production/properties/email-mapping` — JSON mapping sender email → property slug
   - `/report-builder/production/properties/override-email` — if set, all reports route here instead of real recipients; NOT set in production (reports go to real recipients)
@@ -100,11 +100,18 @@ All properties are configured in `src/config/property-config.ts`. Each has:
 - `subsidiaryId` / `subsidiaryFullName` (NetSuite)
 - `locationId`, `accountingPeriod`, `recipientEmails`
 - `roomsAvailable` (Opera properties only — used for ADR/Occupancy/RevPAR)
+- `choiceMappingName` (Choice Hotels properties only — display name as it appears in the Choice mapping workbook)
 
 ### Opera Mapping
 - Loaded from the latest `.xlsx` file under `opera/` in the mapping bucket
 - Supports **dual mapping**: `Map<string, OperaMappingEntry[]>` — one `TRX_CODE` can produce multiple JE lines
 - The mapping file is uploaded manually to S3 when the hotel provides an updated version
+
+### Choice Mapping
+- Loaded from the latest `.xlsx` file under `choice/` in the mapping bucket
+- 7-column `Choice` sheet: `Src Data Code`, `Src Desc`, `Multiplier`, `Property Name`, `Glacct Code`, `Glacct Name`, `Acct Type`
+- Property-specific rows (non-blank `Property Name`) override global rows for that property
+- See `docs/choice-hotels-pipeline.md` for full format reference
 
 ---
 
@@ -122,6 +129,13 @@ See `docs/adding-a-new-property.md`.
 2. Add property config to `src/config/property-config.ts` with `roomsAvailable`
 3. Upload the Opera mapping XLSX to `opera/` prefix in both mapping buckets
 
+### Onboarding a New Choice Hotels Property
+See `docs/choice-hotels-pipeline.md` — Operations section.
+1. Add `auto_mail_delivery_system@choicehotels.com` → `__choice__` to SSM `email-mapping` (if not already present)
+2. Add `choice:{code}` → property slug to SSM `email-mapping` in both accounts
+3. Add property config to `src/config/property-config.ts` with `choiceMappingName`
+4. Upload or update the Choice mapping XLSX to `choice/` prefix in both mapping buckets
+
 ---
 
 ## 📍 Current State (as of June 2026)
@@ -134,13 +148,19 @@ See `docs/adding-a-new-property.md`.
 - **PR #184** (`chore/update-dependencies-june-2026`) — June 2026 dependency updates; may still be in CI
 - **PR #175** (`fix/pdf-parse-v2` branch) — contains only a docs update (`PROJECT_PLAN.md`); the branch name is misleading, no pdf-parse code changes were made
 - **Dependabot PRs #176–#183** — to be closed once PR #184 merges (they are all superseded by it)
+- **`feature/choice-hotels-pipeline`** — Choice Hotels pipeline (Phase 14); implementation complete, PR open for review
 
 ### Known Technical Debt
 - `pdf-parse` v2 migration blocked — see PROJECT_PLAN.md Phase 13
 - `tmp` (via `exceljs`) has a recurring high-severity advisory that keeps getting new IDs; exclusion in `.nsprc` needs to be updated each time (`1120654` as of June 2026)
 
 ### Next Feature Work
-**Phase 14 — Choice Hotels pipeline** (3 properties). Awaiting sample reports for format analysis. Do not start implementation until samples are received and analyzed. See `PROJECT_PLAN.md` Phase 14.
+**Phase 14 — Choice Hotels pipeline** (3 properties) — implementation complete on `feature/choice-hotels-pipeline`. Before deploying:
+1. Add SSM entries (`__choice__` sentinel + `choice:{code}` lookups) in both dev and prod
+2. Upload the Choice mapping XLSX to `choice/` prefix in both mapping buckets
+3. Deploy to dev, verify with live data, then production
+
+**Phase 7 — Day-to-Day Comparison Engine** — the next development phase after Phase 14 is deployed.
 
 ---
 

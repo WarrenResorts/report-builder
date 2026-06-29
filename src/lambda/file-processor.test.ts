@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
-import { handler, FileProcessingEvent, FileProcessor } from "./file-processor";
+import {
+  handler,
+  FileProcessingEvent,
+  FileProcessor,
+  getOperaFileType,
+  getChoiceFileType,
+} from "./file-processor";
 import { EventBridgeEvent, Context } from "aws-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 import { ParameterStoreConfig } from "../config/parameter-store";
@@ -3035,5 +3041,73 @@ Room Revenue: 500.00`;
         "holiday-inn-express-clover-lane",
       );
     });
+  });
+});
+
+// ─── getOperaFileType ─────────────────────────────────────────────────────────
+
+describe("getOperaFileType", () => {
+  it("detects trial_balance file", () => {
+    expect(getOperaFileType("trial_balance_2026-06-14.txt")).toBe(
+      "trial_balance",
+    );
+  });
+
+  it("detects stat_dmy_seg file", () => {
+    expect(getOperaFileType("stat_dmy_seg_2026-06-14.txt")).toBe(
+      "stat_dmy_seg",
+    );
+  });
+
+  it("returns null for unrecognised filename", () => {
+    expect(getOperaFileType("report.pdf")).toBeNull();
+  });
+
+  it("handles full S3 key by using only the final segment", () => {
+    expect(
+      getOperaFileType(
+        "daily-files/holiday-inn/2026-06-14/trial_balance_abc.txt",
+      ),
+    ).toBe("trial_balance");
+  });
+
+  it("is case-insensitive", () => {
+    expect(getOperaFileType("Trial_Balance_2026-06-14.TXT")).toBe(
+      "trial_balance",
+    );
+  });
+});
+
+// ─── getChoiceFileType ────────────────────────────────────────────────────────
+
+describe("getChoiceFileType", () => {
+  it("detects hotel-statistics file", () => {
+    expect(getChoiceFileType("Hotel Statistics_2026-06-14.csv")).toBe(
+      "hotel-statistics",
+    );
+  });
+
+  it("detects journal-summary file", () => {
+    expect(getChoiceFileType("Hotel Journal Summary_2026-06-14.csv")).toBe(
+      "journal-summary",
+    );
+  });
+
+  it("returns null for unrecognised filename", () => {
+    expect(getChoiceFileType("report.pdf")).toBeNull();
+  });
+
+  it("handles full S3 key by using only the final segment", () => {
+    expect(
+      getChoiceFileType(
+        "daily-files/comfort-inn-missoula/2026-06-14/Hotel Statistics_2026-06-14.csv",
+      ),
+    ).toBe("hotel-statistics");
+  });
+
+  it("is case-insensitive", () => {
+    expect(getChoiceFileType("HOTEL STATISTICS_2026-06-14.CSV")).toBe(
+      "hotel-statistics",
+    );
   });
 });

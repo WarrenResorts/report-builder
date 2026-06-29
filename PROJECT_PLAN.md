@@ -154,20 +154,27 @@ IHG-type properties send **Opera text exports** (`trial_balance*.txt`, `stat_dmy
 - [x] CI/CD guard updated: prevents non-feature Dependabot PRs from overwriting active feature deployments in dev; `npm ci` added to deploy jobs to ensure correct Lambda bundling
 - [x] All tests passing; Opera pipeline verified against real production reports
 
-### Phase 14: Choice Hotels daily files (new pipeline) 🔜 **[UPCOMING]**
+### Phase 14: Choice Hotels daily files (new pipeline) ✅ **[COMPLETE — pending deploy]**
 
-3 properties send **Choice Hotels** reports. Sample reports are pending receipt and analysis. This section will be updated once samples are reviewed.
+3 properties send **Choice Hotels** Night Audit reports as ZIP attachments from the shared address `AUTO_MAIL_DELIVERY_SYSTEM@choicehotels.com`. The full pipeline is implemented and tested; the feature branch is open for review before production deployment.
 
-- [ ] Receive and analyze sample Choice Hotels report files
-- [ ] Document file format, structure, and data fields
-- [ ] Define mapping strategy (new mapping workbook or extension of existing)
-- [ ] Design parser(s) for Choice format
-- [ ] Define routing/detection logic in `FileProcessor`
-- [ ] Build JE and StatJE output from Choice data
-- [ ] Configure the 3 Choice properties in `property-config.ts`
-- [ ] Add sender emails to SSM `email-mapping` for all 3 properties
-- [ ] End-to-end testing with real sample data
-- [ ] Deploy to dev, verify, then production
+**Properties**: Comfort Inn - Missoula (MT118), Comfort Inn & Suites - Ashland (OR258), Comfort Inn & Suites - Spokane Valley (WA244).
+
+- [x] Receive and analyze sample Choice Hotels report files
+- [x] Document file format, structure, and data fields
+- [x] Define mapping strategy — new `choice/` S3 prefix with 7-column `Choice` sheet XLSX
+- [x] Design parsers — `choice-journal-summary-parser.ts` and `choice-hotel-stats-parser.ts`
+- [x] Define routing/detection logic — `getChoiceFileType` + `processChoiceFilePairs` in `file-processor.ts`; `processZipAttachment` + `resolvePropertySlugForZip` in `email-processor.ts`
+- [x] Build JE and StatJE output — `choice-transformation.ts` using existing `JournalEntryGenerator` / `StatisticalEntryGenerator`
+- [x] Configure the 3 Choice properties in `property-config.ts` with `choiceMappingName`
+- [x] ZIP extraction via `adm-zip` in `email-processor`
+- [x] Shared-sender routing via `__choice__` SSM sentinel + `choice:{code}` property-code lookup
+- [x] Missing-file warning in summary email (`missingChoiceFiles`)
+- [x] Full unit test coverage; all thresholds maintained
+- [ ] Add sender addresses + `choice:{code}` entries to SSM `email-mapping` in dev and prod accounts
+- [ ] Upload the Choice mapping XLSX to `choice/` prefix in both mapping buckets
+- [ ] Deploy to dev, verify with live data, then production
+- [ ] See `docs/choice-hotels-pipeline.md` for full technical reference
 
 ### Phase 7: Day-to-Day Comparison Engine
 - [ ] Enhanced S3 storage structure for processed daily data
@@ -377,7 +384,7 @@ Enhanced S3 Structure:
 - **Visual Matrix / PDF pipeline**: Phases 3–6, 8 (partial), 10 complete; production in use for all existing properties.
 - **IHG / Opera pipeline (Phase 12)**: Complete and live in production for `holiday-inn-express-clover-lane`.
 - **Dependencies**: All packages updated to latest (except `pdf-parse` — v2 migration blocked, see Phase 13).
-- **Next**: Phase 14 — Choice Hotels pipeline (3 properties). Awaiting sample reports for analysis.
+- **Phase 14 (Choice Hotels pipeline)**: Implementation complete on `feature/choice-hotels-pipeline`. Awaiting SSM configuration in dev/prod and mapping file upload before deployment.
 
 ### Phase-Based Branch Strategy
 1. **`feat/file-processing-engine`** ← **MERGED / PRODUCTION BASE ✅**
