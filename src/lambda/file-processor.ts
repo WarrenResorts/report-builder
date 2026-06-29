@@ -2799,8 +2799,9 @@ export class FileProcessor {
       const mappingFiles = (listResult.Contents || [])
         .filter(
           (obj) =>
-            // Exclude Opera mapping files (under opera/ prefix)
+            // Exclude Opera and Choice mapping files (under their respective prefixes)
             !obj.Key?.startsWith("opera/") &&
+            !obj.Key?.startsWith("choice/") &&
             (obj.Key?.toLowerCase().endsWith(".xlsx") ||
               obj.Key?.toLowerCase().endsWith(".xls") ||
               obj.Key?.toLowerCase().endsWith(".csv")), // Also support CSV files that are actually Excel
