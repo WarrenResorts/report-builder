@@ -3110,4 +3110,20 @@ describe("getChoiceFileType", () => {
       "hotel-statistics",
     );
   });
+
+  // These sanitized (underscore) forms are what email-processor's
+  // sanitizeFilename() actually produces in S3 — this is the real-world
+  // filename shape, and the regression that caused Choice reports to be
+  // silently skipped in production.
+  it("detects hotel-statistics file with sanitized (underscore) separators", () => {
+    expect(getChoiceFileType("Hotel_Statistics_2026-07-07_550e7ef0.csv")).toBe(
+      "hotel-statistics",
+    );
+  });
+
+  it("detects journal-summary file with sanitized (underscore) separators", () => {
+    expect(
+      getChoiceFileType("Hotel_Journal_Summary_2026-07-07_1a348d85.csv"),
+    ).toBe("journal-summary");
+  });
 });

@@ -3594,12 +3594,18 @@ export function getOperaFileType(
  * Expected filenames (after ZIP extraction):
  *   Hotel Statistics_YYYY-MM-DD.csv  → "hotel-statistics"
  *   Hotel Journal Summary_YYYY-MM-DD.csv → "journal-summary"
+ *
+ * Note: the email-processor's sanitizeFilename() replaces spaces with
+ * underscores before storing files in S3 (e.g. "Hotel Statistics_..."
+ * becomes "Hotel_Statistics_..."), so both the space and underscore
+ * separators must be matched here.
  */
 export function getChoiceFileType(
   filenameOrKey: string,
 ): "hotel-statistics" | "journal-summary" | null {
   const name = filenameOrKey.split("/").pop() ?? filenameOrKey;
-  if (/^hotel statistics_.*\.csv$/i.test(name)) return "hotel-statistics";
-  if (/^hotel journal summary_.*\.csv$/i.test(name)) return "journal-summary";
+  if (/^hotel[ _]statistics_.*\.csv$/i.test(name)) return "hotel-statistics";
+  if (/^hotel[ _]journal[ _]summary_.*\.csv$/i.test(name))
+    return "journal-summary";
   return null;
 }
