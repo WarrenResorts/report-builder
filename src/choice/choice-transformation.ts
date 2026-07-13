@@ -17,8 +17,11 @@
  *  • Each Statistical mapping entry is looked up against the Hotel Statistics
  *    column map (exact match, except RevPAR which uses prefix matching).
  *  • Percentage values (e.g. "60.66%") are stripped of the "%" before parsing.
- *  • Three trailing zero rows are emitted for Occupancy, ADR, and RevPAR —
- *    these are required placeholder rows in the NetSuite StatJE import.
+ *  • Occupancy, ADR, and RevPAR are required placeholder rows in the NetSuite
+ *    StatJE import: a trailing zero row is appended for each of these three
+ *    GL codes only if a real (mapped) value wasn't already emitted above —
+ *    this is a safety net for a missing mapping/stats column, not a row that
+ *    should ever duplicate a real value.
  */
 
 import { JournalSummaryData } from "./choice-journal-summary-parser";
@@ -43,11 +46,32 @@ import { TransformedStatJERecord } from "../output/statistical-entry-generator";
 const LEDGER_KEYS = ["Guest Ledger", "AR Ledger", "AdvDep Ledger"] as const;
 type LedgerKey = (typeof LEDGER_KEYS)[number];
 
+// ─── Combined credit card codes ───────────────────────────────────────────────
+
+/**
+ * Transaction codes combined into a single "Visa/MC/Discover" JE line, mirroring
+ * the existing convention in credit-card-processor.ts (Visual Matrix) and
+ * opera-transformation.ts (Opera): these three settle together on the bank
+ * statement, so combining them lets the hotel's accounting system auto-match
+ * the deposit. American Express is intentionally excluded — it settles
+ * separately from the Visa/MC/Discover batch.
+ *
+ * Combining only happens when 2+ of these codes are present in the Journal
+ * Summary file AND all resolve to the same GL account for the property; if
+ * either condition fails, each code falls back to its own row (unchanged
+ * behavior), so this can never silently merge amounts into the wrong account.
+ */
+const COMBINED_CARD_CODES = new Set(["VI", "MC", "DS"]);
+const COMBINED_CARD_LABEL = "Visa/MC/Discover";
+
 // ─── StatJE trailing rows ─────────────────────────────────────────────────────
 
 /**
- * Three placeholder StatJE rows appended after the real stat records.
- * NetSuite expects these rows to be present even when values are zero.
+ * Placeholder StatJE rows appended after the real stat records, but only for
+ * a GL code that wasn't already emitted with a real value. NetSuite expects
+ * these rows to be present even when the mapping/stats data is missing them,
+ * but the Choice mapping always provides real values for Occy/ADR/RevPAR, so
+ * in practice these rows are almost never actually emitted.
  */
 const TRAILING_STAT_ROWS: Array<{ glAcctCode: string; glAcctName: string }> = [
   { glAcctCode: "90002-419", glAcctName: "Occy" },
@@ -75,8 +99,59 @@ export function transformJournalSummaryToJERecords(
 ): TransformedJERecord[] {
   const records: TransformedJERecord[] = [];
 
+  // ── Combined Visa/MasterCard/Discover row ───────────────────────────────────
+  // See COMBINED_CARD_CODES doc comment above for the rationale and fallback
+  // conditions. cardsResolveToSameAccount starts true and is only flipped to
+  // false if two of the codes resolve to different GL accounts.
+  const cardAmounts: number[] = [];
+  let combinedCardEntry: ChoiceMappingEntry | undefined;
+  let cardsResolveToSameAccount = true;
+
+  for (const tx of journalSummary.transactions) {
+    if (!COMBINED_CARD_CODES.has(tx.transactionCode)) continue;
+
+    const entry = findChoiceMappingEntry(
+      mapping,
+      tx.transactionCode,
+      mappingPropertyName,
+    );
+    if (!entry || entry.glAcctCode === CHOICE_NOT_MAPPED) continue;
+
+    if (
+      combinedCardEntry &&
+      entry.glAcctCode !== combinedCardEntry.glAcctCode
+    ) {
+      cardsResolveToSameAccount = false;
+    }
+    combinedCardEntry = entry;
+    cardAmounts.push(tx.totals * entry.multiplier);
+  }
+
+  const shouldCombineCards =
+    cardsResolveToSameAccount && cardAmounts.length >= 2 && !!combinedCardEntry;
+
+  if (shouldCombineCards && combinedCardEntry) {
+    const combinedAmount = cardAmounts.reduce((sum, a) => sum + a, 0);
+    if (combinedAmount !== 0) {
+      records.push({
+        sourceCode: "VI+MC+DS",
+        sourceDescription: COMBINED_CARD_LABEL,
+        sourceAmount: combinedAmount,
+        targetCode: combinedCardEntry.glAcctCode,
+        targetDescription: combinedCardEntry.glAcctName,
+        mappedAmount: combinedAmount,
+        paymentMethod: COMBINED_CARD_LABEL,
+      });
+    }
+  }
+
   // ── Standard transaction code rows ──────────────────────────────────────────
   for (const tx of journalSummary.transactions) {
+    // Visa/MC/Discover are already accounted for in the combined row above.
+    if (shouldCombineCards && COMBINED_CARD_CODES.has(tx.transactionCode)) {
+      continue;
+    }
+
     const entry = findChoiceMappingEntry(
       mapping,
       tx.transactionCode,
@@ -89,7 +164,12 @@ export function transformJournalSummaryToJERecords(
     const rawAmount = tx.totals * entry.multiplier;
     if (rawAmount === 0) continue;
 
-    records.push(buildJERecord(tx.transactionCode, entry, rawAmount));
+    const paymentMethod =
+      tx.transactionCode === "AX" ? "American Express" : undefined;
+
+    records.push(
+      buildJERecord(tx.transactionCode, entry, rawAmount, paymentMethod),
+    );
   }
 
   // ── Ledger column sums ───────────────────────────────────────────────────────
@@ -120,11 +200,13 @@ export function transformJournalSummaryToJERecords(
  * Transform parsed Hotel Statistics into StatJE records suitable for the
  * StatisticalEntryGenerator.
  *
- * Three trailing zero-value rows (Occy, ADR, RevPAR) are always appended.
+ * A trailing zero-value row for Occy, ADR, or RevPAR is appended only when a
+ * real record for that GL code wasn't already emitted (see TRAILING_STAT_ROWS
+ * doc comment) — real records are never duplicated by a zero-value row.
  *
  * @param statsData - Parsed Hotel Statistics file
  * @param mapping - Full Choice mapping
- * @returns Array of transformed StatJE records (real + trailing zeros)
+ * @returns Array of transformed StatJE records (real values + any missing placeholders)
  */
 export function transformHotelStatsToStatJERecords(
   statsData: HotelStatsData,
@@ -154,10 +236,13 @@ export function transformHotelStatsToStatJERecords(
     });
   }
 
-  // Always append three trailing zero rows (Occy, ADR, RevPAR).
-  // These are required placeholder rows for the NetSuite StatJE import
-  // even when the real values are already present above.
+  // Append a trailing zero row for Occy/ADR/RevPAR only when a real record
+  // for that GL code wasn't already emitted above. This is a safety net for
+  // a missing mapping/stats column — it must never duplicate a real value.
+  const emittedTargetCodes = new Set(records.map((r) => r.targetCode));
   for (const { glAcctCode, glAcctName } of TRAILING_STAT_ROWS) {
+    if (emittedTargetCodes.has(glAcctCode)) continue;
+
     records.push({
       sourceCode: glAcctCode,
       sourceDescription: glAcctName,
@@ -178,6 +263,7 @@ function buildJERecord(
   sourceCode: string,
   entry: ChoiceMappingEntry,
   amount: number,
+  paymentMethod?: string,
 ): TransformedJERecord {
   return {
     sourceCode,
@@ -186,6 +272,7 @@ function buildJERecord(
     targetCode: entry.glAcctCode,
     targetDescription: entry.glAcctName,
     mappedAmount: amount,
+    paymentMethod,
   };
 }
 

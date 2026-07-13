@@ -161,8 +161,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     propertyName: "comfort-inn-missoula",
     locationInternalId: "21",
     subsidiaryInternalId: "37",
-    subsidiaryFullName:
-      "Parent Company : Warren Family Hotels : Warren Resort Hotels of Missoula, Inc.",
+    subsidiaryFullName: "Comfort Inn Missoula",
     locationName: "Comfort Inn - Missoula",
     creditCardDepositAccount: "", // Handled per-transaction by Choice mapping
     choiceMappingName: "Comfort Inn - Missoula",
@@ -172,8 +171,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     propertyName: "comfort-inn-suites-ashland",
     locationInternalId: "22",
     subsidiaryInternalId: "28",
-    subsidiaryFullName:
-      "Parent Company : Warren Family Hotels : Warren Resort Hotels of Medford, Inc.",
+    subsidiaryFullName: "Comfort Inn & Suites Ashland",
     locationName: "Comfort Inn & Suites - Ashland",
     creditCardDepositAccount: "", // Handled per-transaction by Choice mapping
     choiceMappingName: "Comfort Inn & Suites - Ashland",
@@ -183,8 +181,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     propertyName: "comfort-inn-suites-spokane-valley",
     locationInternalId: "23",
     subsidiaryInternalId: "30",
-    subsidiaryFullName:
-      "Parent Company : Warren Family Hotels : Warren Resort Hotels of Spokane Valley, Inc.",
+    subsidiaryFullName: "Comfort Inn & Suites Spokane Valley",
     locationName: "Comfort Inn & Suites - Spokane Valley",
     creditCardDepositAccount: "", // Handled per-transaction by Choice mapping
     choiceMappingName: "Comfort Inn & Suites - Spokane Valley",

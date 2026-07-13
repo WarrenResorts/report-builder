@@ -308,6 +308,187 @@ describe("transformJournalSummaryToJERecords", () => {
     expect(records).toHaveLength(0);
   });
 
+  describe("combined Visa/MasterCard/Discover row", () => {
+    const cardSummary: JournalSummaryData = {
+      transactions: [
+        {
+          transactionCode: "VI",
+          totals: 1000,
+          guestLedger: 1000,
+          arLedger: 0,
+          advDepLedger: 0,
+        },
+        {
+          transactionCode: "MC",
+          totals: 500,
+          guestLedger: 500,
+          arLedger: 0,
+          advDepLedger: 0,
+        },
+        {
+          transactionCode: "DS",
+          totals: 250,
+          guestLedger: 250,
+          arLedger: 0,
+          advDepLedger: 0,
+        },
+        {
+          transactionCode: "AX",
+          totals: 300,
+          guestLedger: 300,
+          arLedger: 0,
+          advDepLedger: 0,
+        },
+      ],
+      guestLedgerSum: 0,
+      arLedgerSum: 0,
+      advDepLedgerSum: 0,
+    };
+
+    it("combines VI, MC, and DS into a single row when they resolve to the same account", async () => {
+      const mapping = await buildMapping([
+        ["VI", "VISA", 1, null, "10190-718", "Cash", "Accounting"],
+        ["MC", "MASTERCARD", 1, null, "10190-718", "Cash", "Accounting"],
+        ["DS", "DISCOVER", 1, null, "10190-718", "Cash", "Accounting"],
+        ["AX", "AMEX", 1, null, "10190-718", "Cash", "Accounting"],
+      ]);
+      const records = transformJournalSummaryToJERecords(
+        cardSummary,
+        mapping,
+        MISSOULA,
+      );
+
+      const cardRows = records.filter((r) => r.targetCode === "10190-718");
+      // 1 combined VI+MC+DS row + 1 separate AX row = 2
+      expect(cardRows).toHaveLength(2);
+
+      const combined = records.find((r) => r.sourceCode === "VI+MC+DS");
+      expect(combined?.mappedAmount).toBeCloseTo(1750); // 1000 + 500 + 250
+      expect(combined?.paymentMethod).toBe("Visa/MC/Discover");
+
+      const ax = records.find((r) => r.sourceCode === "AX");
+      expect(ax?.mappedAmount).toBeCloseTo(300);
+      expect(ax?.paymentMethod).toBe("American Express");
+
+      // Individual VI/MC/DS rows must not also appear
+      expect(records.map((r) => r.sourceCode)).not.toContain("VI");
+      expect(records.map((r) => r.sourceCode)).not.toContain("MC");
+      expect(records.map((r) => r.sourceCode)).not.toContain("DS");
+    });
+
+    it("combines just two of the three codes when only two are present", async () => {
+      const twoCardSummary: JournalSummaryData = {
+        ...cardSummary,
+        transactions: cardSummary.transactions.filter(
+          (t) => t.transactionCode !== "DS",
+        ),
+      };
+      const mapping = await buildMapping([
+        ["VI", "VISA", 1, null, "10190-718", "Cash", "Accounting"],
+        ["MC", "MASTERCARD", 1, null, "10190-718", "Cash", "Accounting"],
+      ]);
+      const records = transformJournalSummaryToJERecords(
+        twoCardSummary,
+        mapping,
+        MISSOULA,
+      );
+
+      const combined = records.find((r) => r.sourceCode === "VI+MC+DS");
+      expect(combined?.mappedAmount).toBeCloseTo(1500); // 1000 + 500
+    });
+
+    it("does not combine when only one of the three codes is present", async () => {
+      const oneCardSummary: JournalSummaryData = {
+        ...cardSummary,
+        transactions: cardSummary.transactions.filter(
+          (t) => t.transactionCode === "VI",
+        ),
+      };
+      const mapping = await buildMapping([
+        ["VI", "VISA", 1, null, "10190-718", "Cash", "Accounting"],
+      ]);
+      const records = transformJournalSummaryToJERecords(
+        oneCardSummary,
+        mapping,
+        MISSOULA,
+      );
+
+      expect(records).toHaveLength(1);
+      expect(records[0].sourceCode).toBe("VI");
+      expect(records[0].paymentMethod).toBeUndefined();
+      expect(records[0].mappedAmount).toBeCloseTo(1000);
+    });
+
+    it("falls back to individual rows when the codes resolve to different accounts", async () => {
+      const mapping = await buildMapping([
+        ["VI", "VISA", 1, null, "10190-718", "Cash", "Accounting"],
+        ["MC", "MASTERCARD", 1, null, "10190-718", "Cash", "Accounting"],
+        ["DS", "DISCOVER", 1, null, "10200-999", "Other Cash", "Accounting"],
+      ]);
+      const records = transformJournalSummaryToJERecords(
+        cardSummary,
+        mapping,
+        MISSOULA,
+      );
+
+      expect(records.map((r) => r.sourceCode)).not.toContain("VI+MC+DS");
+      expect(records.map((r) => r.sourceCode)).toContain("VI");
+      expect(records.map((r) => r.sourceCode)).toContain("MC");
+      expect(records.map((r) => r.sourceCode)).toContain("DS");
+    });
+
+    it("omits the combined row entirely when the combined amount nets to zero", async () => {
+      const zeroNetSummary: JournalSummaryData = {
+        ...cardSummary,
+        transactions: [
+          {
+            transactionCode: "VI",
+            totals: 100,
+            guestLedger: 100,
+            arLedger: 0,
+            advDepLedger: 0,
+          },
+          {
+            transactionCode: "MC",
+            totals: -100,
+            guestLedger: -100,
+            arLedger: 0,
+            advDepLedger: 0,
+          },
+        ],
+      };
+      const mapping = await buildMapping([
+        ["VI", "VISA", 1, null, "10190-718", "Cash", "Accounting"],
+        ["MC", "MASTERCARD", 1, null, "10190-718", "Cash", "Accounting"],
+      ]);
+      const records = transformJournalSummaryToJERecords(
+        zeroNetSummary,
+        mapping,
+        MISSOULA,
+      );
+
+      expect(records).toHaveLength(0);
+    });
+
+    it("does not combine codes mapped to CHOICE_NOT_MAPPED", async () => {
+      const mapping = await buildMapping([
+        ["VI", "VISA", 1, null, "10190-718", "Cash", "Accounting"],
+        ["MC", "MASTERCARD", 1, null, "", "Cash", "Accounting"],
+        ["DS", "DISCOVER", 1, null, "10190-718", "Cash", "Accounting"],
+      ]);
+      const records = transformJournalSummaryToJERecords(
+        cardSummary,
+        mapping,
+        MISSOULA,
+      );
+
+      // MC is not mapped, so only VI + DS are eligible to combine.
+      const combined = records.find((r) => r.sourceCode === "VI+MC+DS");
+      expect(combined?.mappedAmount).toBeCloseTo(1250); // 1000 + 250
+      expect(records.map((r) => r.sourceCode)).not.toContain("MC");
+    });
+  });
+
   it("does not emit Statistical entries", async () => {
     const mapping = await buildMapping([
       ["RM", "ROOM CHARGE", 1, null, "40110-634", "Room Revenue", "Accounting"],
@@ -401,7 +582,7 @@ describe("transformHotelStatsToStatJERecords", () => {
     expect(revpar?.mappedAmount).toBeCloseTo(122.84);
   });
 
-  it("always appends three trailing zero rows", async () => {
+  it("does not duplicate Occy/ADR/RevPAR with a trailing zero row when real values are already present", async () => {
     const mapping = await buildMapping([
       [
         "Occupancy Statistics_ADR for Total Occupied Rooms",
@@ -433,16 +614,42 @@ describe("transformHotelStatsToStatJERecords", () => {
     ]);
     const records = transformHotelStatsToStatJERecords(baseStats, mapping);
 
-    // 3 real records + 3 trailing zero rows = 6
-    expect(records).toHaveLength(6);
-
-    const lastThree = records.slice(-3);
-    expect(lastThree.every((r) => r.mappedAmount === 0)).toBe(true);
-    expect(lastThree.map((r) => r.targetCode)).toEqual([
-      "90002-419", // Occy
+    // Only the 3 real records — no duplicate zero-value rows appended.
+    expect(records).toHaveLength(3);
+    expect(records.every((r) => r.mappedAmount !== 0)).toBe(true);
+    expect(records.map((r) => r.targetCode).sort()).toEqual([
       "90001-418", // ADR
+      "90002-419", // Occy
       "90003-420", // RevPAR
     ]);
+  });
+
+  it("appends a trailing zero row only for the GL codes missing a real value", async () => {
+    // Only ADR is mapped/resolved; Occy and RevPAR have no mapping entry at all,
+    // so they should each fall back to their trailing zero placeholder row.
+    const mapping = await buildMapping([
+      [
+        "Occupancy Statistics_ADR for Total Occupied Rooms",
+        "ADR",
+        1,
+        null,
+        "90001-418",
+        "ADR",
+        "Statistical",
+      ],
+    ]);
+    const records = transformHotelStatsToStatJERecords(baseStats, mapping);
+
+    expect(records).toHaveLength(3);
+
+    const adr = records.find((r) => r.targetCode === "90001-418");
+    expect(adr?.mappedAmount).toBeCloseTo(202.52);
+
+    const occy = records.find((r) => r.targetCode === "90002-419");
+    expect(occy?.mappedAmount).toBe(0);
+
+    const revpar = records.find((r) => r.targetCode === "90003-420");
+    expect(revpar?.mappedAmount).toBe(0);
   });
 
   it("skips stat entries with no matching column in stats file", async () => {
