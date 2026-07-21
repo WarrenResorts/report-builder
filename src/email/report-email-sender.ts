@@ -19,6 +19,7 @@ import { RetryConfig } from "../types/errors";
 import type {
   SkippedDuplicate,
   MissingOperaFile,
+  MissingChoiceFile,
 } from "../lambda/file-processor";
 
 /**
@@ -66,6 +67,11 @@ export interface ReportSummary {
    * Each entry generates a red notice in the outbound email.
    */
   missingOperaFiles?: MissingOperaFile[];
+  /**
+   * Choice Hotels properties that received only one of the two expected daily files.
+   * Each entry generates a notice in the outbound email.
+   */
+  missingChoiceFiles?: MissingChoiceFile[];
 }
 
 /**
@@ -390,6 +396,8 @@ export class ReportEmailSender {
       summary.skippedDuplicates && summary.skippedDuplicates.length > 0;
     const hasMissingOperaFiles =
       summary.missingOperaFiles && summary.missingOperaFiles.length > 0;
+    const hasMissingChoiceFiles =
+      summary.missingChoiceFiles && summary.missingChoiceFiles.length > 0;
 
     // Use detailed view if propertyDetails available, otherwise simple list
     const propertiesSection = hasPropertyDetails
@@ -440,6 +448,26 @@ export class ReportEmailSender {
               .missingOperaFiles!.map(
                 (m) =>
                   `<li><strong>${this.escapeHtml(m.propertyName)}</strong> — missing <strong>${m.missingFileType === "trial_balance" ? "trial_balance*.txt" : "stat_dmy_seg*.txt"}</strong> (folder date: ${this.escapeHtml(m.folderDate)})</li>`,
+              )
+              .join("\n")}
+          </ul>
+        </div>
+      `
+      : "";
+
+    const missingChoiceSection = hasMissingChoiceFiles
+      ? `
+        <h3 style="color: #e67e22;">⚠ Missing Choice Hotels Files</h3>
+        <div style="background-color: #fffaf0; padding: 15px; border-radius: 4px; border-left: 4px solid #e67e22;">
+          <p style="margin: 0 0 10px 0; font-size: 13px; color: #e67e22; font-weight: bold;">
+            The following Choice Hotels files were NOT received and could not be included in today's report.
+            The hotel should be contacted to confirm delivery.
+          </p>
+          <ul style="margin: 0; color: #e67e22;">
+            ${summary
+              .missingChoiceFiles!.map(
+                (m) =>
+                  `<li><strong>${this.escapeHtml(m.propertyName)}</strong> — missing <strong>${m.missingFileType === "hotel-statistics" ? "Hotel Statistics*.csv" : "Hotel Journal Summary*.csv"}</strong> (folder date: ${this.escapeHtml(m.folderDate)})</li>`,
               )
               .join("\n")}
           </ul>
@@ -511,6 +539,8 @@ export class ReportEmailSender {
 
       ${missingOperaSection}
 
+      ${missingChoiceSection}
+
       ${errorSection}
 
       <h3>Attachments</h3>
@@ -540,6 +570,8 @@ export class ReportEmailSender {
       summary.skippedDuplicates && summary.skippedDuplicates.length > 0;
     const hasMissingOperaFilesText =
       summary.missingOperaFiles && summary.missingOperaFiles.length > 0;
+    const hasMissingChoiceFilesText =
+      summary.missingChoiceFiles && summary.missingChoiceFiles.length > 0;
 
     const propertyList = summary.propertyNames
       .map((name) => `  - ${name}`)
@@ -567,6 +599,15 @@ export class ReportEmailSender {
           .join("\n")}\n`
       : "";
 
+    const missingChoiceTextSection = hasMissingChoiceFilesText
+      ? `\n*** MISSING CHOICE HOTELS FILES ***\n${summary
+          .missingChoiceFiles!.map(
+            (m) =>
+              `  ! ${m.propertyName} — MISSING ${m.missingFileType === "hotel-statistics" ? "Hotel Statistics*.csv" : "Hotel Journal Summary*.csv"} (folder date: ${m.folderDate})`,
+          )
+          .join("\n")}\n`
+      : "";
+
     return `
 DAILY HOTEL REPORTS - ${dateFormatted}
 ${"=".repeat(50)}
@@ -583,7 +624,7 @@ Processing Time:     ${(summary.processingTimeMs / 1000).toFixed(2)} seconds
 PROPERTIES INCLUDED
 -------------------
 ${propertyList}
-${skippedSection}${missingOperaTextSection}${errorSection}
+${skippedSection}${missingOperaTextSection}${missingChoiceTextSection}${errorSection}
 ATTACHMENTS
 -----------
 - ${summary.reportDate}_JE.csv - Journal Entry file for NetSuite import

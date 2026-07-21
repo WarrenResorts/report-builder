@@ -1,3 +1,1 @@
-{
-  "1120654": "tmp path traversal (GHSA-ph9p-34f9-6g65) via exceljs->tmp@0.2.5. Only exploitable when a user-controlled string is passed as tmp file prefix/postfix; we pass only S3 XLSX buffers to ExcelJS which controls any tmp usage internally. Remove once exceljs updates its tmp dependency."
-}
+{}

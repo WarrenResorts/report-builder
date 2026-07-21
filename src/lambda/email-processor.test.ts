@@ -4,11 +4,13 @@ import { SESEvent, SESMail, Context } from "aws-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 import { simpleParser } from "mailparser";
 import { ParameterStoreConfig } from "../config/parameter-store";
+import AdmZip from "adm-zip";
 
 // Mock dependencies
 vi.mock("@aws-sdk/client-s3");
 vi.mock("mailparser");
 vi.mock("../config/parameter-store");
+vi.mock("adm-zip");
 vi.mock("../config/environment", () => ({
   environmentConfig: {
     environment: "test",
@@ -23,6 +25,7 @@ const mockS3Client = {
 
 const mockParameterStore = {
   getPropertyMapping: vi.fn(),
+  getOverrideEmails: vi.fn(),
 };
 
 // Mock constructors
@@ -836,12 +839,368 @@ describe("EmailProcessor", () => {
       expect(isValid({ filename: "spreadsheet.xlsx" })).toBe(true);
       expect(isValid({ filename: "legacy.xls" })).toBe(true);
 
+      // ZIP is now valid — Choice Hotels reports arrive as ZIP attachments
+      expect(isValid({ filename: "archive.zip" })).toBe(true);
+
       expect(isValid({ filename: "image.jpg" })).toBe(false);
       expect(isValid({ filename: "video.mp4" })).toBe(false);
-      expect(isValid({ filename: "archive.zip" })).toBe(false);
       expect(isValid({ filename: "executable.exe" })).toBe(false);
       expect(isValid({ filename: null })).toBe(false);
       expect(isValid({})).toBe(false);
+    });
+  });
+
+  /**
+   * Test Group: ZIP attachment processing (Choice Hotels)
+   */
+  describe("ZIP attachment processing", () => {
+    const buildSesEvent = (messageId: string): SESEvent => ({
+      Records: [
+        {
+          eventSource: "aws:ses",
+          eventVersion: "1.0",
+          ses: {
+            mail: {
+              messageId,
+              timestamp: "2026-06-23T12:00:00.000Z",
+              source: "auto_mail_delivery_system@choicehotels.com",
+              destination: ["inbound@aws.example.com"],
+              commonHeaders: {
+                from: ["auto_mail_delivery_system@choicehotels.com"],
+                to: ["inbound@aws.example.com"],
+                subject: `Night audit report WA244 06/23/2026`,
+              },
+            } as SESMail,
+            receipt: {
+              recipients: ["inbound@aws.example.com"],
+              timestamp: "2026-06-23T12:00:00.000Z",
+              processingTimeMillis: 100,
+              ...defaultReceiptVerdicts,
+              action: {
+                type: "S3",
+                bucketName: "test-bucket",
+                objectKey: `raw-emails/${messageId}`,
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    it("extracts CSV files from a ZIP attachment for a Choice Hotels property", async () => {
+      // Raw email retrieval
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () => Promise.resolve(Buffer.from("raw email")),
+        },
+      });
+
+      // simpleParser returns a ZIP attachment
+      (simpleParser as Mock).mockResolvedValue({
+        from: {
+          value: [{ address: "auto_mail_delivery_system@choicehotels.com" }],
+          text: "auto_mail_delivery_system@choicehotels.com",
+        },
+        to: { text: "inbound@aws.example.com" },
+        subject: "Night audit report WA244 06/23/2026",
+        date: new Date("2026-06-23T12:00:00.000Z"),
+        attachments: [
+          {
+            filename:
+              "All_Night_Audit_Reports_WA244_HOTEL STATS_2026-06-23.zip",
+            contentType: "application/zip",
+            content: Buffer.from("fake-zip-data"),
+            size: 100,
+          },
+        ],
+      });
+
+      // AdmZip returns one CSV entry
+      (AdmZip as Mock).mockImplementation(function () {
+        return {
+          getEntries: vi.fn().mockReturnValue([
+            {
+              isDirectory: false,
+              entryName: "Hotel Statistics_2026-06-23.csv",
+              getData: vi.fn().mockReturnValue(Buffer.from("csv,data")),
+            },
+          ]),
+        };
+      });
+
+      // First SSM lookup: sender email → __choice__
+      mockParameterStore.getPropertyMapping
+        .mockResolvedValueOnce({
+          "auto_mail_delivery_system@choicehotels.com": "__choice__",
+        })
+        // Second SSM lookup: choice:wa244 → property slug
+        .mockResolvedValueOnce({
+          "choice:wa244": "comfort-inn-suites-spokane-valley",
+        });
+
+      // S3 put for CSV entry + S3 put for metadata
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(
+        buildSesEvent("zip-choice-test"),
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedAttachments).toHaveLength(1);
+      expect(result.processedAttachments[0]).toContain(
+        "comfort-inn-suites-spokane-valley",
+      );
+    });
+
+    it("returns empty list when ZIP file is unreadable", async () => {
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () => Promise.resolve(Buffer.from("raw email")),
+        },
+      });
+
+      (simpleParser as Mock).mockResolvedValue({
+        from: {
+          value: [{ address: "auto_mail_delivery_system@choicehotels.com" }],
+        },
+        attachments: [
+          {
+            filename: "bad.zip",
+            contentType: "application/zip",
+            content: Buffer.from("not-a-zip"),
+            size: 10,
+          },
+        ],
+      });
+
+      // AdmZip throws on invalid content
+      (AdmZip as Mock).mockImplementation(function () {
+        throw new Error("Invalid ZIP file");
+      });
+
+      mockParameterStore.getPropertyMapping.mockResolvedValue({});
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(
+        buildSesEvent("zip-bad-test"),
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedAttachments).toHaveLength(0);
+    });
+
+    it("skips non-document entries inside a ZIP", async () => {
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () => Promise.resolve(Buffer.from("raw email")),
+        },
+      });
+
+      (simpleParser as Mock).mockResolvedValue({
+        from: {
+          value: [{ address: "auto_mail_delivery_system@choicehotels.com" }],
+        },
+        attachments: [
+          {
+            filename:
+              "All_Night_Audit_Reports_WA244_HOTEL STATS_2026-06-23.zip",
+            contentType: "application/zip",
+            content: Buffer.from("zip"),
+            size: 100,
+          },
+        ],
+      });
+
+      (AdmZip as Mock).mockImplementation(function () {
+        return {
+          getEntries: vi.fn().mockReturnValue([
+            {
+              isDirectory: false,
+              entryName: "__MACOSX/image.jpg",
+              getData: vi.fn().mockReturnValue(Buffer.from("img")),
+            },
+            {
+              isDirectory: true,
+              entryName: "subfolder/",
+              getData: vi.fn(),
+            },
+          ]),
+        };
+      });
+
+      mockParameterStore.getPropertyMapping
+        .mockResolvedValueOnce({
+          "auto_mail_delivery_system@choicehotels.com": "__choice__",
+        })
+        .mockResolvedValueOnce({
+          "choice:wa244": "comfort-inn-suites-spokane-valley",
+        });
+
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(
+        buildSesEvent("zip-skip-test"),
+      );
+
+      expect(result.processedAttachments).toHaveLength(0);
+    });
+
+    it("falls back to unknown-property when ZIP filename has no property code", async () => {
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () => Promise.resolve(Buffer.from("raw email")),
+        },
+      });
+
+      (simpleParser as Mock).mockResolvedValue({
+        from: {
+          value: [{ address: "auto_mail_delivery_system@choicehotels.com" }],
+        },
+        attachments: [
+          {
+            filename: "unrecognised_name.zip",
+            contentType: "application/zip",
+            content: Buffer.from("zip"),
+            size: 100,
+          },
+        ],
+      });
+
+      (AdmZip as Mock).mockImplementation(function () {
+        return {
+          getEntries: vi.fn().mockReturnValue([
+            {
+              isDirectory: false,
+              entryName: "Hotel Statistics_2026-06-23.csv",
+              getData: vi.fn().mockReturnValue(Buffer.from("csv")),
+            },
+          ]),
+        };
+      });
+
+      // Sender maps to __choice__ but no property code in filename
+      mockParameterStore.getPropertyMapping.mockResolvedValueOnce({
+        "auto_mail_delivery_system@choicehotels.com": "__choice__",
+      });
+
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(
+        buildSesEvent("zip-nocode-test"),
+      );
+
+      expect(result.processedAttachments[0]).toContain("unknown-property");
+    });
+
+    it("routes Choice ZIP to correct property when sender is on override list", async () => {
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () => Promise.resolve(Buffer.from("raw email")),
+        },
+      });
+
+      (simpleParser as Mock).mockResolvedValue({
+        from: {
+          value: [{ address: "johnhayesnielsen@gmail.com" }],
+          text: "johnhayesnielsen@gmail.com",
+        },
+        to: { text: "inbound@aws.example.com" },
+        subject: "Fwd: Night audit report WA244",
+        date: new Date("2026-06-26T12:00:00.000Z"),
+        attachments: [
+          {
+            filename: "All_Night_Audit_Reports_WA244_ACCOUNTING_2026-06-26.zip",
+            contentType: "application/zip",
+            content: Buffer.from("fake-zip-data"),
+            size: 100,
+          },
+        ],
+      });
+
+      (AdmZip as Mock).mockImplementation(function () {
+        return {
+          getEntries: vi.fn().mockReturnValue([
+            {
+              isDirectory: false,
+              entryName: "Hotel Statistics_2026-06-26.csv",
+              getData: vi.fn().mockReturnValue(Buffer.from("csv,data")),
+            },
+          ]),
+        };
+      });
+
+      // Sender not in property mapping → unknown-property
+      mockParameterStore.getPropertyMapping.mockResolvedValueOnce({});
+      // Override list includes the sender
+      mockParameterStore.getOverrideEmails.mockResolvedValueOnce([
+        "johnhayesnielsen@gmail.com",
+      ]);
+      // Second property-mapping lookup: choice:wa244 → correct slug
+      mockParameterStore.getPropertyMapping.mockResolvedValueOnce({
+        "choice:wa244": "comfort-inn-suites-spokane-valley",
+      });
+
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(
+        buildSesEvent("zip-override-choice-test"),
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedAttachments).toHaveLength(1);
+      expect(result.processedAttachments[0]).toContain(
+        "comfort-inn-suites-spokane-valley",
+      );
+    });
+
+    it("returns unknown-property for override sender when ZIP has no Choice pattern", async () => {
+      mockS3Client.send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: () => Promise.resolve(Buffer.from("raw email")),
+        },
+      });
+
+      (simpleParser as Mock).mockResolvedValue({
+        from: {
+          value: [{ address: "johnhayesnielsen@gmail.com" }],
+        },
+        attachments: [
+          {
+            filename: "some_random_report.zip",
+            contentType: "application/zip",
+            content: Buffer.from("fake-zip-data"),
+            size: 100,
+          },
+        ],
+      });
+
+      (AdmZip as Mock).mockImplementation(function () {
+        return {
+          getEntries: vi.fn().mockReturnValue([
+            {
+              isDirectory: false,
+              entryName: "report.csv",
+              getData: vi.fn().mockReturnValue(Buffer.from("csv,data")),
+            },
+          ]),
+        };
+      });
+
+      // Sender not in property mapping
+      mockParameterStore.getPropertyMapping.mockResolvedValueOnce({});
+      // Override list includes the sender but ZIP doesn't match Choice pattern
+      mockParameterStore.getOverrideEmails.mockResolvedValueOnce([
+        "johnhayesnielsen@gmail.com",
+      ]);
+
+      mockS3Client.send.mockResolvedValue({});
+
+      const result = await emailProcessor.processEmail(
+        buildSesEvent("zip-override-nonChoice-test"),
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(result.processedAttachments[0]).toContain("unknown-property");
     });
   });
 });

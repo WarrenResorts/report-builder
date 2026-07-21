@@ -594,5 +594,81 @@ describe("ReportEmailSender", () => {
       // Should indicate these were skipped/already processed
       expect(rawEmail).toContain("Skipped");
     });
+
+    it("should render missingChoiceFiles section in both HTML and text parts", async () => {
+      const summaryWithMissingChoice: ReportSummary = {
+        ...mockSummary,
+        missingChoiceFiles: [
+          {
+            propertyName: "Comfort Inn - Missoula",
+            folderDate: "2026-06-14",
+            missingFileType: "hotel-statistics",
+          },
+          {
+            propertyName: "Comfort Inn & Suites - Ashland",
+            folderDate: "2026-06-14",
+            missingFileType: "journal-summary",
+          },
+        ],
+      };
+
+      const sender = new ReportEmailSender({
+        processedBucket: "test-processed-bucket",
+        region: "us-east-1",
+      });
+
+      const result = await sender.sendReportEmail(
+        "reports/2026-06-15/2026-06-14_JE.csv",
+        "reports/2026-06-15/2026-06-14_StatJE.csv",
+        summaryWithMissingChoice,
+        "test-correlation-id",
+      );
+
+      expect(result.success).toBe(true);
+
+      const sendCall = mockSESSend.mock.calls[0][0];
+      const rawEmail = sendCall.RawMessage.Data.toString();
+
+      // HTML and text should contain the missing Choice Hotels section
+      expect(rawEmail).toContain("Comfort Inn - Missoula");
+      expect(rawEmail).toContain("Comfort Inn &amp; Suites - Ashland");
+      expect(rawEmail).toContain("Hotel Statistics*.csv");
+      expect(rawEmail).toContain("Hotel Journal Summary*.csv");
+      expect(rawEmail).toContain("MISSING CHOICE HOTELS FILES");
+    });
+
+    it("should render missingOperaFiles with stat_dmy_seg type in both HTML and text parts", async () => {
+      const summaryWithMissingOpera: ReportSummary = {
+        ...mockSummary,
+        missingOperaFiles: [
+          {
+            propertyName: "Holiday Inn Express",
+            folderDate: "2026-06-14",
+            missingFileType: "stat",
+          },
+        ],
+      };
+
+      const sender = new ReportEmailSender({
+        processedBucket: "test-processed-bucket",
+        region: "us-east-1",
+      });
+
+      const result = await sender.sendReportEmail(
+        "reports/2026-06-15/2026-06-14_JE.csv",
+        "reports/2026-06-15/2026-06-14_StatJE.csv",
+        summaryWithMissingOpera,
+        "test-correlation-id",
+      );
+
+      expect(result.success).toBe(true);
+
+      const sendCall = mockSESSend.mock.calls[0][0];
+      const rawEmail = sendCall.RawMessage.Data.toString();
+
+      expect(rawEmail).toContain("Holiday Inn Express");
+      expect(rawEmail).toContain("stat_dmy_seg*.txt");
+      expect(rawEmail).toContain("MISSING OPERA FILES");
+    });
   });
 });

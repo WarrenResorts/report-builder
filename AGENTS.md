@@ -87,7 +87,7 @@ Receives daily hotel report emails with file attachments, parses them, transform
 - **S3 buckets** (both environments):
   - `report-builder-incoming-files-{env}-v2` — raw email attachments
   - `report-builder-processed-files-{env}-v2` — generated JE/StatJE reports
-  - `report-builder-mapping-files-{env}-v2` — Excel mapping files; Opera files go in `opera/` prefix
+  - `report-builder-mapping-files-{env}-v2` — Excel mapping files; Opera files go in `opera/` prefix; Choice files go in `choice/` prefix
 - **SSM Parameters** (production account `400534944857`):
   - `/report-builder/production/properties/email-mapping` — JSON mapping sender email → property slug
   - `/report-builder/production/properties/override-email` — if set, all reports route here instead of real recipients; NOT set in production (reports go to real recipients)
@@ -100,11 +100,18 @@ All properties are configured in `src/config/property-config.ts`. Each has:
 - `subsidiaryId` / `subsidiaryFullName` (NetSuite)
 - `locationId`, `accountingPeriod`, `recipientEmails`
 - `roomsAvailable` (Opera properties only — used for ADR/Occupancy/RevPAR)
+- `choiceMappingName` (Choice Hotels properties only — display name as it appears in the Choice mapping workbook)
 
 ### Opera Mapping
 - Loaded from the latest `.xlsx` file under `opera/` in the mapping bucket
 - Supports **dual mapping**: `Map<string, OperaMappingEntry[]>` — one `TRX_CODE` can produce multiple JE lines
 - The mapping file is uploaded manually to S3 when the hotel provides an updated version
+
+### Choice Mapping
+- Loaded from the latest `.xlsx` file under `choice/` in the mapping bucket
+- 7-column `Choice` sheet: `Src Data Code`, `Src Desc`, `Multiplier`, `Property Name`, `Glacct Code`, `Glacct Name`, `Acct Type`
+- Property-specific rows (non-blank `Property Name`) override global rows for that property
+- See `docs/choice-hotels-pipeline.md` for full format reference
 
 ---
 
@@ -122,25 +129,39 @@ See `docs/adding-a-new-property.md`.
 2. Add property config to `src/config/property-config.ts` with `roomsAvailable`
 3. Upload the Opera mapping XLSX to `opera/` prefix in both mapping buckets
 
+### Onboarding a New Choice Hotels Property
+See `docs/choice-hotels-pipeline.md` — Operations section.
+1. Add `auto_mail_delivery_system@choicehotels.com` → `__choice__` to SSM `email-mapping` (if not already present)
+2. Add `choice:{code}` → property slug to SSM `email-mapping` in both accounts
+3. Add property config to `src/config/property-config.ts` with `choiceMappingName`
+4. Upload or update the Choice mapping XLSX to `choice/` prefix in both mapping buckets
+
 ---
 
-## 📍 Current State (as of June 2026)
+## 📍 Current State (as of July 2026)
 
 ### What's Live in Production
 - All 11 Visual Matrix (PDF) properties — fully operational
 - `holiday-inn-express-clover-lane` (IHG/Opera) — live since June 2026
+- Choice Hotels pipeline (3 properties) — **not yet deployed to production**; verified working in dev with hotel sign-off (see below)
 
 ### Open Branches / PRs
-- **PR #184** (`chore/update-dependencies-june-2026`) — June 2026 dependency updates; may still be in CI
-- **PR #175** (`fix/pdf-parse-v2` branch) — contains only a docs update (`PROJECT_PLAN.md`); the branch name is misleading, no pdf-parse code changes were made
-- **Dependabot PRs #176–#183** — to be closed once PR #184 merges (they are all superseded by it)
+- **PR #194** (`feature/choice-hotels-pipeline`) — Choice Hotels pipeline (Phase 14). Implementation complete, CI green, **verified working in dev** including hotel-requested fixes (Deferred Revenue multiplier sign, duplicate Occy/ADR/RevPAR StatJE rows, combined Visa/MC/Discover JE row, common `Sub Name` values). Blocked on PR review/approval before merge — not yet reviewed as of this writing.
+- **Dependabot PRs #185–#193, #195** — a new batch of routine dependency bumps; consolidate into a single `chore/update-dependencies-{month-year}` branch per the Dependency Update Process above before merging any individually.
 
 ### Known Technical Debt
 - `pdf-parse` v2 migration blocked — see PROJECT_PLAN.md Phase 13
-- `tmp` (via `exceljs`) has a recurring high-severity advisory that keeps getting new IDs; exclusion in `.nsprc` needs to be updated each time (`1120654` as of June 2026)
+- `tmp` (via `exceljs`) has a recurring high-severity advisory that keeps getting new IDs; exclusion in `.nsprc` needs to be updated each time (check the current ID before assuming `1120654` is still current)
 
 ### Next Feature Work
-**Phase 14 — Choice Hotels pipeline** (3 properties). Awaiting sample reports for format analysis. Do not start implementation until samples are received and analyzed. See `PROJECT_PLAN.md` Phase 14.
+**Phase 14 — Choice Hotels pipeline** (3 properties) — implementation complete and verified in dev on `feature/choice-hotels-pipeline` (PR #194). Remaining steps to reach production:
+1. Get PR #194 reviewed and merged to `main`
+2. Add SSM entries (`__choice__` sentinel + `choice:{code}` lookups) to the **production** `email-mapping` parameter (already present in dev)
+3. Upload the current Choice mapping XLSX to the `choice/` prefix of the **production** mapping bucket (already present in dev)
+4. Manually trigger the `deploy-production` GitHub Actions workflow (`workflow_dispatch`, `main` branch) — production deploys never run automatically on merge
+5. Verify with live data in production the same way it was verified in dev
+
+**Phase 7 — Day-to-Day Comparison Engine** — the next development phase after Phase 14 is deployed.
 
 ---
 
@@ -149,5 +170,6 @@ See `docs/adding-a-new-property.md`.
 When making changes that affect:
 - **Visual Matrix PDF pipeline** (email routing, PDF parsing, property config, SSM, SES): update `docs/adding-a-new-property.md`
 - **Opera / IHG pipeline** (parsers, mapping format, S3 prefix, slug config): update `docs/opera-ihg-pipeline.md` and `PROJECT_PLAN.md` Phase 12
+- **Choice Hotels pipeline** (parsers, mapping format, transformation rules, S3 prefix, ZIP/sentinel routing): update `docs/choice-hotels-pipeline.md`
 - **Project roadmap or completed phases**: update `PROJECT_PLAN.md`
 - **These working rules**: update this file (`AGENTS.md`)

@@ -1,8 +1,8 @@
 {
   "project": "report-builder",
   "description": "Automated hotel report processing system. Receives daily report emails, parses and transforms the data using GL account mappings, and delivers JE and StatJE CSV reports to accounting.",
-  "version": "0.9.2",
-  "lastUpdated": "2026-06-16",
+  "version": "0.10.0",
+  "lastUpdated": "2026-06-24",
   "environments": {
     "development": {
       "awsAccountId": "237124340260",
@@ -33,10 +33,10 @@
       },
       {
         "id": "hotel_email_choice",
-        "name": "Choice Hotels (Upcoming)",
-        "type": "external_future",
-        "description": "3 properties — Phase 14, awaiting sample reports",
-        "details": "Format unknown, pending sample report analysis"
+        "name": "Choice Hotels",
+        "type": "external",
+        "description": "3 properties (Comfort Inn Missoula MT118, Comfort Inn & Suites Ashland OR258, Comfort Inn & Suites Spokane Valley WA244)",
+        "details": "Sends two CSV files per day wrapped in a ZIP attachment from AUTO_MAIL_DELIVERY_SYSTEM@choicehotels.com. Files: Hotel Statistics_*.csv and Hotel Journal Summary_*.csv. Property code is embedded in ZIP filename (e.g. All_Night_Audit_Reports_WA244_HOTEL STATS_2026-06-23.zip). Implementation complete in feature/choice-hotels-pipeline — pending SSM configuration and deployment."
       },
       {
         "id": "netsuite",
@@ -91,7 +91,7 @@
         "type": "aws_s3",
         "bucketName": "report-builder-mapping-files-{env}-v2",
         "description": "Stores Excel mapping workbooks for GL account transformation",
-        "structure": "VisualMatrix XLSX at root level; Opera XLSX under opera/ prefix"
+        "structure": "VisualMatrix XLSX at root level; Opera XLSX under opera/ prefix; Choice Hotels XLSX under choice/ prefix"
       },
       {
         "id": "lambda_email",
@@ -104,7 +104,8 @@
           "Parse raw email via mailparser",
           "Identify property from sender email via SSM email-mapping parameter",
           "Store attachments to S3 incoming-files bucket with unique UUID filename",
-          "Handles duplicate file prevention via UUID in filename"
+          "Handles duplicate file prevention via UUID in filename",
+          "Extracts CSV files from ZIP attachments (Choice Hotels); routes via __choice__ sentinel + choice:{code} SSM lookup"
         ]
       },
       {
@@ -118,7 +119,7 @@
           "Discover all files in S3 incoming-files from last 24 hours",
           "Group files by property slug",
           "Check for duplicates via S3 processed-markers",
-          "Route to Visual Matrix or Opera pipeline based on filename pattern",
+          "Route to Visual Matrix, Opera, or Choice Hotels pipeline based on filename pattern",
           "Load appropriate mapping file from S3",
           "Parse, transform, and generate JE and StatJE CSV reports",
           "Store reports in S3 processed-files",
@@ -302,15 +303,32 @@
     {
       "id": "choice_hotels",
       "name": "Choice Hotels Pipeline",
-      "status": "upcoming",
+      "status": "implemented — pending deployment",
       "propertyCount": 3,
       "phase": 14,
-      "notes": "Awaiting sample reports. Format unknown. Will follow same pattern as Opera pipeline."
+      "properties": ["comfort-inn-missoula", "comfort-inn-suites-ashland", "comfort-inn-suites-spokane-valley"],
+      "triggerPattern": "Files named Hotel Statistics_*.csv AND Hotel Journal Summary_*.csv for same property+date (extracted from ZIP)",
+      "steps": [
+        "Choice Hotels sends one email per property per day from AUTO_MAIL_DELIVERY_SYSTEM@choicehotels.com with a ZIP attachment",
+        "ZIP filename contains property code, e.g. All_Night_Audit_Reports_WA244_HOTEL STATS_2026-06-23.zip",
+        "SES receipts → email-processor sees sender mapped to __choice__ sentinel",
+        "email-processor extracts property code from ZIP filename, resolves slug via choice:{code} SSM lookup",
+        "adm-zip extracts CSV files from ZIP; each stored individually under daily-files/{propertySlug}/",
+        "EventBridge triggers file-processor at 1 PM MST",
+        "file-processor detects Choice files by filename pattern, pairs hotel-statistics + journal-summary files",
+        "Raw CSV content bypasses csv-parser and is fed directly to ChoiceJournalSummaryParser / ChoiceHotelStatsParser",
+        "ChoiceMappingLoader loads latest XLSX from S3 mapping-files/choice/ prefix",
+        "transformJournalSummaryToJERecords builds JE lines (Transaction Code + ledger column sums)",
+        "transformHotelStatsToStatJERecords builds StatJE lines (column header matching, RevPAR date resolution, 3 trailing zero rows)",
+        "JE and StatJE CSV files written to S3 processed-files",
+        "SES sends reports to property recipients"
+      ]
     }
   ],
   "dataFlows": [
     { "from": "hotel_email_vm", "to": "ses_inbound", "label": "Daily PDF email" },
     { "from": "hotel_email_opera", "to": "ses_inbound", "label": "Daily TXT email (2 files)" },
+    { "from": "hotel_email_choice", "to": "ses_inbound", "label": "Daily ZIP email (2 CSVs inside)" },
     { "from": "ses_inbound", "to": "s3_incoming", "label": "Raw email stored" },
     { "from": "ses_inbound", "to": "lambda_email", "label": "Lambda trigger" },
     { "from": "lambda_email", "to": "ssm", "label": "Read email-mapping" },
