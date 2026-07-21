@@ -54,7 +54,7 @@
     "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
-    "@commitlint/config-conventional": "^20.4.4",
+    "@commitlint/config-conventional": "^21.2.0",
     "@eslint/js": "^10.0.1",
     "@types/adm-zip": "^0.5.8",
     "@types/mailparser": "^3.4.6",
