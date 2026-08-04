@@ -24,7 +24,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     
     - name: Setup Node.js
       uses: actions/setup-node@v6
@@ -59,7 +59,7 @@ jobs:
   security-scan:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     
     - name: Run KICS Security Scan
       uses: checkmarx/kics-github-action@v2.1.20
@@ -126,7 +126,7 @@ jobs:
       id-token: write   # This is required for requesting the JWT
       contents: read    # This is required for actions/checkout
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     
     - name: Setup Node.js
       uses: actions/setup-node@v6
@@ -135,7 +135,7 @@ jobs:
         cache: 'npm'
     
     - name: Configure AWS credentials for Development
-      uses: aws-actions/configure-aws-credentials@v6.2.0
+      uses: aws-actions/configure-aws-credentials@v6.2.1
       with:
         role-to-assume: arn:aws:iam::237124340260:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
@@ -191,7 +191,7 @@ jobs:
       id-token: write   # This is required for requesting the JWT
       contents: read    # This is required for actions/checkout
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     
     - name: Setup Node.js
       uses: actions/setup-node@v6
@@ -200,7 +200,7 @@ jobs:
         cache: 'npm'
     
     - name: Configure AWS credentials for Production
-      uses: aws-actions/configure-aws-credentials@v6.2.0
+      uses: aws-actions/configure-aws-credentials@v6.2.1
       with:
         role-to-assume: arn:aws:iam::400534944857:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
@@ -240,7 +240,7 @@ jobs:
       contents: write
       pull-requests: read
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     
