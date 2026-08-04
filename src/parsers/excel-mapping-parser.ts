@@ -34,12 +34,7 @@ export interface TransformationRule {
   defaultValue?: string | number | Date | boolean | null;
   /** Transformation function to apply */
   transformation?:
-    | "uppercase"
-    | "lowercase"
-    | "trim"
-    | "currency"
-    | "date_format"
-    | "custom";
+    "uppercase" | "lowercase" | "trim" | "currency" | "date_format" | "custom";
   /** Custom transformation parameters */
   transformationParams?: Record<string, unknown>;
   /** Validation rules */
@@ -391,8 +386,7 @@ export class ExcelMappingParser extends BaseFileParser {
 
     return {
       outputFormat: String(configMap.get("outputFormat") || "csv") as
-        | "csv"
-        | "json",
+        "csv" | "json",
       dateFormat: String(configMap.get("dateFormat") || "YYYY-MM-DD"),
       currencyFormat: configMap.get("currencyFormat")
         ? String(configMap.get("currencyFormat"))
@@ -494,8 +488,7 @@ export class ExcelMappingParser extends BaseFileParser {
               ? String(row.description || row.Description)
               : undefined,
           parameters: this.parseJSON(row.parameters || row.Parameters) as
-            | Record<string, unknown>
-            | undefined,
+            Record<string, unknown> | undefined,
           code: row.code || row.Code ? String(row.code || row.Code) : undefined,
         };
       }

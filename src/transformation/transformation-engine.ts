@@ -95,12 +95,7 @@ export interface TransformationError {
  * Supported field value types
  */
 export type FieldValue =
-  | string
-  | number
-  | Date
-  | boolean
-  | null
-  | Record<string, unknown>;
+  string | number | Date | boolean | null | Record<string, unknown>;
 
 /**
  * Custom transformation function signature

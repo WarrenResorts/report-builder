@@ -156,9 +156,7 @@ export class AccountLineParser {
     const lines = pdfText.split("\n");
     const accountLines: AccountLine[] = [];
     let currentSection:
-      | "detail-listing"
-      | "detail-listing-summary"
-      | "unknown" = "unknown";
+      "detail-listing" | "detail-listing-summary" | "unknown" = "unknown";
 
     // Track seen statistical codes to avoid duplicates (e.g., ADR vs ADR w/comps)
     const seenStatisticalCodes = new Set<string>();
@@ -218,9 +216,7 @@ export class AccountLineParser {
     line: string,
     lineNumber: number,
     _section:
-      | "detail-listing"
-      | "detail-listing-summary"
-      | "unknown" = "unknown",
+      "detail-listing" | "detail-listing-summary" | "unknown" = "unknown",
   ): AccountLine | null {
     // Try ledger lines FIRST (most specific): "GUEST LEDGER$21,084.73"
     const ledgerMatch = line.match(this.patterns.ledgerLine);
