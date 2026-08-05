@@ -256,8 +256,15 @@ jobs:
     - name: Generate release version
       id: version
       run: |
-        # Get the latest tag
-        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        # Get the highest existing semver tag in the whole repo. We intentionally
+        # avoid `git describe --tags --abbrev=0`, which resolves to the "nearest"
+        # tag by commit-graph distance rather than the highest version number.
+        # If this workflow is ever re-run for the same commit (no new commits
+        # in between), that command can return an older tag than the one most
+        # recently created, causing this step to recompute a version that
+        # already exists and fail later when creating the GitHub release.
+        LATEST_TAG=$(git tag -l 'v*' | sort -V | tail -n1)
+        LATEST_TAG=${LATEST_TAG:-v0.0.0}
         echo "Latest tag: $LATEST_TAG"
         
         # Extract version numbers
@@ -272,17 +279,30 @@ jobs:
         
         if echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?!:|^BREAKING CHANGE:|^.+!:"; then
           # Major version bump for breaking changes
-          NEW_VERSION="$((MAJOR + 1)).0.0"
+          NEW_MAJOR=$((MAJOR + 1)); NEW_MINOR=0; NEW_PATCH=0
         elif echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?:"; then
           # Minor version bump for new features
-          NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+          NEW_MAJOR=$MAJOR; NEW_MINOR=$((MINOR + 1)); NEW_PATCH=0
         else
           # Patch version bump for fixes and other changes
-          NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          NEW_MAJOR=$MAJOR; NEW_MINOR=$MINOR; NEW_PATCH=$((PATCH + 1))
         fi
         
-        echo "New version: v$NEW_VERSION"
-        echo "version=v$NEW_VERSION" >> $GITHUB_OUTPUT
+        NEW_VERSION="v$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
+        
+        # Safety net: if the computed version somehow already exists as a tag
+        # (e.g. this job re-ran for the same commit with no new commits since),
+        # keep advancing the patch number until we find one that's free, instead
+        # of failing when `gh release create` hits a duplicate tag_name.
+        while git rev-parse -q --verify "refs/tags/$NEW_VERSION" >/dev/null; do
+          NEW_PATCH=$((NEW_PATCH + 1))
+          NEW_VERSION="v$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
+        done
+        
+        echo "Previous tag: $LATEST_TAG"
+        echo "New version: $NEW_VERSION"
+        echo "previous_version=$LATEST_TAG" >> $GITHUB_OUTPUT
+        echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
     
     - name: Create Release
       env:
