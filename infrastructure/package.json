@@ -13,16 +13,16 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.61.1",
-    "@typescript-eslint/parser": "^8.61.1",
-    "aws-cdk": "^2.1126.0",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript-eslint/parser": "^8.67.0",
+    "aws-cdk": "^2.1138.0",
     "eslint": "^10.5.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "typescript-eslint": "^8.67.0"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.260.0",
+    "aws-cdk-lib": "^2.266.0",
     "constructs": "^10.0.0"
   }
 }
