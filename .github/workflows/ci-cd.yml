@@ -27,7 +27,7 @@ jobs:
     - uses: actions/checkout@v7
     
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
@@ -129,13 +129,13 @@ jobs:
     - uses: actions/checkout@v7
     
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     
     - name: Configure AWS credentials for Development
-      uses: aws-actions/configure-aws-credentials@v6.2.1
+      uses: aws-actions/configure-aws-credentials@v6.2.3
       with:
         role-to-assume: arn:aws:iam::237124340260:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
@@ -194,13 +194,13 @@ jobs:
     - uses: actions/checkout@v7
     
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     
     - name: Configure AWS credentials for Production
-      uses: aws-actions/configure-aws-credentials@v6.2.1
+      uses: aws-actions/configure-aws-credentials@v6.2.3
       with:
         role-to-assume: arn:aws:iam::400534944857:role/GitHubActionsOIDCRole
         aws-region: ${{ env.AWS_REGION }}
@@ -245,7 +245,7 @@ jobs:
         fetch-depth: 0
     
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
