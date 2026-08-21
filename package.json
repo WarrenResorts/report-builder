@@ -38,9 +38,6 @@
   ],
   "author": "Your Company",
   "license": "MIT",
-  "overrides": {
-    "html-to-text": "^10.0.1"
-  },
   "dependencies": {
     "@aws-sdk/client-cloudwatch": "^3.1115.0",
     "@aws-sdk/client-lambda": "^3.1115.0",
