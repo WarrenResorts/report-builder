@@ -57,7 +57,7 @@ Must contain all three sections exactly as written:
 Missing any one of these causes `PR Validation` to fail.
 
 ### Security Scan
-Runs `npx better-npm-audit audit --level high`. Only `high` and `critical` vulnerabilities block the build. The `.nsprc` file contains exclusions for high-severity issues that are genuinely unexploitable in this pipeline (currently: `tmp` via `exceljs`). Run the audit locally before pushing — if the advisory ID for a known exclusion has changed (npm re-issues advisories), update `.nsprc` before committing.
+Runs `npx better-npm-audit audit --level high`. Only `high` and `critical` vulnerabilities block the build. The `.nsprc` file is for documented exclusions of high-severity issues that are genuinely unexploitable in this pipeline — currently empty (last exclusion, `deepmerge-ts` via `mailparser`→`html-to-text`, was resolved by bumping `mailparser` to a version that pins a patched `html-to-text`, September 2026). Run the audit locally before pushing — if the advisory ID for a known exclusion has changed (npm re-issues advisories), update `.nsprc` before committing. New high-severity advisories on `adm-zip`/`mailparser`/`exceljs`/`pdf-parse` (the bundled Lambda dependencies) surface unpredictably between sessions — always re-run the audit even if nothing in `package.json` changed.
 
 ---
 
@@ -154,7 +154,7 @@ See `docs/choice-hotels-pipeline.md` — Operations section.
 
 ### Known Technical Debt
 - `pdf-parse` v2 migration blocked — see PROJECT_PLAN.md Phase 13
-- `tmp` (via `exceljs`) has a recurring high-severity advisory that keeps getting new IDs; exclusion in `.nsprc` needs to be updated each time (check the current ID before assuming `1120654` is still current)
+- `tmp` (via `exceljs`) has had recurring high-severity advisories in the past that keep getting new IDs each time they resurface; no active exclusion needed as of September 2026, but check `.nsprc` before assuming that's still true
 
 ### Next Feature Work
 **Phase 14 — Choice Hotels pipeline** (3 properties) — implementation complete and verified in dev on `feature/choice-hotels-pipeline` (PR #194). Remaining steps to reach production:
