@@ -1,6 +1,6 @@
 # NetSuite direct import (proposal)
 
-**Status:** Not started — discovery phase. No code has been written for this yet.
+**Status:** Discovery mostly complete; API client scaffolding (`feature/netsuite-client-scaffolding`) implemented, not yet wired into the pipeline. Tracked as Phase 15 in `PROJECT_PLAN.md`. Pipeline-integration work can proceed next with no external dependency; sandbox verification is blocked on the hotels' NetSuite admin (see [Suggested next steps](#suggested-next-steps)).
 
 ## Goal
 
@@ -71,9 +71,9 @@ Following the existing pattern for all other secrets in this project (`/report-b
 We can't move forward on implementation until these are answered — most of them need to come from whoever administers their NetSuite account (internal admin or an outside NetSuite partner/consultant).
 
 ### Licensing & environment
-- What is their NetSuite Account ID and edition (Standard / Mid-Market / Enterprise / OneWorld)?
-- Do they already have **SuiteCloud Plus** (or equivalent) enabled, which is required for SuiteTalk REST/SOAP web services access? If not, this is likely their one real added cost (see [Cost](#cost)).
-- Do they have a **Sandbox** NetSuite account available for us to build and test against before touching production?
+- ~~What is their NetSuite Account ID and edition?~~ **Answered:** SuiteSuccess Financials First, Standard Cloud Service.
+- ~~Do they already have SuiteCloud Plus enabled?~~ **Effectively resolved, low risk:** SuiteCloud Plus only raises the account's API *concurrency* limit — it isn't a gate on API access itself, which is included in every NetSuite subscription. The Standard service tier's base concurrency (5 simultaneous requests) is far more than our usage needs (1 JE + 1 StatJE post per property, once daily, sequential — never in parallel bursts). Not a hard confirmation from their NetSuite admin, but not worth blocking on.
+- Do they have a **Sandbox** NetSuite account available for us to build and test against before touching production? **Still open** — check Setup → Company → Manage Sandboxes in their account, or ask their NetSuite rep. This is the one remaining licensing/environment blocker.
 
 ### Access & authentication
 - Who is the NetSuite admin/contact who can create an **Integration record** (Setup → Integration → Manage Integrations) and a dedicated integration user account on their end? We can't create this from our side.
@@ -116,6 +116,11 @@ We can't move forward on implementation until these are answered — most of the
 
 ## Suggested next steps
 
-1. Get answers to the [open questions](#open-questions-for-the-hotelsnetsuite-admin) above from the hotels' NetSuite admin/partner — particularly the SuiteCloud Plus/licensing question and StatJE API availability, since those determine the shape of the whole project.
-2. Once answered, get sandbox credentials and confirm auth method.
-3. Only then do we scope actual implementation work (new Lambda module, mapping code, error handling, summary email changes) as a dedicated phase.
+Tracked as **Phase 15** in `PROJECT_PLAN.md`, split across 4 branches so the work with no external dependency isn't blocked by the work that is:
+
+1. **`feature/netsuite-client-scaffolding`** ✅ **done** — API client module (`src/netsuite/`): auth abstraction (both `TokenBasedAuthProvider`/TBA and `OAuth2JwtAuthProvider`/OAuth2 M2M JWT bearer, since which one the hotels' account supports is still unknown), JE/StatJE payload mapping from the existing `TransformedJEData`/`TransformedStatJEData` records, retry/error handling via `retry.ts`, full test coverage against mocked HTTP responses (47 tests). Not yet wired into `file-processor.ts` — that's branch #2 below. The StatJE payload shape is explicitly flagged in code comments as unverified until sandbox access confirms it.
+2. **`feature/netsuite-pipeline-integration`** (no external dependency — proceed now) — wire the client into `file-processor.ts` behind a default-off config flag, add the "NetSuite Import Status" summary email section, and add the SSM/Secrets Manager credential plumbing (CDK changes). Stays safely mergeable since the flag defaults off.
+3. **`feature/netsuite-sandbox-verification`** (**blocked**) — get sandbox credentials from the hotels' NetSuite admin, confirm StatJE API availability and auth method, point dev's flag at the real sandbox, and test against historical data.
+4. **`feature/netsuite-production-rollout`** (depends on #3) — property-by-property production enablement and monitoring.
+
+Remaining unanswered items from the [open questions](#open-questions-for-the-hotelsnetsuite-admin) above — sandbox availability, StatJE API availability (the biggest unknown), auth method, form customizations/approval routing, and manual-adjustment confirmation — all gate branch #3 specifically, not #1 or #2.

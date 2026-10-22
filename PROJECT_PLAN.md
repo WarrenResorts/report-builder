@@ -182,6 +182,21 @@ IHG-type properties send **Opera text exports** (`trial_balance*.txt`, `stat_dmy
 - [ ] Manually trigger `deploy-production` workflow, then verify with live data in production
 - [ ] See `docs/choice-hotels-pipeline.md` for full technical reference
 
+### Phase 15: NetSuite Direct Import 📋 **[PROPOSED — PARTIALLY UNBLOCKED]**
+
+Push JE/StatJE records directly into NetSuite via API in addition to the existing email, removing the hotels' manual CSV-import step. Full design in `docs/netsuite-direct-import-proposal.md`. Split across 4 branches since part of this work is blocked indefinitely on the hotels' NetSuite admin while the rest has no external dependency — see [Branch Strategy](#-branch-strategy--implementation-order) below.
+
+- [x] Confirmed additive requirement — email stays, NetSuite push is a parallel path with email fallback on failure
+- [x] Confirmed existing JE/StatJE CSV output already matches NetSuite's own import field names — no data-shape changes needed
+- [x] Hotels' NetSuite tier confirmed: **SuiteSuccess Financials First, Standard Cloud Service**
+- [x] **SuiteCloud Plus question effectively resolved** — Standard service tier's base concurrency (5 concurrent requests) is more than sufficient for our usage (1 JE + 1 StatJE post per property, once daily, sequential); SuiteCloud Plus is very unlikely to be needed. Not a hard confirmation from their NetSuite admin, but low risk.
+- [x] `feature/netsuite-client-scaffolding` — API client module (`src/netsuite/`): `NetSuiteClient` (upsert-by-`externalId`, retry via `retry.ts`, returns failures instead of throwing), both possible auth strategies (`TokenBasedAuthProvider` for OAuth 1.0a/TBA, `OAuth2JwtAuthProvider` for OAuth2 M2M JWT bearer — zero new dependencies, native `crypto` only), and pure JE/StatJE payload mappers reusing the existing debit/credit and statistical-record-detection logic. Not wired into `file-processor.ts` yet. 47 tests, module coverage 100%/95%/100%/100% (stmts/branches/funcs/lines). ⚠️ Statistical Journal Entry's REST record type/field names are a best-effort guess, unverified until sandbox access (see branch below).
+- [ ] `feature/netsuite-pipeline-integration` — wire client into `file-processor.ts` behind a default-off config flag, add "NetSuite Import Status" summary email section, SSM/Secrets Manager credential plumbing. No external dependency, can proceed now.
+- [ ] `feature/netsuite-sandbox-verification` — **blocked** until hotels provide sandbox access. Point dev's flag at real sandbox, test against historical data, resolve real-world payload gaps.
+- [ ] `feature/netsuite-production-rollout` — property-by-property production enablement + monitoring, once sandbox verification is proven out.
+- [ ] **Still waiting on hotels/NetSuite admin**: sandbox account availability (check Setup → Company → Manage Sandboxes, or ask their rep), whether Statistical Journal Entry is exposed via SuiteTalk REST on their tier (biggest open unknown — may mean JE-only automation if not), auth method (TBA vs OAuth2), any custom required fields/segments on their JE/StatJE forms, JE approval routing behavior, and confirmation they don't manually adjust values during today's CSV import
+- [ ] See `docs/netsuite-direct-import-proposal.md` for full technical reference
+
 ### Phase 7: Day-to-Day Comparison Engine
 - [ ] Enhanced S3 storage structure for processed daily data
 - [ ] Historical data retrieval functions
@@ -438,6 +453,12 @@ Enhanced S3 Structure:
    - Business metrics tracking
    - X-Ray distributed tracing
 
+7. **NetSuite Direct Import (Phase 15)** ← **4 SEQUENTIAL BRANCHES, split by external-dependency**
+   - `feature/netsuite-client-scaffolding` — no external dependency, proceed now
+   - `feature/netsuite-pipeline-integration` — no external dependency, proceed now
+   - `feature/netsuite-sandbox-verification` — **blocked** on hotels providing sandbox access
+   - `feature/netsuite-production-rollout` — depends on sandbox verification branch
+
 ### Implementation Considerations
 - **DLQ (Phase 7)**: Critical for production reliability, low cost impact
 - **Monitoring (Phase 8)**: High business value, ~$6/month cost increase
@@ -456,7 +477,8 @@ Enhanced S3 Structure:
 9. **✅ COMPLETE — pending prod deploy**: Phase 14 - Choice Hotels pipeline (3 properties)
    - Implemented, tested, and verified in dev with hotel sign-off on PR #194
    - Remaining: PR review/merge, production SSM + mapping upload, manual prod deploy trigger
-10. **NEXT**: Phase 7 - Day-to-Day Comparison Engine
+10. **IN PROGRESS**: Phase 15 - NetSuite Direct Import (see Phase 15 above) — scaffolding/pipeline-integration branches can proceed now; sandbox-verification branch blocked on hotels' NetSuite admin
+11. **NEXT**: Phase 7 - Day-to-Day Comparison Engine
     - Historical data storage and retrieval system
     - Delta calculation algorithms for day-over-day changes
     - Enhanced reporting with change summaries
