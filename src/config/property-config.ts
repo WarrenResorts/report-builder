@@ -24,9 +24,19 @@ export interface PropertyConfig {
   /** Cash account code for credit card deposits (e.g., "10070-696") */
   creditCardDepositAccount: string;
   /**
-   * Total rooms available (hotel inventory).
-   * Required for Opera/IHG properties to populate the StatJE Rooms Available line.
-   * Not needed for Visual Matrix properties (extracted from PDF).
+   * Total rooms available (hotel inventory, static per property).
+   * Required for Opera/IHG properties to populate the StatJE "Rooms Available"
+   * line (GL 90009-789), and for Visual Matrix properties to populate the
+   * StatJE "Total Rooms" line (same GL account, different label per the
+   * hotels' own mapping update).
+   *
+   * NOTE: Visual Matrix PDFs do contain a line literally called "Total Rooms",
+   * but its value is an occupancy-tied daily statistic (confirmed identical to
+   * the "Occupied" line on real reports), not the hotel's actual room count —
+   * so, same as Opera, this must be a hand-entered static value here rather
+   * than extracted from the PDF via the mapping file. The VM mapping
+   * workbook's "Total Rooms" row is intentionally left unmapped to avoid
+   * routing that occupancy-tied PDF value through instead.
    */
   roomsAvailable?: number;
   /**
@@ -51,6 +61,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "THE BARD'S INN HOTEL",
     locationName: "Bard's Inn",
     creditCardDepositAccount: "10070-696",
+    roomsAvailable: 90,
   },
   {
     propertyName: "Crown City Inn",
@@ -59,6 +70,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "Crown City Inn",
     locationName: "Crown City Inn",
     creditCardDepositAccount: "10130-715",
+    roomsAvailable: 35,
   },
   {
     propertyName: "Driftwood Inn",
@@ -67,6 +79,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "Driftwood Inn",
     locationName: "Driftwood Inn",
     creditCardDepositAccount: "10050-535",
+    roomsAvailable: 75,
   },
   {
     propertyName: "El Bonita Motel",
@@ -75,6 +88,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "El Bonita Motel",
     locationName: "El Bonita Motel",
     creditCardDepositAccount: "10172-755",
+    roomsAvailable: 48,
   },
   {
     propertyName: "LAKESIDE LODGE AND SUITES",
@@ -83,6 +97,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "LAKESIDE LODGE AND SUITES",
     locationName: "Lakeside Lodge and Suites",
     creditCardDepositAccount: "10210-678",
+    roomsAvailable: 93,
   },
   {
     propertyName: "MARINA BEACH MOTEL",
@@ -91,6 +106,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "MARINA BEACH MOTEL",
     locationName: "Marina Beach Motel",
     creditCardDepositAccount: "10010-528",
+    roomsAvailable: 32,
   },
   {
     propertyName: "BW Plus PONDERAY MOUNTAIN LODGE",
@@ -99,6 +115,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "BW Plus PONDERAY MOUNTAIN LODGE",
     locationName: "BW Plus Ponderay Mountain Lodge",
     creditCardDepositAccount: "10230-681",
+    roomsAvailable: 83,
   },
   {
     propertyName: "Best Western Sawtooth Inn & Suites",
@@ -107,6 +124,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "Best Western Sawtooth Inn & Suites",
     locationName: "Best Western Sawtooth Inn & Suites",
     creditCardDepositAccount: "10250-684",
+    roomsAvailable: 76,
   },
   {
     propertyName: "Best Western University Lodge",
@@ -115,6 +133,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "Best Western University Lodge",
     locationName: "Best Western University Lodge",
     creditCardDepositAccount: "10270-687",
+    roomsAvailable: 52,
   },
   {
     propertyName: "THE VINE INN",
@@ -123,6 +142,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "THE VINE INN",
     locationName: "The Vine Inn",
     creditCardDepositAccount: "10150-675",
+    roomsAvailable: 25,
   },
   {
     propertyName: "Best Western Windsor Inn",
@@ -131,6 +151,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "Best Western Windsor Inn",
     locationName: "Best Western Windsor Inn",
     creditCardDepositAccount: "10290-707",
+    roomsAvailable: 91,
   },
   {
     propertyName: "FRANCISCAN INN & SUITES",
@@ -139,6 +160,7 @@ const PROPERTY_CONFIGURATIONS: PropertyConfig[] = [
     subsidiaryFullName: "FRANCISCAN INN & SUITES",
     locationName: "Franciscan Inn & Suites",
     creditCardDepositAccount: "10010-528",
+    roomsAvailable: 53,
   },
   {
     // Opera/IHG property — email slug used as propertyName for routing

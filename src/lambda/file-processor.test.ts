@@ -5,7 +5,10 @@ import {
   FileProcessor,
   getOperaFileType,
   getChoiceFileType,
+  buildVisualMatrixTotalRoomsRecord,
+  VM_TOTAL_ROOMS_ACCOUNT,
 } from "./file-processor";
+import type { PropertyConfig } from "../config/property-config";
 import { EventBridgeEvent, Context } from "aws-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 import { ParameterStoreConfig } from "../config/parameter-store";
@@ -3125,5 +3128,81 @@ describe("getChoiceFileType", () => {
     expect(
       getChoiceFileType("Hotel_Journal_Summary_2026-07-07_1a348d85.csv"),
     ).toBe("journal-summary");
+  });
+});
+
+// ─── buildVisualMatrixTotalRoomsRecord ─────────────────────────────────────────
+
+describe("buildVisualMatrixTotalRoomsRecord", () => {
+  const basePropertyConfig: PropertyConfig = {
+    propertyName: "THE BARD'S INN HOTEL",
+    locationInternalId: "24",
+    subsidiaryInternalId: "26",
+    subsidiaryFullName: "THE BARD'S INN HOTEL",
+    locationName: "Bard's Inn",
+    creditCardDepositAccount: "10070-696",
+  };
+
+  it("returns null when roomsAvailable is not configured", () => {
+    const record = buildVisualMatrixTotalRoomsRecord(
+      basePropertyConfig,
+      "bards-inn",
+    );
+    expect(record).toBeNull();
+  });
+
+  it("returns null when roomsAvailable is zero", () => {
+    const record = buildVisualMatrixTotalRoomsRecord(
+      { ...basePropertyConfig, roomsAvailable: 0 },
+      "bards-inn",
+    );
+    expect(record).toBeNull();
+  });
+
+  it("builds a static StatJE record from property config, not the PDF", () => {
+    const record = buildVisualMatrixTotalRoomsRecord(
+      { ...basePropertyConfig, roomsAvailable: 90 },
+      "bards-inn",
+    );
+
+    expect(record).not.toBeNull();
+    expect(record).toMatchObject({
+      sourceCode: "Total Rooms",
+      sourceDescription: "Total Rooms",
+      sourceAmount: 90,
+      targetCode: VM_TOTAL_ROOMS_ACCOUNT.code,
+      targetDescription: VM_TOTAL_ROOMS_ACCOUNT.name,
+      mappedAmount: 90,
+      propertyId: "bards-inn",
+    });
+  });
+
+  it("uses GL account 90009-789, matching the hotels' own mapping update", () => {
+    expect(VM_TOTAL_ROOMS_ACCOUNT).toEqual({
+      code: "90009-789",
+      name: "Total Rooms",
+    });
+  });
+
+  it("routes to StatJE (not JE) via the 90xxx account code convention", () => {
+    const record = buildVisualMatrixTotalRoomsRecord(
+      { ...basePropertyConfig, roomsAvailable: 90 },
+      "bards-inn",
+    );
+    expect(record?.targetCode).toMatch(/^90/);
+  });
+
+  it("produces distinct values per property, matching each hotel's real room count", () => {
+    const sawtooth = buildVisualMatrixTotalRoomsRecord(
+      { ...basePropertyConfig, roomsAvailable: 76 },
+      "sawtooth-inn",
+    );
+    const windsor = buildVisualMatrixTotalRoomsRecord(
+      { ...basePropertyConfig, roomsAvailable: 91 },
+      "windsor-inn",
+    );
+
+    expect(sawtooth?.mappedAmount).toBe(76);
+    expect(windsor?.mappedAmount).toBe(91);
   });
 });

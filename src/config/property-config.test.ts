@@ -76,6 +76,43 @@ describe("PropertyConfigService", () => {
     });
   });
 
+  describe("roomsAvailable (Visual Matrix total room counts)", () => {
+    it("sets the hotel-provided room count for each Visual Matrix property", () => {
+      // Spot-check a few, including the two values the hotel corrected
+      // after the initial email (University Lodge 49→52, Windsor Inn 90→91).
+      expect(
+        service.getPropertyConfig("THE BARD'S INN HOTEL")?.roomsAvailable,
+      ).toBe(90);
+      expect(
+        service.getPropertyConfig("Best Western University Lodge")
+          ?.roomsAvailable,
+      ).toBe(52);
+      expect(
+        service.getPropertyConfig("Best Western Windsor Inn")?.roomsAvailable,
+      ).toBe(91);
+      expect(service.getPropertyConfig("Crown City Inn")?.roomsAvailable).toBe(
+        35,
+      );
+    });
+
+    it("does not leave any Visual Matrix property without a room count", () => {
+      const operaOrChoiceProperties = new Set([
+        "holiday-inn-express-clover-lane",
+        "comfort-inn-missoula",
+        "comfort-inn-suites-ashland",
+        "comfort-inn-suites-spokane-valley",
+      ]);
+      const visualMatrixProperties = service
+        .getAllProperties()
+        .filter((p) => !operaOrChoiceProperties.has(p.propertyName));
+
+      expect(visualMatrixProperties.length).toBe(12);
+      for (const property of visualMatrixProperties) {
+        expect(property.roomsAvailable).toBeGreaterThan(0);
+      }
+    });
+  });
+
   describe("setPropertyConfig", () => {
     it("should add new property configuration", () => {
       const newConfig = {
