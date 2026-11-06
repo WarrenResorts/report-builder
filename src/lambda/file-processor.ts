@@ -41,7 +41,10 @@ import {
   DuplicateDetector,
   type ProcessedMarkerMetadata,
 } from "../processors/duplicate-detector";
-import { getPropertyConfigService } from "../config/property-config";
+import {
+  getPropertyConfigService,
+  type PropertyConfig,
+} from "../config/property-config";
 import {
   ReportEmailSender,
   type ReportSummary,
@@ -1489,6 +1492,17 @@ export class FileProcessor {
           visualMatrixData,
           correlationId,
         );
+
+        // Inject the static "Total Rooms" StatJE line from property config.
+        // Not extracted from the PDF/mapping file — see
+        // buildVisualMatrixTotalRoomsRecord() doc comment for why.
+        const totalRoomsRecord = buildVisualMatrixTotalRoomsRecord(
+          propertyConfig,
+          file.propertyId,
+        );
+        if (totalRoomsRecord) {
+          mappedRecords.push(totalRoomsRecord);
+        }
 
         // Process credit cards: extract totals, remove duplicates, generate deposits
         const creditCardProcessor = new CreditCardProcessor();
@@ -3608,4 +3622,56 @@ export function getChoiceFileType(
   if (/^hotel[ _]journal[ _]summary_.*\.csv$/i.test(name))
     return "journal-summary";
   return null;
+}
+
+/**
+ * GL account for the Visual Matrix "Total Rooms" StatJE line.
+ *
+ * Same account number Opera/Choice use for their "Rooms Available" line
+ * (90009-789) — the hotels' own mapping update (see property-config.ts
+ * roomsAvailable doc comment) specified this exact code with the label
+ * "Total Rooms" rather than "Rooms Available" for Visual Matrix properties.
+ */
+export const VM_TOTAL_ROOMS_ACCOUNT = {
+  code: "90009-789",
+  name: "Total Rooms",
+} as const;
+
+/**
+ * Build the static "Total Rooms" StatJE record for a Visual Matrix property.
+ *
+ * Visual Matrix PDFs do contain a line literally called "Total Rooms", but
+ * its value is an occupancy-tied daily statistic (verified identical to the
+ * "Occupied" line on real reports — e.g. Occupied ÷ Occupancy% reliably
+ * reproduces the hotel's true room count, while the PDF's own "Total Rooms"
+ * line does not), not the hotel's actual room inventory. So, same as Opera's
+ * roomsAvailable, this value must come from property-config.ts rather than
+ * from mapping the PDF's "Total Rooms" line — which is intentionally left
+ * unmapped (no Acct Code) in the Visual Matrix mapping workbook for exactly
+ * this reason.
+ *
+ * @param propertyConfig - Property configuration (must have roomsAvailable set)
+ * @param propertyId - File-level property identifier, for consistency with
+ *   other VisualMatrix mapped records
+ * @returns A mapped record ready to merge into the property's StatJE output,
+ *   or null when the property has no roomsAvailable configured yet
+ */
+export function buildVisualMatrixTotalRoomsRecord(
+  propertyConfig: PropertyConfig,
+  propertyId: string,
+): Record<string, unknown> | null {
+  if (!propertyConfig.roomsAvailable) {
+    return null;
+  }
+
+  return {
+    sourceCode: "Total Rooms",
+    sourceDescription: "Total Rooms",
+    sourceAmount: propertyConfig.roomsAvailable,
+    targetCode: VM_TOTAL_ROOMS_ACCOUNT.code,
+    targetDescription: VM_TOTAL_ROOMS_ACCOUNT.name,
+    mappedAmount: propertyConfig.roomsAvailable,
+    propertyId,
+    processingDate: new Date().toISOString(),
+  };
 }
