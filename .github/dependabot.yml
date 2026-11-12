@@ -48,6 +48,16 @@ updates:
         update-type: "patch"
       - dependency-name: "@vitest/*"
         update-type: "patch"
+    # typescript 7.0 is the native Go-port rewrite and does not ship a
+    # programmatic compiler API (per Microsoft's own TS 7.0 announcement).
+    # This breaks @typescript-eslint/parser (which itself requires
+    # `typescript: ">=4.8.4 <6.1.0"` as a peer dep and has no 7.x support
+    # yet) and therefore `npm run lint`. Stay on 6.x until typescript-eslint
+    # and the broader ecosystem declare real 7.x support. See AGENTS.md
+    # Known Technical Debt.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Infrastructure dependencies
   - package-ecosystem: "npm"
@@ -81,6 +91,13 @@ updates:
       # TypeScript definitions
       - dependency-name: "@types/*"
         update-type: "minor"
+    # See matching note in the root npm ecosystem block above: typescript
+    # 7.0's native port ships no compiler API yet, which breaks both
+    # ts-node (the CDK app entrypoint in cdk.json) and
+    # @typescript-eslint/parser. Stay on 6.x until supported.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
